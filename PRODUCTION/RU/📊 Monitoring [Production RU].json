@@ -1,0 +1,1097 @@
+{
+  "name": "📊 Monitoring [Production RU]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# 📊 МОНИТОРИНГ WEBCHAT\n\n---\n\n## ⚙️ НАСТРОЙКА\n\n### 1. Откройте узел «⚙️ CONFIG»\n\n| Параметр | Описание |\n|----------|----------|\n| `api_key` | Ваш API ключ для авторизации |\n| `rate_limit_max` | Макс. запросов в минуту (60) |\n| `table_monitoring` | Таблица мониторинга |\n| `table_chat_ru` | Таблица RU диалогов |\n| `table_chat_en` | Таблица EN диалогов |\n| `table_contacts` | Таблица контактов |\n| `active_interval_minutes` | Интервал активности (5 мин) |\n| `data_retention_days` | Хранение данных (30 дней) |\n\n---\n\n### 2. Подключите Credentials\n\n**PostgreSQL** → все SQL узлы\n\n---\n\n### 3. API Endpoints\n\n| Endpoint | Метод | Описание |\n|----------|-------|----------|\n| `/chat-monitoring` | POST | Сохранение активности |\n| `/chat-monitoring-data` | GET | Данные для дашборда |\n| `/chat-dialogs` | GET | Диалоги по session_id |\n| `/server-time` | GET | Время сервера |\n| `/get-contact-data` | GET | Контактные данные |\n\n---\n\n### 4. Авторизация\n\nВсе запросы требуют API ключ:\n- Header: `x-api-key`\n- Query: `?apiKey=...`\n- Body: `{\"apiKey\": \"...\"}`\n\n---\n\n### 5. Активация\n\nНажмите **Active** в правом верхнем углу.",
+        "height": 780,
+        "width": 420,
+        "color": 6
+      },
+      "id": "sticky-instructions-ru",
+      "name": "📋 ИНСТРУКЦИЯ",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -800,
+        -700
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"api_key\": \"YOUR-API-KEY-CHANGE-ME\",\n  \"rate_limit_window_ms\": 60000,\n  \"rate_limit_max\": 60,\n  \n  \"table_monitoring\": \"webchat_monitoring\",\n  \"table_chat_ru\": \"n8n_chat_histories_ru\",\n  \"table_chat_en\": \"n8n_chat_histories_en\",\n  \"table_contacts\": \"user_contact_data\",\n  \n  \"active_interval_minutes\": 5,\n  \"data_retention_days\": 30\n}",
+        "options": {}
+      },
+      "id": "config-node",
+      "name": "⚙️ CONFIG",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -336,
+        -700
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat-monitoring",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -336,
+        -288
+      ],
+      "id": "c0187933-2362-49c9-8c92-1fbaadecd401",
+      "name": "🌐 Webhook: Save Activity",
+      "webhookId": "eb90ca04-d6ee-45f7-aada-b9b996978901"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 SECURITY CHECK: API KEY + RATE LIMITING\n// Настройки берутся из узла CONFIG\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG').item.json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        -288
+      ],
+      "id": "6362507d-e02a-43f1-9069-00ef7a8c602a",
+      "name": "🔐 Security Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        48,
+        -288
+      ],
+      "id": "d34dad2e-91df-4561-9f25-3d9f7a014a69",
+      "name": "❓ Auth OK?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        -192
+      ],
+      "id": "353986b7-5da2-40e5-a49b-b38353f02f4c",
+      "name": "❌ Error Response"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📊 EXTRACT MONITORING DATA\n// Извлечение и подготовка данных мониторинга\n// ═══════════════════════════════════════════════════════════════\n\nconst webhook = items[0].json;\nconst inputData = webhook.body || webhook;\n\n// Генерируем временные метки в момент получения данных\nconst currentTime = new Date();\nconst currentTimeISO = currentTime.toISOString();\n\n// Создаем объект для БД\nconst monitoringData = {\n    // Основные идентификаторы\n    recordId: `${inputData.sessionId}_${Date.now()}`,\n    recordTimestamp: currentTimeISO,\n    session_id: inputData.sessionId,\n    user_id: inputData.userId,\n    user_name: inputData.userName,\n    config_name: inputData.configName,\n    platform: inputData.platform,\n    \n    // Временные метки\n    timestamp: currentTimeISO,\n    session_start_time: currentTimeISO,\n    last_activity_time: currentTimeISO,\n    session_duration: inputData.sessionDuration || 0,\n    \n    // Данные о событии\n    event_type: inputData.eventType || 'activity',\n    message_count: inputData.messageCount || 0,\n    \n    // Данные о пользователе\n    current_language: inputData.currentLanguage || 'ru',\n    is_minimized: inputData.isMinimized || false,\n    user_agent: inputData.userAgent || '',\n    screen_resolution: inputData.screenResolution || '',\n    language: inputData.language || '',\n    timezone: inputData.timezone || '',\n    referrer: inputData.referrer || '',\n    current_url: inputData.currentUrl || '',\n    domain: inputData.domain || '',\n    \n    // Геоданные\n    geo_ip: inputData.geo?.ip || 'Unknown',\n    geo_country: inputData.geo?.country || 'Unknown',\n    geo_city: inputData.geo?.city || 'Unknown',\n    geo_region: inputData.geo?.region || 'Unknown',\n    geo_latitude: inputData.geo?.latitude || null,\n    geo_longitude: inputData.geo?.longitude || null\n};\n\nreturn [{json: monitoringData}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        -368
+      ],
+      "id": "8d0e2713-5b33-417b-a2ea-108afe8f3898",
+      "name": "📊 Extract Monitoring Data"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 📊 Таблица: {{ $('⚙️ CONFIG').item.json.table_monitoring }}\n-- ═══════════════════════════════════════════════════════════════\n\nINSERT INTO {{ $('⚙️ CONFIG').item.json.table_monitoring }} (\n    record_id, record_timestamp, session_id, user_id, user_name,\n    config_name, platform, timestamp, session_start_time, \n    last_activity_time, session_duration, event_type, message_count,\n    current_language, is_minimized, user_agent, screen_resolution,\n    language, timezone, referrer, current_url, domain,\n    geo_ip, geo_country, geo_city, geo_region, geo_latitude, geo_longitude\n)\nVALUES (\n    '{{ $json.recordId }}',\n    '{{ $json.recordTimestamp }}',\n    '{{ $json.session_id }}',\n    '{{ $json.user_id }}',\n    '{{ $json.user_name }}',\n    '{{ $json.config_name }}',\n    '{{ $json.platform }}',\n    '{{ $json.timestamp }}',\n    '{{ $json.session_start_time }}',\n    '{{ $json.last_activity_time }}',\n    {{ $json.session_duration }},\n    '{{ $json.event_type }}',\n    {{ $json.message_count }},\n    '{{ $json.current_language }}',\n    {{ $json.is_minimized }},\n    '{{ $json.user_agent }}',\n    '{{ $json.screen_resolution }}',\n    '{{ $json.language }}',\n    '{{ $json.timezone }}',\n    '{{ $json.referrer }}',\n    '{{ $json.current_url }}',\n    '{{ $json.domain }}',\n    '{{ $json.geo_ip }}',\n    '{{ $json.geo_country }}',\n    '{{ $json.geo_city }}',\n    '{{ $json.geo_region }}',\n    {{ $json.geo_latitude || 'NULL' }},\n    {{ $json.geo_longitude || 'NULL' }}\n)\nON CONFLICT (session_id) \nDO UPDATE SET\n    config_name = EXCLUDED.config_name,\n    platform = EXCLUDED.platform,\n    last_activity_time = EXCLUDED.last_activity_time,\n    session_duration = EXTRACT(EPOCH FROM (EXCLUDED.last_activity_time::timestamp - {{ $('⚙️ CONFIG').item.json.table_monitoring }}.session_start_time::timestamp))::integer,\n    message_count = {{ $('⚙️ CONFIG').item.json.table_monitoring }}.message_count,\n    current_language = EXCLUDED.current_language,\n    is_minimized = EXCLUDED.is_minimized,\n    geo_ip = EXCLUDED.geo_ip,\n    geo_country = EXCLUDED.geo_country,\n    geo_city = EXCLUDED.geo_city,\n    geo_region = EXCLUDED.geo_region,\n    geo_latitude = EXCLUDED.geo_latitude,\n    geo_longitude = EXCLUDED.geo_longitude,\n    event_type = EXCLUDED.event_type,\n    user_id = CASE \n        WHEN {{ $('⚙️ CONFIG').item.json.table_monitoring }}.user_id IS NULL OR {{ $('⚙️ CONFIG').item.json.table_monitoring }}.user_id = '' \n        THEN EXCLUDED.user_id \n        ELSE {{ $('⚙️ CONFIG').item.json.table_monitoring }}.user_id \n    END,\n    user_name = CASE \n        WHEN {{ $('⚙️ CONFIG').item.json.table_monitoring }}.user_name IS NULL OR {{ $('⚙️ CONFIG').item.json.table_monitoring }}.user_name = '' \n        THEN EXCLUDED.user_name \n        ELSE {{ $('⚙️ CONFIG').item.json.table_monitoring }}.user_name \n    END\nRETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        464,
+        -368
+      ],
+      "id": "bc35b9cf-8f6d-46c1-8bf9-1cafdded71f8",
+      "name": "💾 Save to Monitoring",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"status\": \"success\",\n  \"message\": \"Data saved\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        688,
+        -368
+      ],
+      "id": "47bb8a6c-8769-490c-803b-0a8af1557427",
+      "name": "✅ Success Response"
+    },
+    {
+      "parameters": {
+        "path": "chat-monitoring-data",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -336,
+        80
+      ],
+      "id": "87addc31-2bd4-41c7-9d41-7689d84810e9",
+      "name": "🌐 Webhook: Get Data",
+      "webhookId": "f5630924-169d-40d7-977a-7602530143f8"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 SECURITY CHECK: API KEY + RATE LIMITING\n// Настройки берутся из узла CONFIG\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG').item.json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        80
+      ],
+      "id": "8722714f-e316-49bf-ae37-af027e9a1e18",
+      "name": "🔐 Security Check 2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        16,
+        80
+      ],
+      "id": "62cce6ad-ebbb-4130-852a-f42368cce598",
+      "name": "❓ Auth OK? 2"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        192,
+        208
+      ],
+      "id": "1565b882-7e55-4170-9859-0a863a4e02f1",
+      "name": "❌ Error Response 2"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 📊 Получение данных мониторинга для дашборда\n-- Таблицы: {{ $('⚙️ CONFIG').item.json.table_monitoring }},\n--          {{ $('⚙️ CONFIG').item.json.table_chat_ru }},\n--          {{ $('⚙️ CONFIG').item.json.table_chat_en }}\n-- ═══════════════════════════════════════════════════════════════\n\nWITH real_message_counts AS (\n    SELECT \n        session_id,\n        COUNT(*) as real_count,\n        array_agg(created_at ORDER BY created_at) as message_timestamps\n    FROM (\n        SELECT session_id, created_at FROM {{ $('⚙️ CONFIG').item.json.table_chat_ru }}\n        UNION ALL\n        SELECT session_id, created_at FROM {{ $('⚙️ CONFIG').item.json.table_chat_en }}\n    ) all_messages\n    GROUP BY session_id\n),\nsession_stats AS (\n    SELECT \n        wm.session_id,\n        MIN(wm.session_start_time) as session_start,\n        MAX(wm.last_activity_time) as last_activity,\n        EXTRACT(EPOCH FROM (MAX(wm.last_activity_time) - MIN(wm.session_start_time)))::integer as duration,\n        COALESCE(rmc.real_count, 0) as messages,\n        COALESCE(rmc.message_timestamps, ARRAY[]::timestamp[]) as message_timestamps,\n        FIRST_VALUE(wm.user_id) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as user_id,\n        FIRST_VALUE(wm.user_name) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as user_name,\n        FIRST_VALUE(wm.config_name) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as config_name,\n        FIRST_VALUE(wm.current_language) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as language,\n        FIRST_VALUE(wm.geo_ip) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as ip,\n        FIRST_VALUE(wm.geo_country) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as country,\n        FIRST_VALUE(wm.geo_city) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as city,\n        FIRST_VALUE(wm.user_agent) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as user_agent,\n        FIRST_VALUE(wm.referrer) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as referrer,\n        FIRST_VALUE(wm.domain) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as domain,\n        FIRST_VALUE(wm.platform) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as platform\n    FROM {{ $('⚙️ CONFIG').item.json.table_monitoring }} wm\n    LEFT JOIN real_message_counts rmc ON wm.session_id = rmc.session_id\n    WHERE wm.last_activity_time >= NOW() - INTERVAL '{{ $('⚙️ CONFIG').item.json.data_retention_days }} days'\n        AND wm.user_id IS NOT NULL \n        AND wm.user_id != ''\n        AND wm.user_id != 'undefined'\n    GROUP BY wm.session_id, wm.timestamp, wm.user_id, wm.user_name, wm.config_name, \n             wm.current_language, wm.geo_ip, wm.geo_country, wm.geo_city, wm.user_agent, \n             wm.referrer, wm.domain, wm.platform, rmc.real_count, rmc.message_timestamps\n)\nSELECT DISTINCT ON (session_id) \n    *,\n    CASE \n        WHEN last_activity > NOW() - INTERVAL '{{ $('⚙️ CONFIG').item.json.active_interval_minutes }} minutes' THEN 'active'\n        ELSE 'inactive'\n    END as status\nFROM session_stats\nORDER BY session_id, last_activity DESC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        192,
+        32
+      ],
+      "id": "58e80b51-93f3-4add-836a-b179b2fc464c",
+      "name": "📥 Get Monitoring Data",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📊 FORMAT DATA FOR DASHBOARD\n// Форматирование данных для отображения в дашборде\n// ═══════════════════════════════════════════════════════════════\n\nconst formattedData = items.map(item => {\n    const data = item.json;\n    \n    // Преобразуем массив timestamps из PostgreSQL\n    let messageTimestamps = [];\n    if (data.message_timestamps) {\n        if (typeof data.message_timestamps === 'string') {\n            const timestampsStr = data.message_timestamps.replace(/[{}]/g, '');\n            if (timestampsStr) {\n                messageTimestamps = timestampsStr.split(',').map(ts => ts.trim());\n            }\n        } else if (Array.isArray(data.message_timestamps)) {\n            messageTimestamps = data.message_timestamps;\n        }\n    }\n    \n    return {\n        sessionId: data.session_id,\n        userId: data.user_id || 'unknown',\n        userName: data.user_name || 'Guest',\n        configName: data.config_name || 'unknown',\n        timestamp: data.last_activity,\n        sessionStartTime: data.session_start,\n        lastActivityTime: data.last_activity,\n        sessionDuration: parseInt(data.duration) || 0,\n        messageCount: parseInt(data.messages) || 0,\n        messageTimestamps: messageTimestamps,\n        currentLanguage: data.language || 'ru',\n        userAgent: data.user_agent || '',\n        referrer: data.referrer || '',\n        domain: data.domain || '',\n        platform: data.platform || 'webchat',\n        geo: {\n            ip: data.ip || 'unknown',\n            country: data.country || 'unknown',\n            city: data.city || 'unknown'\n        }\n    };\n});\n\nreturn [{\n    json: {\n        data: formattedData\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        32
+      ],
+      "id": "2e25d60d-4114-4cf3-ab2d-1f030578fcf1",
+      "name": "📊 Format Dashboard Data"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        640,
+        32
+      ],
+      "id": "eebb9554-d70f-487c-99ed-0a85b3da986f",
+      "name": "✅ Response Data"
+    },
+    {
+      "parameters": {
+        "path": "chat-dialogs",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        384
+      ],
+      "id": "77b68a13-be27-4196-bf31-34ccd4ee7a47",
+      "name": "🌐 Webhook: Get Dialogs",
+      "webhookId": "b3b47b0c-151f-4415-b444-091d814e736e"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 SECURITY CHECK: API KEY + RATE LIMITING\n// Настройки берутся из узла CONFIG\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG').item.json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        384
+      ],
+      "id": "3c123a65-8bd5-462a-8854-5e5ee8a96c0e",
+      "name": "🔐 Security Check 3"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -16,
+        384
+      ],
+      "id": "af096c9e-397a-4798-97d6-1da1ef411002",
+      "name": "❓ Auth OK? 3"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        208,
+        528
+      ],
+      "id": "a350a7cc-c888-4b1b-8dca-70df1c51351d",
+      "name": "❌ Error Response 3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📝 EXTRACT SESSION ID\n// Получение session_id из параметров запроса\n// ═══════════════════════════════════════════════════════════════\n\nconst webhookData = items[0].json;\nconst sessionId = webhookData.query?.session_id;\n\nif (!sessionId) {\n    throw new Error('session_id parameter is required');\n}\n\nreturn [{\n    json: {\n        session_id: sessionId\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        192,
+        368
+      ],
+      "id": "fbe530eb-bf0e-495c-91b7-f4af541d7cb6",
+      "name": "📝 Extract Session ID"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 💬 Получение диалогов по session_id\n-- Таблицы: {{ $('⚙️ CONFIG').item.json.table_chat_ru }},\n--          {{ $('⚙️ CONFIG').item.json.table_chat_en }}\n-- ═══════════════════════════════════════════════════════════════\n\nWITH all_chats AS (\n    -- Русские диалоги\n    SELECT \n        id,\n        session_id,\n        message::json->>'type' as message_type,\n        message::json->>'content' as content,\n        created_at as timestamp,\n        platform,\n        'ru' as language\n    FROM {{ $('⚙️ CONFIG').item.json.table_chat_ru }}\n    WHERE session_id = '{{ $json.session_id }}'\n\n    UNION ALL\n\n    -- Английские диалоги\n    SELECT \n        id,\n        session_id,\n        message::json->>'type' as message_type,\n        message::json->>'content' as content,\n        created_at as timestamp,\n        platform,\n        'en' as language\n    FROM {{ $('⚙️ CONFIG').item.json.table_chat_en }}\n    WHERE session_id = '{{ $json.session_id }}'\n)\nSELECT * FROM all_chats\nORDER BY timestamp ASC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        384,
+        368
+      ],
+      "id": "268cf2fa-6096-4282-bec3-04786e9aef86",
+      "name": "📥 Get Dialogs",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 💬 FORMAT DIALOGS\n// Форматирование диалогов для дашборда\n// ═══════════════════════════════════════════════════════════════\n\nif (!items || items.length === 0 || !items[0].json) {\n    return [{\n        json: {\n            dialogs: [],\n            message: \"Нет сообщений для этой сессии\"\n        }\n    }];\n}\n\nconst formattedDialogs = items.map(item => {\n    const data = item.json;\n    \n    const messageType = data.message_type === 'human' ? 'user' : 'bot';\n    \n    let messageText = data.content || '';\n    \n    try {\n        if (messageText.startsWith('{') || messageText.startsWith('[')) {\n            const parsed = JSON.parse(messageText);\n            messageText = parsed.text || parsed.message || messageText;\n        }\n    } catch (e) {\n        // Оставляем как есть\n    }\n    \n    const languageFlag = {\n        'ru': '🇷🇺',\n        'en': '🇬🇧',\n        'de': '🇩🇪',\n        'es': '🇪🇸',\n        'fr': '🇫🇷'\n    };\n    \n    const platformIcon = {\n        'web': '💻',\n        'webchat': '💬',\n        'telegram': '✈️',\n        'whatsapp': '💬',\n        'viber': '💜',\n        'facebook': '👤',\n        'instagram': '📷',\n        'vk': '🔵',\n        'slack': '🔷',\n        'discord': '🎮',\n        'mobile': '📲',\n        'api': '🔌',\n        'email': '📧',\n        'sms': '📨'\n    };\n    \n    return {\n        id: data.id,\n        session_id: data.session_id,\n        message_type: messageType,\n        message_text: messageText,\n        response_text: messageType === 'bot' ? messageText : '',\n        timestamp: data.timestamp,\n        language: data.language || 'unknown',\n        language_flag: languageFlag[data.language] || '🌐',\n        platform: data.platform || 'web',\n        platform_icon: platformIcon[data.platform] || '❓'\n    };\n});\n\nreturn [{json: {dialogs: formattedDialogs}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        544,
+        368
+      ],
+      "id": "763dba37-11e7-4aa1-b08c-c93d1ce1b759",
+      "name": "💬 Format Dialogs"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        704,
+        368
+      ],
+      "id": "28c6af4c-bff3-410a-b2b5-ea3137a53ca5",
+      "name": "✅ Response Dialogs"
+    },
+    {
+      "parameters": {
+        "path": "server-time",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "8edc9202-0f3b-4df6-87ef-ed0e10893317",
+      "name": "🌐 Webhook: Server Time",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -304,
+        752
+      ],
+      "webhookId": "80106ead-1754-441d-a2b5-bc238d1dab07"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 SECURITY CHECK: API KEY + RATE LIMITING\n// Настройки берутся из узла CONFIG\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG').item.json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        752
+      ],
+      "id": "8b9ac5ac-470e-4242-bd4f-eda89cbbd0c0",
+      "name": "🔐 Security Check 4"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        752
+      ],
+      "id": "28fd5b69-6112-4219-a964-97375e1b880e",
+      "name": "❓ Auth OK? 4"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        192,
+        896
+      ],
+      "id": "99f835a9-aa31-4ced-94c9-a83deb995ff2",
+      "name": "❌ Error Response 4"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🕐 GET SERVER TIME\n// Возвращает текущее время сервера\n// ═══════════════════════════════════════════════════════════════\n\nconst serverTime = new Date();\n\nreturn [{\n    json: {\n        serverTime: serverTime.toISOString(),\n        serverTimestamp: serverTime.getTime(),\n        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'\n    }\n}];"
+      },
+      "id": "7810ce90-cb38-4e06-b716-5d6a2c8df0cf",
+      "name": "🕐 Get Server Time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        192,
+        736
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "47c894d7-df82-4312-84a4-1bc78464effa",
+      "name": "✅ Response Time",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        416,
+        736
+      ]
+    },
+    {
+      "parameters": {
+        "path": "real-message-count",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "95b1f074-f17a-4b30-a19d-d58af824ec37",
+      "name": "🌐 Webhook: Message Count",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -352,
+        -624
+      ],
+      "webhookId": "real-message-count-webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 📊 Подсчет реального количества сообщений\n-- Таблицы: {{ $('⚙️ CONFIG').item.json.table_monitoring }},\n--          {{ $('⚙️ CONFIG').item.json.table_chat_ru }},\n--          {{ $('⚙️ CONFIG').item.json.table_chat_en }}\n-- ═══════════════════════════════════════════════════════════════\n\nWITH message_counts AS (\n    SELECT \n        session_id,\n        COUNT(*) as real_messages\n    FROM (\n        SELECT session_id FROM {{ $('⚙️ CONFIG').item.json.table_chat_ru }}\n        UNION ALL\n        SELECT session_id FROM {{ $('⚙️ CONFIG').item.json.table_chat_en }}\n    ) all_messages\n    GROUP BY session_id\n)\nSELECT \n    wm.session_id,\n    COALESCE(mc.real_messages, 0) as message_count\nFROM {{ $('⚙️ CONFIG').item.json.table_monitoring }} wm\nLEFT JOIN message_counts mc ON wm.session_id = mc.session_id\nWHERE wm.session_id IN (\n    SELECT DISTINCT session_id \n    FROM {{ $('⚙️ CONFIG').item.json.table_monitoring }} \n    WHERE last_activity_time > NOW() - INTERVAL '24 hours'\n);",
+        "options": {}
+      },
+      "id": "f968132c-c357-4aa9-8cd0-527ef6071333",
+      "name": "📊 Get Message Count",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -128,
+        -624
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "fd94b930-6a8f-4170-81e6-d403fb386fe3",
+      "name": "✅ Response Count",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        96,
+        -624
+      ]
+    },
+    {
+      "parameters": {
+        "path": "get-contact-data",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "80bc96e3-e1bd-46a9-aec2-0a5e2bce0077",
+      "name": "🌐 Webhook: Get Contacts",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -304,
+        1072
+      ],
+      "webhookId": "get-contact-data-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 SECURITY CHECK: API KEY + RATE LIMITING\n// Настройки берутся из узла CONFIG\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG').item.json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        1072
+      ],
+      "id": "004d97c8-1a21-42d8-ab04-606d41415c95",
+      "name": "🔐 Security Check 5"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        1072
+      ],
+      "id": "9aa54b97-fd7a-4c7f-ad40-dc24e762dbb7",
+      "name": "❓ Auth OK? 5"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        208,
+        1232
+      ],
+      "id": "365c4db9-6bba-4aaf-87cb-cfb4db037dbe",
+      "name": "❌ Error Response 5"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 👤 Получение контактных данных\n-- Таблицы: {{ $('⚙️ CONFIG').item.json.table_contacts }},\n--          {{ $('⚙️ CONFIG').item.json.table_monitoring }}\n-- ═══════════════════════════════════════════════════════════════\n\nSELECT \n    ucd.session_id,\n    ucd.full_name,\n    ucd.first_name,\n    ucd.last_name,\n    ucd.phone,\n    ucd.phone_raw,\n    ucd.email,\n    ucd.telegram,\n    ucd.whatsapp,\n    ucd.instagram,\n    ucd.other_contacts,\n    ucd.company,\n    ucd.position,\n    ucd.location,\n    ucd.preferred_contact,\n    ucd.confidence_score,\n    ucd.extracted_from,\n    ucd.last_updated\nFROM {{ $('⚙️ CONFIG').item.json.table_contacts }} ucd\nWHERE ucd.session_id IN (\n    SELECT DISTINCT session_id \n    FROM {{ $('⚙️ CONFIG').item.json.table_monitoring }} \n    WHERE last_activity_time >= NOW() - INTERVAL '{{ $('⚙️ CONFIG').item.json.data_retention_days }} days'\n);",
+        "options": {}
+      },
+      "id": "12af88b3-0c30-4fe6-a6cb-22bf92d25703",
+      "name": "📥 Get Contacts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        192,
+        1056
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 👤 FORMAT CONTACTS\n// Форматирование контактных данных\n// ═══════════════════════════════════════════════════════════════\n\nconst contacts = {};\n\nitems.forEach(item => {\n    const data = item.json;\n    \n    let messengers = [];\n    \n    if (data.telegram) {\n        messengers.push(`TG: ${data.telegram}`);\n    }\n    \n    if (data.whatsapp) {\n        messengers.push(`WA: ${data.whatsapp}`);\n    }\n    \n    if (data.instagram) {\n        messengers.push(`IG: ${data.instagram}`);\n    }\n  \n    if (data.other_contacts) {\n        try {\n            const other = typeof data.other_contacts === 'string' \n                ? JSON.parse(data.other_contacts) \n                : data.other_contacts;\n            \n            Object.entries(other).forEach(([platform, contact]) => {\n                if (platform.startsWith('email') && data.email) {\n                    if (contact !== data.email) {\n                        messengers.push(`${platform}: ${contact}`);\n                    }\n                } else if (contact) {\n                    messengers.push(`${platform}: ${contact}`);\n                }\n            });\n        } catch (e) {\n            // Пропускаем ошибки парсинга\n        }\n    }\n    \n    contacts[data.session_id] = {\n        name: data.full_name || `${data.first_name || ''} ${data.last_name || ''}`.trim() || null,\n        firstName: data.first_name,\n        lastName: data.last_name,\n        phone: data.phone || data.phone_raw,\n        email: data.email,\n        messengers: messengers.join(', ') || null,\n        telegram: data.telegram,\n        whatsapp: data.whatsapp,\n        instagram: data.instagram,\n        company: data.company,\n        position: data.position,\n        location: data.location,\n        preferredContact: data.preferred_contact,\n        confidence: data.confidence_score,\n        extractedFrom: data.extracted_from,\n        lastUpdated: data.last_updated\n    };\n});\n\nreturn [{json: {contacts}}];"
+      },
+      "id": "a0ff8433-18e1-48f6-a43f-8f1774e62cd7",
+      "name": "👤 Format Contacts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        384,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "3f32980a-f9ac-4019-a1bb-c337591676b8",
+      "name": "✅ Response Contacts",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        592,
+        1056
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "⚙️ CONFIG": {
+      "main": [
+        []
+      ]
+    },
+    "🌐 Webhook: Save Activity": {
+      "main": [
+        [
+          {
+            "node": "🔐 Security Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔐 Security Check": {
+      "main": [
+        [
+          {
+            "node": "❓ Auth OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓ Auth OK?": {
+      "main": [
+        [
+          {
+            "node": "📊 Extract Monitoring Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "❌ Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Extract Monitoring Data": {
+      "main": [
+        [
+          {
+            "node": "💾 Save to Monitoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💾 Save to Monitoring": {
+      "main": [
+        [
+          {
+            "node": "✅ Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🌐 Webhook: Get Data": {
+      "main": [
+        [
+          {
+            "node": "🔐 Security Check 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔐 Security Check 2": {
+      "main": [
+        [
+          {
+            "node": "❓ Auth OK? 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓ Auth OK? 2": {
+      "main": [
+        [
+          {
+            "node": "📥 Get Monitoring Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "❌ Error Response 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📥 Get Monitoring Data": {
+      "main": [
+        [
+          {
+            "node": "📊 Format Dashboard Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Format Dashboard Data": {
+      "main": [
+        [
+          {
+            "node": "✅ Response Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🌐 Webhook: Get Dialogs": {
+      "main": [
+        [
+          {
+            "node": "🔐 Security Check 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔐 Security Check 3": {
+      "main": [
+        [
+          {
+            "node": "❓ Auth OK? 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓ Auth OK? 3": {
+      "main": [
+        [
+          {
+            "node": "📝 Extract Session ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "❌ Error Response 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📝 Extract Session ID": {
+      "main": [
+        [
+          {
+            "node": "📥 Get Dialogs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📥 Get Dialogs": {
+      "main": [
+        [
+          {
+            "node": "💬 Format Dialogs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💬 Format Dialogs": {
+      "main": [
+        [
+          {
+            "node": "✅ Response Dialogs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🌐 Webhook: Server Time": {
+      "main": [
+        [
+          {
+            "node": "🔐 Security Check 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔐 Security Check 4": {
+      "main": [
+        [
+          {
+            "node": "❓ Auth OK? 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓ Auth OK? 4": {
+      "main": [
+        [
+          {
+            "node": "🕐 Get Server Time",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "❌ Error Response 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🕐 Get Server Time": {
+      "main": [
+        [
+          {
+            "node": "✅ Response Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🌐 Webhook: Message Count": {
+      "main": [
+        [
+          {
+            "node": "📊 Get Message Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Get Message Count": {
+      "main": [
+        [
+          {
+            "node": "✅ Response Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🌐 Webhook: Get Contacts": {
+      "main": [
+        [
+          {
+            "node": "🔐 Security Check 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔐 Security Check 5": {
+      "main": [
+        [
+          {
+            "node": "❓ Auth OK? 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓ Auth OK? 5": {
+      "main": [
+        [
+          {
+            "node": "📥 Get Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "❌ Error Response 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📥 Get Contacts": {
+      "main": [
+        [
+          {
+            "node": "👤 Format Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "👤 Format Contacts": {
+      "main": [
+        [
+          {
+            "node": "✅ Response Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "production-ru-v1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "monitoring-production-ru",
+  "tags": []
+}
