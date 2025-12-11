@@ -1,0 +1,911 @@
+{
+  "name": "Web Chat Adapter - COMPLETE with File Processing",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/webchat-api",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "https://cryptomator.pro,http://localhost,https://*.cryptomator.pro"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1424,
+        208
+      ],
+      "id": "dbd62007-472e-4cd2-9bb4-e4597f944eb2",
+      "name": "Web Chat Webhook",
+      "webhookId": "2854421e-5b06-49c2-8fcc-d4c86bccaa9c"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Rate Limiter - БЕЗ ИЗМЕНЕНИЙ\nconst input = $input.first();\nconsole.log('=== RATE LIMITER ACTIVATED ===');\n\nconst sessionId = input.json?.body?.session_id || input.json?.session_id || 'unknown';\nconsole.log('🔍 Session ID:', sessionId);\n\nconst now = Date.now();\n\nif (!global.rateLimitStore) {\n  global.rateLimitStore = {};\n}\n\nconst store = global.rateLimitStore;\n\nObject.keys(store).forEach(key => {\n  const session = store[key];\n  if (now - session.lastActivity > 7200000) {\n    delete store[key];\n    console.log('🧹 Очищена старая сессия:', key);\n  }\n});\n\nif (!store[sessionId]) {\n  store[sessionId] = {\n    minuteRequests: [],\n    hourRequests: [],\n    lastActivity: now,\n    totalRequests: 0\n  };\n  console.log('✨ Создана новая сессия:', sessionId);\n}\n\nconst session = store[sessionId];\nsession.lastActivity = now;\nsession.totalRequests++;\n\nconst oneMinuteAgo = now - 60000;\nconst oneHourAgo = now - 3600000;\n\nsession.minuteRequests = session.minuteRequests.filter(timestamp => timestamp > oneMinuteAgo);\nsession.hourRequests = session.hourRequests.filter(timestamp => timestamp > oneHourAgo);\n\nsession.minuteRequests.push(now);\nsession.hourRequests.push(now);\n\nconsole.log('📊 Статистика:');\nconsole.log('- Запросов за минуту:', session.minuteRequests.length);\nconsole.log('- Запросов за час:', session.hourRequests.length);\n\nconst minuteLimit = 15;\nconst hourLimit = 100;\n\nif (session.minuteRequests.length > minuteLimit) {\n  const errorResponse = {\n    responseType: 'text',\n    content: {\n      text: `⏰ <b>Слишком много запросов</b><br><br>Превышен лимит: ${minuteLimit} сообщений в минуту.`,\n      language: 'ru'\n    },\n    success: false,\n    error: { type: 'rate_limit_minute', limit: minuteLimit, current: session.minuteRequests.length },\n    timestamp: new Date().toISOString()\n  };\n  console.log('❌ БЛОКИРОВКА: Превышен минутный лимит');\n  throw new Error(JSON.stringify(errorResponse));\n}\n\nif (session.hourRequests.length > hourLimit) {\n  const errorResponse = {\n    responseType: 'text',\n    content: {\n      text: `⏰ <b>Превышен часовой лимит</b><br><br>Лимит: ${hourLimit} сообщений в час.`,\n      language: 'ru'\n    },\n    success: false,\n    error: { type: 'rate_limit_hour', limit: hourLimit, current: session.hourRequests.length },\n    timestamp: new Date().toISOString()\n  };\n  console.log('❌ БЛОКИРОВКА: Превышен часовой лимит');\n  throw new Error(JSON.stringify(errorResponse));\n}\n\nconsole.log('✅ Rate limit check passed');\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -928,
+        160
+      ],
+      "id": "219d4f17-0e15-4357-bdfa-55d88fee1f70",
+      "name": "Rate Limiter"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Web Chat Processor - С ПОДДЕРЖКОЙ ФАЙЛОВ\nconst input = $input.first();\nconsole.log('=== WEB CHAT PROCESSOR (WITH FILE SUPPORT) ===');\n\nconst webhookData = input.json?.body || {};\nconst originalSessionId = webhookData.session_id;\nconst cleanSessionId = originalSessionId ? originalSessionId.replace('webchat_', '') : null;\n\nif (!cleanSessionId) {\n  throw new Error('КРИТИЧЕСКАЯ ОШИБКА: session_id не найден!');\n}\n\nconst messageText = webhookData.message_text || webhookData.text || webhookData.content?.text || '';\nconst userId = webhookData.user_id || cleanSessionId.split('_')[0] || 'web_user';\nconst userName = webhookData.user_name || webhookData.userName || 'Web User';\nconst language = webhookData.language || webhookData.detected_language || 'ru';\nconst messageType = webhookData.messageType || webhookData.message_type || 'text';\n\nconsole.log('✅ Session ID (CLEANED):', cleanSessionId);\nconsole.log('✅ Message Text:', messageText);\n\n// 🆕 ИЗВЛЕЧЕНИЕ ФАЙЛОВ\nconst hasFile = !!(webhookData.file_data || webhookData.file);\nlet fileData = null;\n\nif (hasFile) {\n  fileData = {\n    file_data: webhookData.file_data || webhookData.file?.data,\n    file_name: webhookData.file_name || webhookData.file?.name || 'unnamed_file',\n    file_type: webhookData.file_type || webhookData.file?.type || 'application/octet-stream',\n    file_size: webhookData.file_size || webhookData.file?.size || 0,\n    file_format: webhookData.file_format || 'base64'\n  };\n  console.log('📎 ФАЙЛ:', fileData.file_name, '(', fileData.file_type, ')');\n}\n\nconst webhookHeaders = input.json?.headers || {};\n\nconst unifiedMessage = {\n  platform: 'webchat',\n  message_text: messageText,\n  user_id: userId,\n  user_name: userName,\n  chat_id: cleanSessionId,\n  session_id: cleanSessionId,\n  language: language,\n  detected_language: language,\n  messageType: messageType,\n  \n  content: webhookData.content || {\n    text: messageText,\n    metadata: {\n      timestamp: new Date().toISOString(),\n      userAgent: webhookHeaders['user-agent'],\n      url: webhookData.content?.metadata?.url,\n      chatLanguage: webhookData.content?.metadata?.chatLanguage || language\n    }\n  },\n  \n  // Файловые данные\n  ...(fileData ? fileData : {}),\n  has_file: hasFile,\n  \n  ip_address: webhookHeaders['x-forwarded-for'] || webhookHeaders['x-real-ip'],\n  user_agent: webhookHeaders['user-agent'],\n  page_url: webhookData.content?.metadata?.url,\n  \n  voice_data: webhookData.content?.voice?.audioData || webhookData.voice_data,\n  voice_format: webhookData.content?.voice?.format || webhookData.voice_format,\n  \n  platformCapabilities: webhookData.platformCapabilities || {\n    supportsVoice: true,\n    supportsButtons: true,\n    supportsFiles: true,\n    maxTextLength: null\n  },\n  \n  timestamp: new Date().toISOString(),\n  requires_processing: true,\n  is_web_chat: true,\n  \n  debug_info: {\n    original_session_id: originalSessionId,\n    cleaned_session_id: cleanSessionId,\n    has_file: hasFile,\n    file_type: fileData?.file_type || 'none'\n  }\n};\n\nif (messageType === 'voice' && unifiedMessage.voice_data) {\n  unifiedMessage.has_voice_data = true;\n  unifiedMessage.message_text = '[Голосовое сообщение]';\n}\n\nconsole.log('✅ Unified message prepared');\nreturn [{ json: unifiedMessage }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -768,
+        160
+      ],
+      "id": "b420a860-5521-40c6-95db-e74abcd57c34",
+      "name": "Web Chat Processor"
+    },
+    {
+      "parameters": {
+        "jsCode": "// INPUT VALIDATOR - С ВАЛИДАЦИЕЙ ФАЙЛОВ\nconst input = $input.first();\nconsole.log('=== INPUT VALIDATOR (WITH FILE VALIDATION) ===');\n\nconst data = input.json;\nconst requiredFields = ['session_id', 'user_id', 'platform'];\nconst missingFields = requiredFields.filter(field => !data[field]);\n\nif (missingFields.length > 0) {\n  throw new Error(`Missing required fields: ${missingFields.join(', ')}`);\n}\n\nconst messageText = data.message_text || data.text || '';\nconst messageType = data.messageType || 'text';\n\nif (messageType === 'text' && !messageText && !data.has_file) {\n  throw new Error(JSON.stringify({\n    responseType: 'text',\n    content: { text: '⚠️ Сообщение не может быть пустым', language: 'ru' },\n    success: false\n  }));\n}\n\nconst maxLength = 5000;\nif (messageText.length > maxLength) {\n  throw new Error(JSON.stringify({\n    responseType: 'text',\n    content: { text: `📏 Сообщение слишком длинное (макс ${maxLength})`, language: 'ru' },\n    success: false\n  }));\n}\n\n// ВАЛИДАЦИЯ ФАЙЛОВ\nif (data.has_file && data.file_data) {\n  const allowedTypes = [\n    'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp',\n    'application/pdf', 'text/plain', 'text/csv',\n    'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',\n    'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'\n  ];\n  \n  const fileType = data.file_type;\n  const fileSize = data.file_size || 0;\n  const maxFileSize = 10 * 1024 * 1024;\n  \n  if (!allowedTypes.includes(fileType)) {\n    throw new Error(JSON.stringify({\n      responseType: 'text',\n      content: { text: `📎 Недопустимый тип файла: ${fileType}`, language: 'ru' },\n      success: false\n    }));\n  }\n  \n  if (fileSize > maxFileSize) {\n    throw new Error(JSON.stringify({\n      responseType: 'text',\n      content: { text: `📎 Файл слишком большой (макс 10MB)`, language: 'ru' },\n      success: false\n    }));\n  }\n  \n  console.log('✅ Файл валиден:', data.file_name);\n}\n\nconsole.log('✅ Validation passed');\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -608,
+        160
+      ],
+      "id": "2665c601-0e8d-439d-a214-79d25fdafdf6",
+      "name": "Input Validator"
+    },
+    {
+      "parameters": {
+        "jsCode": "// FILE DETECTOR & CONVERTER - ИСПРАВЛЕННЫЙ\nconst input = $input.first();\nconsole.log('=== FILE DETECTOR ===');\n\nconst data = input.json;\n\n// Проверяем наличие файла\nif (!data.has_file || !data.file_data) {\n  console.log('ℹ️ Файл отсутствует');\n  return [{\n    json: {\n      ...data,\n      file_category: 'no_file',\n      skip_file_processing: true\n    }\n  }];\n}\n\nconsole.log('📎 Файл обнаружен:', data.file_name);\nconsole.log('📎 Тип файла:', data.file_type);\n\n// Определяем категорию файла\nlet fileCategory = 'unknown';\nconst fileType = data.file_type.toLowerCase();\n\nif (fileType.startsWith('image/')) {\n  fileCategory = 'image';\n  console.log('🖼️ Категория: ИЗОБРАЖЕНИЕ');\n} else if (\n  fileType.includes('pdf') ||\n  fileType.includes('document') ||\n  fileType.includes('word') ||\n  fileType.includes('excel') ||\n  fileType.includes('sheet') ||\n  fileType.includes('text/')\n) {\n  fileCategory = 'document';\n  console.log('📄 Категория: ДОКУМЕНТ');\n} else {\n  console.log('⚠️ Неизвестный тип:', fileType);\n  fileCategory = 'no_file'; // Если тип неизвестен - пропускаем обработку\n}\n\nconsole.log('✅ file_category:', fileCategory);\n\n// Конвертируем base64 в Buffer\ntry {\n  const buffer = Buffer.from(data.file_data, 'base64');\n  console.log('✅ Конвертация base64 → binary');\n  console.log('📊 Размер буфера:', buffer.length, 'байт');\n  \n  // КРИТИЧЕСКИ ВАЖНО: возвращаем file_category!\n  return [{\n    json: {\n      ...data,\n      file_category: fileCategory, // ← ВОТ ОНО!\n      original_message_text: data.message_text,\n      file_processed: true\n    },\n    binary: {\n      data: {\n        data: buffer,\n        mimeType: data.file_type,\n        fileName: data.file_name\n      }\n    }\n  }];\n} catch (error) {\n  console.error('❌ Ошибка конвертации:', error.message);\n  return [{\n    json: {\n      ...data,\n      file_category: 'no_file',\n      skip_file_processing: true,\n      conversion_error: error.message\n    }\n  }];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        160
+      ],
+      "id": "c2d5c3a6-6a05-485d-b5bd-d438a81e04d1",
+      "name": "File Detector"
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.file_category === 'image' ? 0 : ($json.file_category === 'document' ? 1 : 2) }}"
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -112,
+        16
+      ],
+      "id": "0e44304f-4b49-45ba-8955-fbf396f23850",
+      "name": "File Category Router"
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "inputType": "binary",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        128,
+        16
+      ],
+      "id": "f9688909-f977-4932-b0fd-06bbb8060f35",
+      "name": "Image Analyzer",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "abo0BDHSJPM0pgRU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "document",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "inputType": "binary",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        128,
+        176
+      ],
+      "id": "2addc5f7-b208-4a35-aeaa-51bf6a3acb45",
+      "name": "Document Analyzer",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "abo0BDHSJPM0pgRU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// MERGE FILE ANALYSIS\nconst input = $input.first();\nconsole.log('=== MERGE FILE ANALYSIS ===');\n\nconst geminiResponse = input.json;\n\nlet fileAnalysis = '';\nif (geminiResponse.content?.parts) {\n  fileAnalysis = geminiResponse.content.parts[0].text || '';\n} else if (geminiResponse.text) {\n  fileAnalysis = geminiResponse.text;\n} else {\n  fileAnalysis = '[Анализ недоступен]';\n}\n\nconsole.log('📄 Анализ получен (', fileAnalysis.length, 'симв.)');\n\nconst originalText = geminiResponse.original_message_text || '';\nconst fileName = geminiResponse.file_name || 'файл';\n\nlet enrichedText = '';\nif (originalText && originalText.trim()) {\n  enrichedText = `${originalText}\\n\\n📎 **Анализ файла \"${fileName}\":**\\n${fileAnalysis}`;\n} else {\n  enrichedText = `📎 **Анализ файла \"${fileName}\":**\\n${fileAnalysis}`;\n}\n\nconsole.log('✅ Текст обогащен анализом файла');\n\nreturn [{\n  json: {\n    ...geminiResponse,\n    message_text: enrichedText,\n    text: enrichedText,\n    original_text: enrichedText,\n    file_analysis: fileAnalysis,\n    file_was_processed: true,\n    processed_file_name: fileName\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        96
+      ],
+      "id": "6a519fdb-b6b7-4804-b5d8-9f2833411057",
+      "name": "Merge File Analysis"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        496,
+        272
+      ],
+      "id": "2d5d9b0b-8b03-4dfb-8cdf-7d9e0b413a3d",
+      "name": "File Paths Merger"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Language Detection - ФИНАЛЬНАЯ ВЕРСИЯ (без логов)\nconst input = $input.all();\n\nif (!input || input.length === 0) {\n  throw new Error('No input data');\n}\n\nlet item;\n\nif (input.length > 1) {\n  const itemWithSessionId = input.find(i => i.json.session_id && i.json.session_id !== 'webchat_unknown');\n  const itemWithFileAnalysis = input.find(i => i.json.file_analysis);\n  \n  if (itemWithSessionId) {\n    item = itemWithSessionId.json;\n    \n    if (itemWithFileAnalysis && itemWithFileAnalysis.json.file_analysis) {\n      const fileAnalysis = itemWithFileAnalysis.json.file_analysis;\n      const fileName = itemWithFileAnalysis.json.processed_file_name || 'файл';\n      \n      item.message_text = `${item.message_text}\\n\\n📎 **Анализ файла \"${fileName}\":**\\n${fileAnalysis}`;\n      item.file_was_processed = true;\n      item.processed_file_name = fileName;\n    }\n  } else {\n    item = input[0].json;\n  }\n} else {\n  item = input[0].json;\n}\n\nconst messageText = item.message_text || item.text || '';\n\nfunction detectLanguageFromText(text) {\n  if (!text || text.length < 2) return 'ru';\n  const hasRussian = /[а-яё]/i.test(text);\n  return hasRussian ? 'ru' : 'en';\n}\n\nconst detectedLanguage = detectLanguageFromText(messageText);\nconst sessionId = item.session_id;\nconst userId = item.user_id;\nconst userName = item.user_name || 'User';\nconst chatId = item.chat_id || sessionId;\nconst finalText = messageText;\n\nconst voiceData = item.voice_data || item.content?.voice?.audioData || null;\nconst voiceFormat = item.voice_format || item.content?.voice?.format || 'ogg';\n\nreturn [{\n  json: {\n    platform: 'webchat',\n    text: finalText,\n    message_text: finalText,\n    original_text: finalText,\n    user_id: userId,\n    user_name: userName,\n    chat_id: chatId,\n    session_id: sessionId,\n    detected_language: detectedLanguage,\n    language: detectedLanguage,\n    telegram_language: detectedLanguage,\n    interface_language: item.content?.metadata?.chatLanguage || 'ru',\n    current_language: item.content?.metadata?.chatLanguage || 'ru',\n    \n    message: {\n      text: finalText,\n      chat: { id: chatId },\n      from: {\n        id: userId,\n        first_name: userName,\n        language_code: detectedLanguage\n      }\n    },\n    \n    was_command: false,\n    needs_language_selection: false,\n    requires_ai_processing: true,\n    messageType: item.messageType || 'text',\n    timestamp: new Date().toISOString(),\n    \n    platformCapabilities: item.platformCapabilities,\n    is_web_chat: true,\n    \n    voice_data: voiceData,\n    voice_format: voiceFormat,\n    has_voice_data: !!voiceData,\n    \n    file_was_processed: item.file_was_processed || false,\n    processed_file_name: item.processed_file_name || null\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        176
+      ],
+      "id": "98619753-315d-4b0b-801b-5c187944e667",
+      "name": "Language Detection"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5b37fe31-e16d-4196-a342-5c9ced420e66",
+              "leftValue": "={{ $json.messageType }}",
+              "rightValue": "voice",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        848,
+        160
+      ],
+      "id": "25d2569a-133e-44e9-b2f4-c3b116987909",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Convert Audio Data\nconst audioBase64 = $json.voice_data;\nif (!audioBase64) {\n  throw new Error('No audio data');\n}\nconst audioBuffer = Buffer.from(audioBase64, 'base64');\nreturn {\n  json: $json,\n  binary: {\n    audioFile: {\n      data: audioBuffer,\n      mimeType: 'audio/wav',\n      fileName: 'voice.wav'\n    }\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        64
+      ],
+      "id": "2d7d529d-c2f7-4869-bae7-01174bb272b8",
+      "name": "Convert Audio Data"
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-pro",
+          "mode": "list"
+        },
+        "inputType": "binary",
+        "binaryPropertyName": "audioFile",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        1168,
+        64
+      ],
+      "id": "4b140ab5-7f5a-4506-b71c-3a6ba2fc153c",
+      "name": "Transcribe Voice",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "abo0BDHSJPM0pgRU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Voice Result\nlet transcription = $json.content.parts[0].text || '';\ntranscription = transcription.replace(/\\[\\s*\\d+m\\d+s\\d+ms\\s*-\\s*\\d+m\\d+s\\d+ms\\s*\\]/g, '').trim();\n\nconst audioData = $('Convert Audio Data').first().json;\n\nreturn {\n  json: {\n    platform: 'webchat',\n    messageType: 'text_from_voice',\n    message_text: transcription,\n    text: transcription,\n    user_id: audioData.user_id,\n    user_name: audioData.user_name,\n    session_id: audioData.session_id,\n    chat_id: audioData.chat_id,\n    language: 'ru',\n    detected_language: 'ru',\n    original_voice: true\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        64
+      ],
+      "id": "2676afa6-e7bb-4e2e-9d89-12d011730729",
+      "name": "Process Voice Result"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare Text Message\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1056,
+        256
+      ],
+      "id": "a02bef1c-c391-4676-a62e-754d8b67fc21",
+      "name": "Prepare Text Message"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1536,
+        160
+      ],
+      "id": "322255e2-9921-4b50-8316-509af7467472",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/ai-core-api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "apiKey",
+              "value": "24fs-$r4d-defd-77ds-7eds"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "platform",
+              "value": "webchat"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.text }}"
+            },
+            {
+              "name": "user_id",
+              "value": "={{ $json.user_id }}"
+            },
+            {
+              "name": "session_id",
+              "value": "={{ $json.session_id }}"
+            },
+            {
+              "name": "language",
+              "value": "={{ $json.language }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1728,
+        160
+      ],
+      "id": "8eab9b0a-13ec-4c9f-9e4b-df2915b09f3e",
+      "name": "Send to AI Core",
+      "retryOnFail": true,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Response Handler для Web Chat - ТОЛЬКО СВОРАЧИВАНИЕ + ВИДЕО\nconst input = $input.first();\n\nlet responseData;\n\nif (input.binary && input.binary.data) {\n  responseData = {\n    responseType: 'voice',\n    content: {\n      voice: {\n        mimeType: input.binary.data.mimeType || 'audio/ogg',\n        fileName: input.binary.data.fileName || 'voice_response.ogg',\n        duration: input.json?.duration || 0\n      },\n      text: 'Голосовое сообщение от Cryptonus 🎤'\n    },\n    success: true,\n    timestamp: new Date().toISOString()\n  };\n  \n  return [{\n    binary: { data: input.binary.data },\n    json: responseData\n  }];\n  \n} else if (input.json) {\n  const coreResponse = input.json;\n\n  // ПРОВЕРКА НА ВИДЕО\n  function extractVideoJson(text) {\n    if (!text || typeof text !== 'string') return null;\n    \n    const videoPattern = /\\{\\s*\"responseType\"\\s*:\\s*\"video\"/;\n    const match = videoPattern.exec(text);\n    \n    if (!match) return null;\n    \n    const startIndex = match.index;\n    let braceCount = 0;\n    let inString = false;\n    let escapeNext = false;\n    \n    for (let i = startIndex; i < text.length; i++) {\n      const char = text[i];\n      \n      if (escapeNext) {\n        escapeNext = false;\n        continue;\n      }\n      \n      if (char === '\\\\') {\n        escapeNext = true;\n        continue;\n      }\n      \n      if (char === '\"') {\n        inString = !inString;\n        continue;\n      }\n      \n      if (!inString) {\n        if (char === '{') {\n          braceCount++;\n        } else if (char === '}') {\n          braceCount--;\n          \n          if (braceCount === 0) {\n            const jsonStr = text.substring(startIndex, i + 1);\n            try {\n              return JSON.parse(jsonStr);\n            } catch (parseError) {\n              return null;\n            }\n          }\n        }\n      }\n    }\n    \n    return null;\n  }\n\n  const possibleVideoSources = [\n    coreResponse.original_response,\n    coreResponse.response_text,\n    coreResponse.text,\n    JSON.stringify(coreResponse)\n  ];\n\n  for (const source of possibleVideoSources) {\n    if (!source || typeof source !== 'string') continue;\n    \n    const parsedVideo = extractVideoJson(source);\n    \n    if (parsedVideo && parsedVideo.responseType === 'video' && parsedVideo.content?.video) {\n      responseData = {\n        responseType: 'video',\n        content: {\n          text: parsedVideo.content.text || '',\n          video: {\n            url: parsedVideo.content.video.url,\n            thumbnail: parsedVideo.content.video.thumbnail,\n            duration: parsedVideo.content.video.duration\n          },\n          language: coreResponse.language || coreResponse.detected_language || 'ru'\n        },\n        success: true,\n        timestamp: new Date().toISOString()\n      };\n      \n      return [{ json: responseData }];\n    }\n  }\n\n  // ОБЫЧНАЯ ТЕКСТОВАЯ ОБРАБОТКА\n  const responseText = coreResponse.response_text || \n                      coreResponse.text || \n                      coreResponse.message || \n                      'Получен ответ от Cryptonus';\n  \n  const language = coreResponse.language || \n                  coreResponse.detected_language || \n                  'ru';\n  \n  responseData = {\n    responseType: 'text',\n    content: {\n      text: responseText,\n      language: language\n    },\n    success: true,\n    timestamp: new Date().toISOString()\n  };\n  \n  // ОБРАБОТКА КОМАНД\n  const commands = {};\n  const lowerResponseText = responseText.toLowerCase();\n  \n  // ОПРЕДЕЛЕНИЕ ЗАВЕРШЕНИЯ РАЗГОВОРА\n  const goodbyePhrasesRu = [\n    'до свидания', 'пока', 'всего доброго', 'до встречи',\n    'всего хорошего', 'до завтра', 'прощай', 'прощайте',\n    'счастливо', 'удачи', 'бывай', 'до скорого',\n    'до связи', 'увидимся', 'до новых встреч',\n    'всего наилучшего', 'хорошего дня', 'хорошего вечера',\n    'спокойной ночи', 'доброй ночи', 'приятного вечера',\n    'отличного дня', 'отличного вечера', 'удачного дня',\n    'всех благ', 'будь здоров', 'будьте здоровы'\n  ];\n\n  const goodbyePhrasesEn = [\n    'goodbye', 'bye', 'see you',\n    'see you later', 'see you tomorrow', 'talk to you later',\n    'farewell', 'take care', 'have a nice day', 'catch you later',\n    'good night', 'sweet dreams', 'have a good one',\n    'have a great day', 'have a great evening'\n  ];\n\n  function containsGoodbyePhrase(text, phrases) {\n    const normalizedText = text.toLowerCase()\n      .replace(/[.,!?;:\"\\'\\`\\-—–👋😊✨🤗💫❤️]/g, ' ')\n      .replace(/\\s+/g, ' ')\n      .trim();\n    \n    return phrases.some(phrase => {\n      const normalizedPhrase = phrase.toLowerCase();\n      return normalizedText.includes(normalizedPhrase);\n    });\n  }\n\n  const falsePositivePatterns = [\n    'за сегодняшний день', 'до этого', 'до сих пор',\n    'доход', 'доходность', 'до конца', 'пока что', 'пока не',\n    'показатель', 'покажу', 'показать', 'до момента', 'до уровня',\n    'пока работает', 'пока все', 'до начала', 'до старта',\n    'for today', 'until now', 'so far', 'up to',\n    'income', 'revenue', 'profit', 'until the end',\n    'for now', 'not yet', 'indicator', 'will show',\n    'showing', 'demonstrate', 'until the moment',\n    'up to the level', 'still working', 'for the time being'\n  ];\n\n  const strongContinuationIndicators = [\n    '?',\n    'хочешь', 'хотите', 'можете', 'можешь',\n    'давай', 'давайте', \n    'расскажу подробнее', 'покажу как', 'могу показать', 'могу рассказать',\n    'что думаешь', 'что думаете', 'как считаешь', 'как считаете',\n    'интересно узнать', 'интересует', 'нужна информация',\n    'хотел бы узнать', 'хотела бы узнать',\n    'want to know', 'would you like', 'can you', 'could you',\n    'let me show', 'let me tell', 'i can show', 'i can tell',\n    'what do you think', 'how about', 'what about',\n    'interested in', 'need information', 'tell me more',\n    'show me', 'can i help', 'shall i', 'should i',\n    'do you want', 'do you need', 'would you prefer'\n  ];\n\n  const isFalsePositive = falsePositivePatterns.some(pattern => \n    lowerResponseText.includes(pattern)\n  );\n\n  const hasGoodbye = containsGoodbyePhrase(responseText, [...goodbyePhrasesRu, ...goodbyePhrasesEn]);\n\n  const hasStrongContinuation = strongContinuationIndicators.some(indicator => \n    lowerResponseText.includes(indicator)\n  );\n\n  const isLongMessage = responseText.length > 250;\n\n  const shouldCloseChat = hasGoodbye && \n                          !isFalsePositive && \n                          !hasStrongContinuation && \n                          !isLongMessage;\n  \n  if (shouldCloseChat) {\n    commands.minimizeChat = true;\n    commands.minimizeChatDelay = 5000;\n    \n    commands.minimizeChatReason = {\n      detectedPhrases: [\n        ...goodbyePhrasesRu.filter(p => containsGoodbyePhrase(responseText, [p])),\n        ...goodbyePhrasesEn.filter(p => containsGoodbyePhrase(responseText, [p]))\n      ],\n      textLength: responseText.length,\n      hasStrongContinuation: hasStrongContinuation,\n      isFalsePositive: false\n    };\n  }\n  \n  if (Object.keys(commands).length > 0) {\n    responseData.commands = commands;\n  }\n  \n} else {\n  responseData = {\n    responseType: 'text',\n    content: {\n      text: '🔧 <b>Техническая ошибка</b><br>Не удалось обработать ответ от AI. Попробуйте еще раз 📞'\n    },\n    success: false,\n    error: 'Unknown response format',\n    timestamp: new Date().toISOString()\n  };\n}\n\nreturn [{ json: responseData }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        160
+      ],
+      "id": "b1e75c94-3c53-484a-ba08-a80a5594e9c0",
+      "name": "Response Handler"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Улучшенный Web Chat Response Formatter с контрольной очисткой команд\n// Исправлено отображение эмодзи и списков + защита от команд\n\nconst input = $input.first();\nconsole.log('=== IMPROVED WEB CHAT FORMATTER + COMMAND CLEANUP ===');\n\nif (!input.json) {\n  return [input];\n}\n\nconst responseData = input.json;\nconsole.log('Response type:', responseData.responseType);\n\nif (responseData.responseType !== 'text' || !responseData.content?.text) {\n  console.log('Skipping non-text response or empty text');\n  return [input];\n}\n\nlet originalText = responseData.content.text;\nconsole.log('Original text length:', originalText.length);\nconsole.log('Original text preview:', originalText.substring(0, 100) + '...');\n\n// 🚨 КОНТРОЛЬНАЯ ОЧИСТКА КОМАНД (защита от проскока из основного ядра)\nconsole.log('=== КОНТРОЛЬНАЯ ПРОВЕРКА КОМАНД ===');\n\nlet commandsFound = false;\nlet cleanedText = originalText;\n\n// Паттерны команд (такие же как в Command Processor)\nconst commandPatterns = [\n  // Русские команды\n  { pattern: /[Оо]твечай голосом\\.\\s*/g, name: 'отвечай голосом' },\n  { pattern: /[Оо]твечай текстом\\.\\s*/g, name: 'отвечай текстом' },\n  \n  // Английские команды  \n  { pattern: /[Ss]witch to voice\\.\\s*/g, name: 'switch to voice' },\n  { pattern: /[Ss]witch to text\\.\\s*/g, name: 'switch to text' },\n  \n  // Дополнительные варианты (на случай если ИИ изменит формулировку)\n  { pattern: /[Оо]твет голосом\\.\\s*/g, name: 'ответ голосом' },\n  { pattern: /[Оо]твет текстом\\.\\s*/g, name: 'ответ текстом' },\n  { pattern: /[Пп]ереключись на голос\\.\\s*/g, name: 'переключись на голос' },\n  { pattern: /[Пп]ереключись на текст\\.\\s*/g, name: 'переключись на текст' },\n  \n  // Команды в середине/конце предложения\n  { pattern: /\\.\\s*[Оо]твечай голосом\\.\\s*/g, name: '. отвечай голосом' },\n  { pattern: /\\.\\s*[Оо]твечай текстом\\.\\s*/g, name: '. отвечай текстом' },\n  { pattern: /\\.\\s*[Ss]witch to voice\\.\\s*/g, name: '. switch to voice' },\n  { pattern: /\\.\\s*[Ss]witch to text\\.\\s*/g, name: '. switch to text' }\n];\n\n// Проверяем и удаляем каждую команду\ncommandPatterns.forEach(({ pattern, name }) => {\n  if (pattern.test(cleanedText)) {\n    console.log(`⚠️ НАЙДЕНА КОМАНДА в веб-ответе: \"${name}\"`);\n    cleanedText = cleanedText.replace(pattern, '');\n    commandsFound = true;\n  }\n});\n\nif (commandsFound) {\n  console.log('🔧 КОНТРОЛЬНАЯ ОЧИСТКА: Команды удалены из веб-ответа');\n  \n  // Очищаем лишние пробелы и точки после удаления команд\n  cleanedText = cleanedText\n    .replace(/\\.\\s*\\./g, '.')         // Убираем двойные точки\n    .replace(/\\s+/g, ' ')            // Множественные пробелы в одинарные\n    .replace(/^\\s+|\\s+$/g, '')       // Убираем пробелы по краям\n    .replace(/\\.\\s*$/, '.');         // Нормализуем точку в конце\n    \n  console.log('Текст после контрольной очистки:', cleanedText.substring(0, 100) + '...');\n} else {\n  console.log('✅ КОНТРОЛЬНАЯ ПРОВЕРКА: Команды не найдены');\n}\n\n// 🚨 ДОПОЛНИТЕЛЬНАЯ ОЧИСТКА ПЛЕЙСХОЛДЕРОВ (на случай если и они проскочили)\nconsole.log('=== КОНТРОЛЬНАЯ ПРОВЕРКА ПЛЕЙСХОЛДЕРОВ ===');\n\nconst placeholderPatterns = [\n  /\\[Имя\\],?\\s*/g,      // [Имя], [Имя] \n  /\\[Name\\],?\\s*/g,     // [Name], [Name]\n  /\\[имя\\],?\\s*/g,      // [имя], [имя]\n  /\\[name\\],?\\s*/g,     // [name], [name]\n  /\\[ИМЯ\\],?\\s*/g,      // [ИМЯ], [ИМЯ]\n  /\\[NAME\\],?\\s*/g      // [NAME], [NAME]\n];\n\nlet placeholdersFound = false;\nplaceholderPatterns.forEach((pattern, index) => {\n  if (pattern.test(cleanedText)) {\n    placeholdersFound = true;\n    console.log(`⚠️ НАЙДЕН ПЛЕЙСХОЛДЕР в веб-ответе: ${pattern.source}`);\n    cleanedText = cleanedText.replace(pattern, '');\n  }\n});\n\nif (placeholdersFound) {\n  console.log('🔧 КОНТРОЛЬНАЯ ОЧИСТКА: Плейсхолдеры удалены из веб-ответа');\n  \n  // Очищаем лишние пробелы после удаления плейсхолдеров\n  cleanedText = cleanedText\n    .replace(/,\\s*,/g, ',')           // Убираем двойные запятые\n    .replace(/^\\s*,\\s*/g, '')        // Убираем запятую в начале\n    .replace(/\\s+/g, ' ')            // Множественные пробелы в одинарные\n    .trim();                         // Убираем пробелы по краям\n} else {\n  console.log('✅ КОНТРОЛЬНАЯ ПРОВЕРКА: Плейсхолдеры не найдены');\n}\n\n// Теперь используем очищенный текст для форматирования\nconst textToFormat = cleanedText;\n\n// Улучшенная функция форматирования\nfunction formatForWebChat(text) {\n  let formatted = text;\n  \n  // 1. ЖИРНЫЙ И КУРСИВНЫЙ ТЕКСТ\n  formatted = formatted.replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>');\n  formatted = formatted.replace(/__(.*?)__/g, '<strong>$1</strong>');\n  formatted = formatted.replace(/\\*(.*?)\\*/g, '<em>$1</em>');\n  formatted = formatted.replace(/_(.*?)_/g, '<em>$1</em>');\n  \n  // 2. СПИСКИ С ЭМОДЗИ - УЛУЧШЕННОЕ ФОРМАТИРОВАНИЕ\n  // Чекбоксы ✅\n  formatted = formatted.replace(/✅\\s*(.*?)(?=\\n|$)/g, \n    '<div class=\"emoji-item\"><span class=\"emoji-icon feature-check\">✅</span><span class=\"emoji-text\">$1</span></div>');\n  \n  // Предупреждения ❗\n  formatted = formatted.replace(/❗\\s*(.*?)(?=\\n|$)/g, \n    '<div class=\"warning-block\"><span class=\"emoji-icon warning-icon\">❗</span><span>$1</span></div>');\n  \n  // Предупреждения ⚠️\n  formatted = formatted.replace(/⚠️\\s*(.*?)(?=\\n|$)/g, \n    '<div class=\"warning-block\"><span class=\"emoji-icon warning-icon\">⚠️</span><span>$1</span></div>');\n  \n  // Советы 💡\n  formatted = formatted.replace(/💡\\s*(.*?)(?=\\n|$)/g, \n    '<div class=\"tip-block\"><span class=\"emoji-icon tip-icon\">💡</span><span>$1</span></div>');\n  \n  // Обычные списки •\n  formatted = formatted.replace(/•\\s*(.*?)(?=\\n|$)/g, \n    '<div class=\"simple-item\"><span class=\"emoji-icon\">•</span><span class=\"emoji-text\">$1</span></div>');\n  \n  // 3. ТАРИФНЫЕ ПЛАНЫ\n  if (formatted.includes('Starter') || formatted.includes('Pro') || formatted.includes('Enterprise')) {\n    formatted = formatTariffPlans(formatted);\n  }\n  \n  // 4. ЦЕНЫ\n  formatted = formatted.replace(/\\$(\\d+)/g, '<span class=\"price\">$$$1</span>');\n  formatted = formatted.replace(/(\\d+)\\s*руб/g, '<span class=\"price\">$1 руб</span>');\n  \n  // 5. ПЕРЕНОСЫ СТРОК\n  // Сначала обрабатываем группы эмодзи\n  formatted = formatted.replace(/(<div class=\"emoji-item\">.*?<\\/div>)\\s*\\n/g, '$1');\n  \n  // Затем обычные переносы\n  formatted = formatted.replace(/\\n\\n/g, '</p><p>');\n  formatted = formatted.replace(/\\n/g, '<br>');\n  \n  // Оборачиваем в контейнеры\n  if (formatted.includes('emoji-item') || formatted.includes('simple-item')) {\n    // Группируем списки эмодзи\n    formatted = formatted.replace(/(<div class=\"emoji-item\">.*?<\\/div>)+/gs, \n      '<div class=\"emoji-list\">$&</div>');\n    formatted = formatted.replace(/(<div class=\"simple-item\">.*?<\\/div>)+/gs, \n      '<div class=\"simple-list\">$&</div>');\n  }\n  \n  // Финальная обертка в параграфы\n  if (!formatted.includes('<div') && !formatted.includes('<p>')) {\n    formatted = '<p>' + formatted + '</p>';\n  }\n  \n  return formatted;\n}\n\n// Функция для тарифных планов\nfunction formatTariffPlans(text) {\n  let formatted = text;\n  \n  // Заголовки тарифов\n  formatted = formatted.replace(/(Starter|Pro|Enterprise)\\s*[-–]\\s*(.*?)(?=\\n|$)/g, \n    '<div class=\"tariff-header\"><h3>$1</h3><div class=\"tariff-price\">$2</div></div>');\n  \n  // Группируем особенности тарифов\n  formatted = formatted.replace(/(<div class=\"tariff-header\">.*?<\\/div>)\\s*((?:<div class=\"emoji-item\">.*?<\\/div>\\s*)*)/gs, \n    '<div class=\"tariff-plan\">$1<div class=\"tariff-features\">$2</div></div>');\n  \n  return formatted;\n}\n\n// Применяем форматирование\nconst formattedText = formatForWebChat(textToFormat);\n\nconsole.log('=== FORMATTING RESULT ===');\nconsole.log('Original length:', originalText.length);\nconsole.log('After cleanup length:', textToFormat.length);\nconsole.log('Formatted length:', formattedText.length);\nconsole.log('Commands removed:', commandsFound);\nconsole.log('Placeholders removed:', placeholdersFound);\nconsole.log('Has emoji formatting:', formattedText.includes('emoji-item'));\n\n// Возвращаем результат\nconst formattedResponse = {\n  ...responseData,\n  content: {\n    ...responseData.content,\n    text: formattedText,\n    original_text: originalText,\n    formatting_applied: true,\n    format_type: 'improved_web_chat_html_with_command_cleanup'\n  },\n  // ВАЖНО: СОХРАНЯЕМ КОМАНДЫ!\n  commands: responseData.commands,\n  debug_formatting: {\n    original_length: originalText.length,\n    cleaned_length: textToFormat.length,\n    formatted_length: formattedText.length,\n    commands_found_and_removed: commandsFound,\n    placeholders_found_and_removed: placeholdersFound,\n    has_tariffs: originalText.includes('Starter') || originalText.includes('Pro'),\n    has_emojis: /[✅❗⚠️💡]/.test(originalText),\n    emoji_formatting: formattedText.includes('emoji-item'),\n    cleanup_applied: commandsFound || placeholdersFound,\n    formatting_time: new Date().toISOString()\n  }\n};\n\nif (commandsFound || placeholdersFound) {\n  console.log('🛡️ ЗАЩИТА СРАБОТАЛА: Команды/плейсхолдеры удалены перед отправкой пользователю');\n} else {\n  console.log('✅ ЗАЩИТА: Команды/плейсхолдеры не обнаружены');\n}\n\nconsole.log('✅ Improved formatting with command cleanup complete!');\n\nreturn [{\n  json: formattedResponse\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2112,
+        160
+      ],
+      "id": "f90f511b-dde2-4ae0-9348-237b042e7afc",
+      "name": "Web Chat Response Formatter"
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.responseType === 'voice' ? 1 : 0 }}"
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2304,
+        160
+      ],
+      "id": "282effd1-9937-49a7-a0db-3c3a784c9be3",
+      "name": "Response Type Switch"
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2496,
+        80
+      ],
+      "id": "75916209-9c83-495e-b978-57a7c2e5f530",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "respondWith": "binary",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "audio/ogg"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2496,
+        240
+      ],
+      "id": "b42639e1-1f99-4728-94a2-12b1ee248bee",
+      "name": "Respond Voice"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Error Handler для Web Chat Adapter\n// Обрабатывает ошибки и формирует пользовательские сообщения\n\nconst error = $input.first();\nconsole.log('=== WEB CHAT ERROR HANDLER ===');\nconsole.log('Error details:', error);\n\n// Формируем пользовательское сообщение об ошибке\nlet errorMessage = '';\nlet errorType = 'unknown';\n\nif (error.message) {\n  const errorText = error.message.toLowerCase();\n  \n  if (errorText.includes('timeout') || errorText.includes('network')) {\n    errorType = 'network';\n    errorMessage = `🌐 <b>Проблемы с сетью</b><br><br>\n                   Не удалось связаться с AI сервером.<br>\n                   Проверьте интернет-соединение и попробуйте еще раз.<br><br>\n                   <i>Или обратитесь к менеджеру 📞</i>`;\n  } else if (errorText.includes('rate limit') || errorText.includes('too many requests')) {\n    errorType = 'rate_limit';\n    errorMessage = `⏰ <b>Превышен лимит запросов</b><br><br>\n                   Слишком много сообщений за короткое время.<br>\n                   Подождите немного и попробуйте снова.<br><br>\n                   <i>Спасибо за понимание!</i>`;\n  } else if (errorText.includes('unauthorized') || errorText.includes('forbidden')) {\n    errorType = 'auth';\n    errorMessage = `🔐 <b>Ошибка авторизации</b><br><br>\n                   Проблема с доступом к AI сервису.<br>\n                   Обратитесь к администратору сайта.<br><br>\n                   <i>Или свяжитесь с менеджером 📞</i>`;\n  } else {\n    errorType = 'general';\n    errorMessage = `🔧 <b>Техническая ошибка</b><br><br>\n                   Временные проблемы с AI сервисом.<br>\n                   Попробуйте:<br>\n                   ✅ Перезагрузить страницу<br>\n                   ✅ Повторить запрос<br>\n                   ✅ Обратиться к менеджеру 📞<br><br>\n                   <i>Извините за неудобства!</i>`;\n  }\n} else {\n  errorType = 'unknown';\n  errorMessage = `❌ <b>Неизвестная ошибка</b><br><br>\n                 Что-то пошло не так.<br>\n                 Обратитесь к менеджеру для получения помощи 📞<br><br>\n                 <i>Спасибо за терпение!</i>`;\n}\n\nconst errorResponse = {\n  responseType: 'text',\n  content: {\n    text: errorMessage,\n    language: 'ru'\n  },\n  success: false,\n  error: {\n    type: errorType,\n    message: error.message || 'Unknown error',\n    timestamp: new Date().toISOString()\n  },\n  timestamp: new Date().toISOString()\n};\n\nconsole.log('=== ERROR RESPONSE ===');\nconsole.log('Error Type:', errorType);\nconsole.log('User Message Generated');\n\nreturn [{\n  json: errorResponse\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        320
+      ],
+      "id": "05251d9c-c392-458a-b514-14a6dc2329de",
+      "name": "Error Handler",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "39932c41-0c5c-4970-984c-371a708bb7a0",
+              "leftValue": "={{ $json.file_category }}",
+              "rightValue": "image",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            },
+            {
+              "id": "bdafae82-d23c-421c-b2ba-8b8a5d2d7fb0",
+              "leftValue": "={{ $json.file_category }}",
+              "rightValue": "document",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -320,
+        32
+      ],
+      "id": "9d8d73da-8d59-4bb5-a87b-cf0abf190784",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pass Through Text - передаем ТОЛЬКО текстовую часть без binary\nconst input = $input.first();\nconsole.log('=== PASS THROUGH TEXT ===');\n\nconst data = input.json;\n\n// Формируем \"чистый\" объект только с текстовыми данными\nconst textOnlyData = {\n  platform: data.platform,\n  message_text: data.message_text,\n  text: data.message_text, // дублируем для совместимости\n  original_text: data.message_text,\n  \n  user_id: data.user_id,\n  user_name: data.user_name,\n  chat_id: data.chat_id,\n  session_id: data.session_id,\n  \n  language: data.language,\n  detected_language: data.detected_language,\n  \n  messageType: data.messageType,\n  \n  content: data.content,\n  \n  // Передаем остальные метаданные\n  ip_address: data.ip_address,\n  user_agent: data.user_agent,\n  page_url: data.page_url,\n  referrer: data.referrer,\n  platformCapabilities: data.platformCapabilities,\n  timestamp: data.timestamp,\n  is_web_chat: data.is_web_chat,\n  \n  // Флаги для отслеживания\n  file_was_sent: data.has_file || false, // отмечаем что файл БЫЛ отправлен\n  file_name_original: data.file_name || null, // сохраняем имя файла\n  text_only_path: true, // маркер что это путь только для текста\n  \n  debug_info: {\n    ...data.debug_info,\n    path: 'text_only_without_file_processing'\n  }\n};\n\nconsole.log('✅ Текстовые данные подготовлены');\nconsole.log('📝 Текст:', textOnlyData.message_text);\nconsole.log('👤 User:', textOnlyData.user_id);\nconsole.log('🏷️ File was sent:', textOnlyData.file_was_sent);\n\n// ВАЖНО: возвращаем ТОЛЬКО json, БЕЗ binary!\nreturn [{\n  json: textOnlyData\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        240
+      ],
+      "id": "7f8c94d4-ec74-40e4-8b2e-0ea2a05e7475",
+      "name": "Pass Through Text"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1280,
+        208
+      ],
+      "id": "c854cbbb-ed96-4821-acae-44d76075b1d0",
+      "name": "Security Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1136,
+        208
+      ],
+      "id": "8cb9964d-923a-4ba6-9e37-7780648c1cba",
+      "name": "Auth Check"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -928,
+        320
+      ],
+      "id": "d705c336-6ab7-4ca3-a02b-d5f8ca7d589e",
+      "name": "Error Response"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Web Chat Webhook": {
+      "main": [
+        [
+          {
+            "node": "Security Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rate Limiter": {
+      "main": [
+        [
+          {
+            "node": "Web Chat Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Web Chat Processor": {
+      "main": [
+        [
+          {
+            "node": "Input Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Input Validator": {
+      "main": [
+        [
+          {
+            "node": "File Detector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "File Detector": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Pass Through Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "File Category Router": {
+      "main": [
+        [
+          {
+            "node": "Image Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Document Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Image Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Merge File Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Document Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Merge File Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge File Analysis": {
+      "main": [
+        [
+          {
+            "node": "File Paths Merger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "File Paths Merger": {
+      "main": [
+        [
+          {
+            "node": "Language Detection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Language Detection": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Convert Audio Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Text Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert Audio Data": {
+      "main": [
+        [
+          {
+            "node": "Transcribe Voice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe Voice": {
+      "main": [
+        [
+          {
+            "node": "Process Voice Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Voice Result": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Text Message": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Send to AI Core",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to AI Core": {
+      "main": [
+        [
+          {
+            "node": "Response Handler",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Handler": {
+      "main": [
+        [
+          {
+            "node": "Web Chat Response Formatter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Web Chat Response Formatter": {
+      "main": [
+        [
+          {
+            "node": "Response Type Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Type Switch": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Voice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "File Category Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Through Text": {
+      "main": [
+        [
+          {
+            "node": "File Paths Merger",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Security Check": {
+      "main": [
+        [
+          {
+            "node": "Auth Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check": {
+      "main": [
+        [
+          {
+            "node": "Rate Limiter",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "dc40c2a5-0e06-43c9-87c2-443598fb2fa8",
+  "meta": {
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "BpJXt7h1Zw08nMUT",
+  "tags": []
+}

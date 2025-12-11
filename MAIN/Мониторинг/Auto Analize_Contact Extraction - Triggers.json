@@ -1,0 +1,630 @@
+{
+  "name": "Auto Analize/Contact Extraction - Triggers",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 2
+            }
+          ]
+        }
+      },
+      "id": "345e5902-3bd0-456e-b218-b33cd1800ed3",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -752,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM auto_analysis_settings LIMIT 1",
+        "options": {}
+      },
+      "id": "2a90512f-2bce-4b51-841e-521c4c8316ec",
+      "name": "Get Settings",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -560,
+        -32
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.enabled }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              },
+              "id": "2194f764-2851-425e-a6fa-45d344a1566a"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "dfeb3e61-81bc-4c3a-81db-437e800ea502",
+      "name": "Check if Enabled",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -368,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH latest_sessions AS (\n    SELECT DISTINCT ON (wm.session_id) \n        wm.session_id,\n        wm.user_name,\n        wm.platform,\n        wm.last_activity_time,\n        wm.message_count,\n        wm.timestamp\n    FROM webchat_monitoring wm\n    ORDER BY wm.session_id, wm.timestamp DESC\n),\nanalyzed_sessions AS (\n    SELECT DISTINCT session_id, MAX(created_at) as last_analysis_date\n    FROM dialog_analysis\n    WHERE analysis_type = 'single'\n    GROUP BY session_id\n),\nlast_messages AS (\n    SELECT \n        session_id,\n        MAX(created_at) as last_message_time,\n        COUNT(*) as message_count\n    FROM (\n        SELECT session_id, created_at FROM n8n_chat_histories_ru\n        UNION ALL\n        SELECT session_id, created_at FROM n8n_chat_histories_en\n    ) all_messages\n    GROUP BY session_id\n)\nSELECT \n    ls.session_id,\n    ls.user_name,\n    ls.platform,\n    COALESCE(lm.last_message_time, ls.last_activity_time::timestamp) as last_activity,\n    COALESCE(lm.message_count, 0) as message_count,\n    an.last_analysis_date,\n    EXTRACT(EPOCH FROM (NOW() - COALESCE(lm.last_message_time, ls.last_activity_time::timestamp)))/60 as minutes_inactive\nFROM latest_sessions ls\nLEFT JOIN analyzed_sessions an ON ls.session_id = an.session_id\nLEFT JOIN last_messages lm ON ls.session_id = lm.session_id\nWHERE \n    COALESCE(lm.last_message_time, ls.last_activity_time::timestamp) < NOW() - INTERVAL '{{ $node[\"Get Settings\"].json.delay_minutes }} minutes'\n    AND (\n        an.last_analysis_date IS NULL \n        OR COALESCE(lm.last_message_time, ls.last_activity_time::timestamp) > an.last_analysis_date\n    )\n    AND COALESCE(lm.message_count, 0) > 0\nORDER BY COALESCE(lm.last_message_time, ls.last_activity_time::timestamp) DESC\nLIMIT 10;",
+        "options": {}
+      },
+      "id": "a37ca9e0-0423-41fe-8c5f-e8349c127713",
+      "name": "Get Inactive Sessions",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -160,
+        -240
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "50fc51cb-05c6-43e7-9038-f8d075a0d13d",
+      "name": "Loop Over Sessions",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        192,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/analyze-dialog",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "apiKey",
+              "value": "24fs-$r4d-defd-77ds-7eds"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"type\": \"single\",\n  \"sessionId\": \"{{ $json.session_id }}\",\n  \"userName\": \"{{ $json.user_name }}\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "id": "fa6e8e16-96c0-46e9-9bd5-0a6cf60472f9",
+      "name": "Analyze Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        464,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "id": "78fff067-acf2-4787-af14-1dcbda0acbb3",
+      "name": "Wait 3 seconds",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        800,
+        -32
+      ],
+      "webhookId": "9a549a58-1a4c-4ed3-9488-e68cecde56f7"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE auto_analysis_settings \nSET last_check = NOW() \nWHERE id = 1\nRETURNING *;",
+        "options": {}
+      },
+      "id": "a837adb1-6b8a-45bc-b44b-d66f014571e0",
+      "name": "Update Last Check",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        384,
+        -16
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const sessions = $input.all();\n\nconsole.log(`Автоанализ: найдено ${sessions.length} неактивных сессий для анализа`);\n\nif (sessions.length === 0) {\n    return [{\n        json: {\n            message: \"Нет сессий для анализа\",\n            timestamp: new Date().toISOString()\n        }\n    }];\n}\n\nreturn sessions;"
+      },
+      "id": "68f2155b-8cac-4d22-8bee-61ed5b7659a6",
+      "name": "Log Sessions Count",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = items[0].json;\n\nconsole.log(`Анализ сессии ${$node[\"Loop Over Sessions\"].json.session_id} завершен`);\nconsole.log('Результат:', result);\n\nreturn items;"
+      },
+      "id": "11f66bdb-fa1f-498b-b10f-6adbd8a4bf26",
+      "name": "Log Analysis Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        656,
+        -288
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.cryptomator.pro/webhook/extract-contact-data",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "apiKey",
+              "value": "24fs-$r4d-defd-77ds-7eds"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"type\": \"batch\"}",
+        "options": {
+          "redirect": {
+            "redirect": {}
+          },
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 300000
+        }
+      },
+      "id": "49304b2d-3426-49c9-a0dd-4e32a46b9579",
+      "name": "Trigger Batch Extraction",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -96,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Логируем результат выполнения\nconst response = items[0].json;\n\nconsole.log('=== Auto Contact Extraction Log ===');\nconsole.log('Timestamp:', new Date().toISOString());\nconsole.log('Status:', response.status || 'unknown');\nconsole.log('Message:', response.message || 'No message');\n\nif (response.processed) {\n  console.log('Processed records:', response.processed);\n}\nif (response.successful) {\n  console.log('Successful:', response.successful);\n}\nif (response.failed) {\n  console.log('Failed:', response.failed);\n}\nif (response.error) {\n  console.log('Error:', response.error);\n}\n\nconsole.log('================================');\n\nreturn [{\n  json: {\n    ...response,\n    loggedAt: new Date().toISOString(),\n    executionStatus: response.status === 'success' || response.status === 'completed' ? 'success' : 'warning'\n  }\n}];"
+      },
+      "id": "e2f4e3ea-9578-4527-b284-ae45360c8c99",
+      "name": "Log Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE auto_contact_extraction_settings \nSET last_check = NOW() \nWHERE id = 1;",
+        "options": {}
+      },
+      "id": "6631f60a-c009-4153-86a2-e954cb3010b5",
+      "name": "Update Last Check (Disabled)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -96,
+        576
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Логируем что автоизвлечение отключено\nconsole.log('=== Auto Contact Extraction DISABLED ===');\nconsole.log('Timestamp:', new Date().toISOString());\nconsole.log('Автоматическое извлечение контактов отключено в настройках');\nconsole.log('========================================');\n\nreturn [{\n  json: {\n    status: 'skipped',\n    message: 'Auto contact extraction is disabled',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "45620414-978c-412c-b227-b150f2356ec2",
+      "name": "Log Disabled",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        112,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 2
+            }
+          ]
+        }
+      },
+      "id": "756dd467-4f1f-4a1b-a812-091fee9d5719",
+      "name": "Schedule Trigger2",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -736,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM auto_contact_extraction_settings LIMIT 1",
+        "options": {}
+      },
+      "id": "f11b298b-530b-4fc3-9ed7-bec3ae45f1e2",
+      "name": "Get Settings1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -544,
+        416
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.enabled }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              },
+              "id": "enabled-check"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "953bf61e-7ac8-4e57-88bc-504666962a72",
+      "name": "Check if Enabled1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -352,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Обрабатываем ответ от webhook\ntry {\n  let response;\n  const rawData = items[0].json;\n  \n  if (typeof rawData === 'string') {\n    try {\n      response = JSON.parse(rawData);\n    } catch (e) {\n      response = { \n        status: 'completed', \n        message: rawData,\n        timestamp: new Date().toISOString()\n      };\n    }\n  } else if (rawData.data && typeof rawData.data === 'string') {\n    try {\n      response = JSON.parse(rawData.data);\n    } catch (e) {\n      response = { \n        status: 'completed', \n        message: rawData.data,\n        timestamp: new Date().toISOString()\n      };\n    }\n  } else {\n    response = rawData;\n  }\n  \n  response.executedAt = new Date().toISOString();\n  response.workflowExecution = 'completed';\n  \n  console.log('Batch extraction completed:', response);\n  \n  return [{json: response}];\n  \n} catch (error) {\n  console.error('Error processing response:', error);\n  \n  return [{json: {\n    status: 'completed_with_errors',\n    message: 'Batch extraction triggered but response parsing failed',\n    error: error.message,\n    rawResponse: JSON.stringify(items[0].json),\n    timestamp: new Date().toISOString(),\n    workflowExecution: 'completed'\n  }}];\n}"
+      },
+      "id": "66412d99-2ced-43a2-beb9-fb10329494d5",
+      "name": "Process Response1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        112,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE auto_contact_extraction_settings \nSET last_check = NOW() \nWHERE id = 1\nRETURNING *;",
+        "options": {}
+      },
+      "id": "5c2eadaa-e3ef-4e35-b7ce-81a2f73b5b56",
+      "name": "Update Last Check1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        528,
+        256
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Settings": {
+      "main": [
+        [
+          {
+            "node": "Check if Enabled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Enabled": {
+      "main": [
+        [
+          {
+            "node": "Get Inactive Sessions",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Last Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Inactive Sessions": {
+      "main": [
+        [
+          {
+            "node": "Log Sessions Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Sessions Count": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Sessions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Sessions": {
+      "main": [
+        [
+          {
+            "node": "Update Last Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Analyze Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Session": {
+      "main": [
+        [
+          {
+            "node": "Log Analysis Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Analysis Result": {
+      "main": [
+        [
+          {
+            "node": "Wait 3 seconds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 3 seconds": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Sessions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Batch Extraction": {
+      "main": [
+        [
+          {
+            "node": "Process Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Result": {
+      "main": [
+        [
+          {
+            "node": "Update Last Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Last Check (Disabled)": {
+      "main": [
+        [
+          {
+            "node": "Log Disabled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger2": {
+      "main": [
+        [
+          {
+            "node": "Get Settings1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Settings1": {
+      "main": [
+        [
+          {
+            "node": "Check if Enabled1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Enabled1": {
+      "main": [
+        [
+          {
+            "node": "Trigger Batch Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Last Check (Disabled)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Response1": {
+      "main": [
+        [
+          {
+            "node": "Log Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "c4502d8b-98cc-4e5c-a14f-22c3d18ea076",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "21IHMogxMUdBsLyn",
+  "tags": []
+}

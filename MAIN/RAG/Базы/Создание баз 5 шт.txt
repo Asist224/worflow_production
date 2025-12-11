@@ -1,0 +1,280 @@
+-- =====================================================
+-- ПОЛНЫЙ SQL ДЛЯ СОЗДАНИЯ 5 ВЕКТОРНЫХ БАЗ С НУЛЯ
+-- =====================================================
+
+-- 1. ВКЛЮЧАЕМ РАСШИРЕНИЕ ДЛЯ ВЕКТОРОВ
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- 2. СОЗДАНИЕ ТАБЛИЦ
+
+-- База знаний о продукте
+CREATE TABLE knowledge_base (
+  id BIGSERIAL PRIMARY KEY,
+  content TEXT NOT NULL,
+  metadata JSONB DEFAULT '{}',
+  embedding vector(768),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Техники продаж и работа с возражениями
+CREATE TABLE sales_strategies (
+  id BIGSERIAL PRIMARY KEY,
+  content TEXT NOT NULL,
+  metadata JSONB DEFAULT '{}',
+  embedding vector(768),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Стратегии захвата контактов
+CREATE TABLE contact_capture (
+  id BIGSERIAL PRIMARY KEY,
+  content TEXT NOT NULL,
+  metadata JSONB DEFAULT '{}',
+  embedding vector(768),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Сценарии диалогов
+CREATE TABLE conversation_scenarios (
+  id BIGSERIAL PRIMARY KEY,
+  content TEXT NOT NULL,
+  metadata JSONB DEFAULT '{}',
+  embedding vector(768),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Адаптивный стиль общения
+CREATE TABLE communication_style (
+  id BIGSERIAL PRIMARY KEY,
+  content TEXT NOT NULL,
+  metadata JSONB DEFAULT '{}',
+  embedding vector(768),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Эталонная база правил взаимодействия с клиентами
+CREATE TABLE interaction_policies (
+  id BIGSERIAL PRIMARY KEY,
+  content TEXT NOT NULL,
+  metadata JSONB DEFAULT '{}',
+  embedding vector(768),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- 3. СОЗДАНИЕ ИНДЕКСОВ ДЛЯ ВЕКТОРНОГО ПОИСКА
+
+CREATE INDEX ON knowledge_base USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX ON sales_strategies USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX ON contact_capture USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX ON conversation_scenarios USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX ON communication_style USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX ON interaction_policies USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+
+-- СОЗДАЕМ С ТРЕМЯ ПАРАМЕТРАМИ В ТОМ ЖЕ ПОРЯДКЕ, ЧТО ОЖИДАЕТ N8N
+
+CREATE OR REPLACE FUNCTION public.match_knowledge_base(
+  filter jsonb,
+  match_count int, 
+  query_embedding vector(768)
+)
+RETURNS TABLE (
+  id bigint,
+  content text,
+  metadata jsonb,
+  similarity float
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    kb.id,
+    kb.content,
+    kb.metadata,
+    1 - (kb.embedding <=> query_embedding) as similarity
+  FROM knowledge_base kb
+  ORDER BY kb.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.match_interaction_policies(
+  filter jsonb,
+  match_count int,
+  query_embedding vector(768)
+)
+RETURNS TABLE (
+  id bigint,
+  content text,
+  metadata jsonb,
+  similarity float
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    ip.id,
+    ip.content,
+    ip.metadata,
+    1 - (ip.embedding <=> query_embedding) as similarity
+  FROM interaction_policies ip
+  ORDER BY ip.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.match_sales_strategies(
+  filter jsonb,
+  match_count int,
+  query_embedding vector(768)
+)
+RETURNS TABLE (
+  id bigint,
+  content text,
+  metadata jsonb,
+  similarity float
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    ss.id,
+    ss.content,
+    ss.metadata,
+    1 - (ss.embedding <=> query_embedding) as similarity
+  FROM sales_strategies ss
+  ORDER BY ss.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.match_contact_capture(
+  filter jsonb,
+  match_count int,
+  query_embedding vector(768)
+)
+RETURNS TABLE (
+  id bigint,
+  content text,
+  metadata jsonb,
+  similarity float
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    cc.id,
+    cc.content,
+    cc.metadata,
+    1 - (cc.embedding <=> query_embedding) as similarity
+  FROM contact_capture cc
+  ORDER BY cc.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.match_conversation_scenarios(
+  filter jsonb,
+  match_count int,
+  query_embedding vector(768)
+)
+RETURNS TABLE (
+  id bigint,
+  content text,
+  metadata jsonb,
+  similarity float
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    cs.id,
+    cs.content,
+    cs.metadata,
+    1 - (cs.embedding <=> query_embedding) as similarity
+  FROM conversation_scenarios cs
+  ORDER BY cs.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.match_communication_style(
+  filter jsonb,
+  match_count int,
+  query_embedding vector(768)
+)
+RETURNS TABLE (
+  id bigint,
+  content text,
+  metadata jsonb,
+  similarity float
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    cs.id,
+    cs.content,
+    cs.metadata,
+    1 - (cs.embedding <=> query_embedding) as similarity
+  FROM communication_style cs
+  ORDER BY cs.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.match_conversation_analytics(
+  filter jsonb,
+  match_count int,
+  query_embedding vector(768)
+)
+RETURNS TABLE (
+  id bigint,
+  content text,
+  metadata jsonb,
+  similarity float
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    ca.id,
+    ca.content,
+    ca.metadata,
+    1 - (ca.embedding <=> query_embedding) as similarity
+  FROM conversation_analytics ca
+  ORDER BY ca.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;
+
+-- ПРОВЕРКА
+SELECT routine_name, 
+       pg_get_function_arguments(p.oid) as arguments
+FROM information_schema.routines r
+JOIN pg_proc p ON p.proname = r.routine_name
+WHERE r.routine_schema = 'public' 
+AND r.routine_name IN ('match_knowledge_base', 'match_interaction_policies');
+
+
+
+
+
+Проблема была в двух вещах:
+
+Неправильная сигнатура функций (порядок и типы параметров)
+Отсутствие префикса match_
+
+
+Правильное решение требовало:
+
+Префикс match_ в имени функции
+Точную сигнатуру: (filter jsonb, match_count integer, query_embedding vector)
+Правильное указание в Query Name узла n8n

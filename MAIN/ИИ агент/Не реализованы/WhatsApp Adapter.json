@@ -1,0 +1,634 @@
+{
+  "name": "WhatsApp Adapter",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-webhook",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -592,
+        368
+      ],
+      "id": "8de81b68-02ec-4a7c-adbe-d8a9f663cf7e",
+      "name": "WhatsApp Trigger",
+      "webhookId": "whatsapp-webhook-receiver"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse WhatsApp webhook data\nconst body = items[0].json.body;\nlet parsedData;\n\ntry {\n  parsedData = typeof body === 'string' ? JSON.parse(body) : body;\n} catch (error) {\n  console.error('Failed to parse webhook data:', error);\n  return [{json: {error: 'Invalid webhook data'}}];\n}\n\n// Extract message data from WhatsApp webhook\nconst entry = parsedData.entry?.[0];\nconst changes = entry?.changes?.[0];\nconst value = changes?.value;\nconst messages = value?.messages?.[0];\nconst contacts = value?.contacts?.[0];\n\nif (!messages) {\n  console.log('No message data found');\n  return [{json: {skip: true}}];\n}\n\n// Format WhatsApp data to common structure\nconst formattedData = {\n  message: {\n    id: messages.id,\n    from: {\n      id: messages.from,\n      name: contacts?.profile?.name || 'WhatsApp User',\n      phone: messages.from\n    },\n    chat: {\n      id: messages.from,\n      type: 'private'\n    },\n    text: messages.text?.body || '',\n    type: messages.type,\n    timestamp: messages.timestamp\n  },\n  platform: 'whatsapp',\n  raw: parsedData\n};\n\n// Handle different message types\nif (messages.type === 'audio') {\n  formattedData.message.voice = {\n    file_id: messages.audio?.id,\n    mime_type: messages.audio?.mime_type\n  };\n} else if (messages.type === 'image') {\n  formattedData.message.photo = {\n    file_id: messages.image?.id,\n    caption: messages.image?.caption\n  };\n}\n\nreturn [{json: formattedData}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -416,
+        400
+      ],
+      "id": "16889ca4-9e20-41b6-bfc0-b69db7e30853",
+      "name": "Parse WhatsApp Data"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message.voice }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "exists",
+                      "singleValue": true
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "Voice"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "exists",
+                      "singleValue": true
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "Text"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.skip }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equal"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "Skip"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -208,
+        384
+      ],
+      "id": "49c631d0-875f-4c37-adbc-eddeef35bae5",
+      "name": "Message Type Switch"
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.WHATSAPP_API_URL }}/{{ $json.message.voice.file_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.WHATSAPP_ACCESS_TOKEN }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -48,
+        272
+      ],
+      "id": "5c856d74-6f05-4588-ad06-5ea80d4b334d",
+      "name": "Download Voice File"
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.6,
+      "position": [
+        112,
+        272
+      ],
+      "id": "4dbd700f-aaf1-4c51-91d2-63c3dde3bbb1",
+      "name": "Transcribe Voice",
+      "credentials": {
+        "openAiApi": {
+          "id": "vp6LDk9EYrV3plgd",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Unified Language Detection for WhatsApp\nconst input = $input.all();\nlet messageText = '';\nlet phoneNumber = '';\n\nconsole.log('=== WHATSAPP LANGUAGE DETECTION ===');\n\nif (input && input.length > 0) {\n  const item = input[0].json;\n  \n  if (item.message) {\n    messageText = item.message.text || '';\n    phoneNumber = item.message.from?.phone || item.message.from?.id || '';\n  }\n  \n  // For transcribed voice\n  if (item.text && !messageText) {\n    messageText = item.text;\n  }\n}\n\n// Language detection function\nfunction detectLanguageFromText(text) {\n  if (!text || typeof text !== 'string' || text.length < 2) {\n    return 'en';\n  }\n  \n  const lowerText = text.toLowerCase().trim();\n  let scores = { 'en': 0, 'ru': 0 };\n  \n  // Check for Russian characters\n  const russianChars = /[а-яё]/g;\n  const russianMatches = lowerText.match(russianChars);\n  if (russianMatches) {\n    scores.ru += russianMatches.length * 3;\n  }\n  \n  // Check for English-only characters\n  const onlyLatin = /^[a-z\\s\\.,!?'\"]+$/;\n  if (onlyLatin.test(lowerText)) {\n    scores.en += 5;\n  }\n  \n  // Common Russian words\n  const commonRussianWords = [\n    'привет', 'пока', 'да', 'нет', 'хорошо', 'плохо', 'спасибо', 'пожалуйста',\n    'что', 'где', 'когда', 'как', 'почему', 'зачем', 'кто', 'который',\n    'это', 'то', 'я', 'ты', 'он', 'она', 'мы', 'вы', 'они',\n    'мой', 'твой', 'его', 'её', 'наш', 'ваш', 'их'\n  ];\n  \n  // Common English words  \n  const commonEnglishWords = [\n    'hello', 'hi', 'hey', 'yes', 'no', 'ok', 'okay', 'thanks', 'thank', 'you', 'please',\n    'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',\n    'this', 'that', 'these', 'those', 'my', 'your', 'his', 'her', 'our', 'their',\n    'i', 'me', 'we', 'us', 'he', 'she', 'it', 'they', 'them'\n  ];\n  \n  const words = lowerText.split(/\\s+/);\n  words.forEach(word => {\n    const cleanWord = word.replace(/[.,!?'\"]/g, '');\n    if (commonEnglishWords.includes(cleanWord)) scores.en += 10;\n    if (commonRussianWords.includes(cleanWord)) scores.ru += 10;\n  });\n  \n  return scores.ru > scores.en ? 'ru' : 'en';\n}\n\n// Check if it's a start command\nconst isStartCommand = messageText.toLowerCase().trim() === '/start' || \n                      messageText.toLowerCase().trim() === 'start' ||\n                      messageText.toLowerCase().trim() === 'начать' ||\n                      messageText.toLowerCase().trim() === 'привет';\n\nconst detectedLanguage = detectLanguageFromText(messageText);\n\nconsole.log('Original text:', messageText);\nconsole.log('Detected language:', detectedLanguage);\nconsole.log('Is start command:', isStartCommand);\n\n// Extract contact info from WhatsApp\nfunction extractWhatsAppContact(phoneNumber) {\n  return {\n    session_id: `whatsapp_${phoneNumber}`,\n    platform: 'whatsapp',\n    platform_user_id: phoneNumber,\n    phone: phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`,\n    extracted_from: 'whatsapp_profile',\n    confidence_score: 70\n  };\n}\n\nconst contactData = extractWhatsAppContact(phoneNumber);\n\nreturn input.map(item => ({\n  json: {\n    ...item.json,\n    detected_language: detectedLanguage,\n    original_text: messageText,\n    text: messageText,\n    needs_language_selection: isStartCommand && detectedLanguage === 'en',\n    contact_data: contactData,\n    session_id: `whatsapp_${phoneNumber}`,\n    detection_timestamp: new Date().toISOString()\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        304,
+        416
+      ],
+      "id": "9c7bda9f-7731-4778-a628-2ab1bf76564b",
+      "name": "Language Detection"
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 3,
+        "output": "={{ $json.needs_language_selection ? 2 : ($json.detected_language === 'ru' ? 0 : 1) }}"
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        496,
+        416
+      ],
+      "id": "ea97c110-3dfa-4352-a3eb-625319301736",
+      "name": "Language Router"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.cryptomator.pro/webhook/ai-core-api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"platform\": \"whatsapp\",\n  \"message_text\": \"{{ $json.text || 'test message' }}\",\n  \"user_id\": \"{{ $json.message.from.id || $json.message.from.phone || 'unknown' }}\",\n  \"user_name\": \"{{ $json.message.from.name || 'WhatsApp User' }}\",\n  \"chat_id\": \"{{ $json.session_id || $json.message.chat.id }}\",\n  \"language\": \"{{ $json.detected_language || 'en' }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        384
+      ],
+      "id": "f36dc7bd-ce61-49f9-b6d0-f7e073413dca",
+      "name": "Send to AI Core"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Response Handler for WhatsApp\nconst input = $input.all();\nconsole.log('=== WHATSAPP RESPONSE HANDLER ===');\n\nif (!input || input.length === 0) {\n  throw new Error('No response from AI Core');\n}\n\nconst coreResponse = input[0];\nconst languageData = $('Language Detection').item.json;\nconst phoneNumber = languageData.message?.from?.phone || languageData.message?.from?.id || '';\n\nlet responseData = {};\n\n// Check if voice response\nif (coreResponse.binary && coreResponse.binary.data) {\n  console.log('=== VOICE RESPONSE DETECTED ===');\n  responseData = {\n    json: {\n      phone_number: phoneNumber,\n      is_voice: true,\n      file_name: coreResponse.json?.fileName || 'voice_response.oga',\n      mime_type: coreResponse.json?.mimeType || 'audio/ogg'\n    },\n    binary: {\n      data: coreResponse.binary.data\n    }\n  };\n} else if (coreResponse.json) {\n  console.log('=== TEXT RESPONSE DETECTED ===');\n  \n  let responseText = coreResponse.json.response_text || \n                     coreResponse.json.response || \n                     coreResponse.json.text || \n                     'Error: No response';\n  \n  // Clean up any system messages\n  responseText = responseText\n    .replace(/This message was sent automatically.*$/gm, '')\n    .replace(/\\[Name\\],?\\s*/g, '')\n    .replace(/\\[Имя\\],?\\s*/g, '')\n    .trim();\n  \n  responseData = {\n    json: {\n      phone_number: phoneNumber,\n      response_text: responseText,\n      is_voice: false\n    }\n  };\n}\n\nreturn [responseData];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        912,
+        384
+      ],
+      "id": "8b085286-0ca1-4e25-8dc2-695d604e0deb",
+      "name": "Response Handler"
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.is_voice ? 1 : 0 }}"
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1104,
+        384
+      ],
+      "id": "70ad79f1-b3d8-4674-8010-73b9466476b3",
+      "name": "Response Type Switch"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WHATSAPP_API_URL }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.WHATSAPP_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.phone_number }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{ $json.response_text }}\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        208
+      ],
+      "id": "ee32ead5-3235-432b-8099-136e2bae3f6a",
+      "name": "Send Text Message"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WHATSAPP_API_URL }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.WHATSAPP_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        528
+      ],
+      "id": "8cdfe90c-3639-4ce9-954a-78635914a931",
+      "name": "Send Voice Message"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Language Selector for WhatsApp\nconst input = $input.all();\nconst phoneNumber = input[0].json.message?.from?.phone || '';\n\nconsole.log('=== WHATSAPP LANGUAGE SELECTOR ===');\n\n// Format language selection message\nconst bilingualMessage = `🌐 Welcome! / Добро пожаловать!\n\nPlease choose your language:\nПожалуйста, выберите ваш язык:\n\n1️⃣ English\n2️⃣ Русский\n\nReply with 1 or 2`;\n\nreturn [{\n  json: {\n    phone_number: phoneNumber,\n    response_text: bilingualMessage,\n    is_language_selection: true\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        560
+      ],
+      "id": "8731b99c-a8ae-4cb2-81af-d9c555e4245f",
+      "name": "Language Selector"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract WhatsApp Contact for Profile Save\nconst data = $('Language Detection').item.json;\n\nconsole.log('=== WHATSAPP PROFILE EXTRACTION ===');\n\nconst contactData = data.contact_data;\n\n// Check if we have contact data to save\nif (!contactData || !contactData.platform_user_id) {\n  console.log('No contact data to save');\n  return [];\n}\n\n// Return contact data for saving\nreturn [{json: contactData}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        160
+      ],
+      "id": "2f9ae893-807d-4dc3-9b53-c37f05fdb5b1",
+      "name": "Extract WhatsApp Profile"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Save WhatsApp Profile Contact\nINSERT INTO user_contact_data (\n    session_id,\n    platform,\n    platform_user_id,\n    phone,\n    extracted_from,\n    confidence_score,\n    last_updated\n) VALUES (\n    '{{ $json.session_id }}',\n    '{{ $json.platform }}',\n    '{{ $json.platform_user_id }}',\n    '{{ $json.phone }}',\n    '{{ $json.extracted_from }}',\n    {{ $json.confidence_score }},\n    CURRENT_TIMESTAMP\n)\nON CONFLICT (session_id)\nDO UPDATE SET\n    platform = EXCLUDED.platform,\n    platform_user_id = COALESCE(EXCLUDED.platform_user_id, user_contact_data.platform_user_id),\n    phone = COALESCE(EXCLUDED.phone, user_contact_data.phone),\n    last_updated = CURRENT_TIMESTAMP\nWHERE user_contact_data.confidence_score <= 70\nRETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        704,
+        160
+      ],
+      "id": "65655513-8088-4529-b7ba-ffd5f7ed4d71",
+      "name": "Save WhatsApp Profile",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare monitoring data for WhatsApp\nconst whatsappData = items[0].json;\n\nconst from = whatsappData.message?.from || {};\nconst chat = whatsappData.message?.chat || {};\n\nconst monitoringData = {\n  sessionId: `whatsapp_${from.phone || from.id || 'unknown'}`,\n  userId: from.id || from.phone || 'unknown',\n  userName: from.name || 'WhatsApp User',\n  configName: 'defaultConfig',\n  platform: 'whatsapp',\n  sessionDuration: 0,\n  eventType: 'message',\n  messageCount: 1,\n  messageType: whatsappData.message?.type || 'text',\n  currentLanguage: 'en',\n  isMinimized: false,\n  userAgent: 'WhatsApp Business API',\n  screenResolution: '',\n  language: 'unknown',\n  timezone: '',\n  referrer: '',\n  currentUrl: '',\n  domain: 'whatsapp.com',\n  geo: {\n    ip: 'WhatsApp',\n    country: 'Unknown',\n    city: 'Unknown',\n    region: 'Unknown',\n    latitude: null,\n    longitude: null\n  }\n};\n\nreturn [{json: monitoringData}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        48
+      ],
+      "id": "83cf4638-382e-4e84-b360-18d586bf3bbf",
+      "name": "Monitoring Data"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.cryptomator.pro/webhook/chat-monitoring",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -240,
+        48
+      ],
+      "id": "7d15b7e1-25d1-4656-a621-3400c33f85c3",
+      "name": "Send Monitoring"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1472,
+        432
+      ],
+      "id": "ae94e9e7-f34a-4cf0-a3ec-474f2b36bfba",
+      "name": "Webhook Response"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse WhatsApp Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse WhatsApp Data": {
+      "main": [
+        [
+          {
+            "node": "Message Type Switch",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Monitoring Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message Type Switch": {
+      "main": [
+        [
+          {
+            "node": "Download Voice File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Language Detection",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Voice File": {
+      "main": [
+        [
+          {
+            "node": "Transcribe Voice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe Voice": {
+      "main": [
+        [
+          {
+            "node": "Language Detection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Language Detection": {
+      "main": [
+        [
+          {
+            "node": "Language Router",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract WhatsApp Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Language Router": {
+      "main": [
+        [
+          {
+            "node": "Send to AI Core",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send to AI Core",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Language Selector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to AI Core": {
+      "main": [
+        [
+          {
+            "node": "Response Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Handler": {
+      "main": [
+        [
+          {
+            "node": "Response Type Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Type Switch": {
+      "main": [
+        [
+          {
+            "node": "Send Text Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Voice Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Text Message": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Voice Message": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Language Selector": {
+      "main": [
+        [
+          {
+            "node": "Send Text Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract WhatsApp Profile": {
+      "main": [
+        [
+          {
+            "node": "Save WhatsApp Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monitoring Data": {
+      "main": [
+        [
+          {
+            "node": "Send Monitoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "96238939-e860-4e43-b0b2-83c0ff8ea533",
+  "meta": {
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "CIbTrngjGKndQN2Y",
+  "tags": []
+}

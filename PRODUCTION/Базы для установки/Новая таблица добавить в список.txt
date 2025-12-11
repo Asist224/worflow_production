@@ -1,0 +1,13 @@
+-- Создать упрощённую таблицу
+CREATE TABLE auto_contact_extraction_settings (
+    id SERIAL PRIMARY KEY,
+    enabled BOOLEAN DEFAULT false,
+    last_check TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Вставить начальные настройки
+INSERT INTO auto_contact_extraction_settings (id, enabled)
+VALUES (1, false)
+ON CONFLICT (id) DO NOTHING;

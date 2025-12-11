@@ -1,0 +1,514 @@
+{
+  "name": "Dialog Analysis Storage",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "save-analysis",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "53d19005-e51a-4faa-8746-c2dcba4cea8e",
+      "name": "Save Analysis Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        -256
+      ],
+      "webhookId": "save-analysis-webhook"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\"status\": \"success\", \"message\": \"Analysis saved\"} }}",
+        "options": {}
+      },
+      "id": "0a5e890f-9c70-4b07-bbc3-f16b71e667b8",
+      "name": "Respond Save Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        432,
+        -256
+      ]
+    },
+    {
+      "parameters": {
+        "path": "get-analysis",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "486d1a70-5710-48cf-80f1-b3717f4247eb",
+      "name": "Get Analysis Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -192,
+        16
+      ],
+      "webhookId": "get-analysis-webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM dialog_analysis WHERE session_id = '{{ $json.query.session_id }}' AND analysis_type = '{{ $json.query.type || 'single' }}' ORDER BY created_at DESC LIMIT 1",
+        "options": {}
+      },
+      "id": "f550322d-cdbe-43d5-a9da-6b6967af8b8d",
+      "name": "Get Analysis from DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        320,
+        -16
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = items[0]?.json;\nif (!data) {\n  return [{json: {found: false}}];\n}\nreturn [{\n  json: {\n    found: true,\n    sessionId: data.session_id,\n    userName: data.user_name,\n    analysisType: data.analysis_type,\n    language: data.language,\n    emotionalTone: data.emotional_tone,\n    customerNeeds: data.customer_needs,\n    missedOpportunities: data.missed_opportunities,\n    recommendations: data.recommendations,\n    statistics: data.statistics,\n    satisfactionPercentage: data.satisfaction_percentage,\n    leadScoring: data.lead_scoring,\n    bantQualification: data.bant_qualification,  // ⚠️ ДОБАВЬ ЭТУ СТРОКУ\n    createdAt: data.created_at\n  }\n}];"
+      },
+      "id": "f50d19ae-2a2b-4e13-a37d-7e1b1aec8b53",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "a0ec384f-19d1-4cbf-8ecc-9f87b2d98a7c",
+      "name": "Respond Get Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "path": "get-all-analysis",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "9930458e-d7cd-4f53-9f07-4d4321b68f5a",
+      "name": "Get All Analysis Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        352
+      ],
+      "webhookId": "get-all-analysis-webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT DISTINCT ON (session_id) * FROM dialog_analysis WHERE analysis_type = 'single' ORDER BY session_id, created_at DESC",
+        "options": {}
+      },
+      "id": "e1c7fc06-17ff-47ba-bb60-d8f770fc8900",
+      "name": "Get All Analysis from DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        320,
+        320
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const analyses = {};\nitems.forEach(item => {\n  const data = item.json;\n  analyses[data.session_id] = {\n    emotionalTone: data.emotional_tone,\n    satisfactionPercentage: data.satisfaction_percentage,\n    leadScoring: data.lead_scoring,\n    bantQualification: data.bant_qualification,  // ⚠️ ДОБАВЬ ЭТУ СТРОКУ\n    createdAt: data.created_at\n  };\n});\nreturn [{json: {analyses}}];"
+      },
+      "id": "79402d0f-c4ed-423a-a840-a499b0158141",
+      "name": "Format All Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "b4c0400c-d610-4924-8c8e-62be8e7e6573",
+      "name": "Respond Get All Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Извлекаем данные из body\nconst data = items[0].json.body || items[0].json;\nreturn [{\n  json: {\n    session_id: data.sessionId,\n    user_name: data.userName,\n    analysis_type: data.analysisType,\n    language: data.language,\n    platform: data.platform,\n    emotional_tone: data.emotionalTone,\n    customer_needs: data.customerNeeds,\n    missed_opportunities: data.missedOpportunities,\n    recommendations: data.recommendations,\n    statistics: data.statistics,\n    satisfaction_percentage: data.emotionalTone?.satisfaction || 0,\n    lead_scoring: data.leadScoring  // <-- ДОБАВЬТЕ ЭТУ СТРОКУ\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        48,
+        -256
+      ],
+      "id": "3d44cd98-df30-419f-b6fe-a7c69f41e019",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO dialog_analysis (\n    session_id, \n    user_name, \n    analysis_type, \n    language, \n    platform,\n    emotional_tone, \n    customer_needs, \n    missed_opportunities, \n    recommendations, \n    statistics, \n    satisfaction_percentage,\n    lead_scoring\n) VALUES (\n    '{{ $json.session_id }}', \n    '{{ $json.user_name }}', \n    '{{ $json.analysis_type }}',\n    '{{ $json.language }}', \n    '{{ $json.platform }}',\n    '{{ JSON.stringify($json.emotional_tone).replace(/'/g, \"''\") }}'::jsonb,\n    ARRAY[{{ $json.customer_needs.map(item => `'${item.replace(/'/g, \"''\")}'`).join(\", \") }}],\n    ARRAY[{{ $json.missed_opportunities.map(item => `'${item.replace(/'/g, \"''\")}'`).join(\", \") }}],\n    ARRAY[{{ $json.recommendations.map(item => `'${item.replace(/'/g, \"''\")}'`).join(\", \") }}],\n    '{{ JSON.stringify($json.statistics).replace(/'/g, \"''\") }}'::jsonb,\n    {{ $json.satisfaction_percentage || 0 }},\n    '{{ JSON.stringify($json.lead_scoring || {}).replace(/'/g, \"''\") }}'::jsonb\n)\nON CONFLICT (session_id, analysis_type) \nDO UPDATE SET\n    user_name = EXCLUDED.user_name,\n    language = EXCLUDED.language,\n    platform = EXCLUDED.platform,\n    emotional_tone = EXCLUDED.emotional_tone,\n    customer_needs = EXCLUDED.customer_needs,\n    missed_opportunities = EXCLUDED.missed_opportunities,\n    recommendations = EXCLUDED.recommendations,\n    statistics = EXCLUDED.statistics,\n    satisfaction_percentage = EXCLUDED.satisfaction_percentage,\n    lead_scoring = EXCLUDED.lead_scoring,\n    created_at = CURRENT_TIMESTAMP\nRETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        240,
+        -256
+      ],
+      "id": "d715a4bb-1869-4721-93f8-fae10bebef38",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -32,
+        16
+      ],
+      "id": "3e4b86de-a288-4fda-82a2-6c72c45a2a27",
+      "name": "Security Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        112,
+        16
+      ],
+      "id": "f88d175b-7987-4b0c-b584-4ab833ffc747",
+      "name": "Auth Check"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        320,
+        144
+      ],
+      "id": "e50722b1-a1db-4783-9c97-a72d00cf3d90",
+      "name": "Error Response"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -32,
+        352
+      ],
+      "id": "623d71dc-1ae6-414c-9690-86b67dbe15e3",
+      "name": "Security Check1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        112,
+        352
+      ],
+      "id": "357b6658-818e-4176-ace3-08126567cce1",
+      "name": "Auth Check1"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        320,
+        464
+      ],
+      "id": "99a6dd9c-097b-4842-bf4e-70c6d1da35dc",
+      "name": "Error Response1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Save Analysis Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Analysis Webhook": {
+      "main": [
+        [
+          {
+            "node": "Security Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Analysis from DB": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Get Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Analysis Webhook": {
+      "main": [
+        [
+          {
+            "node": "Security Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Analysis from DB": {
+      "main": [
+        [
+          {
+            "node": "Format All Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format All Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Get All Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond Save Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check": {
+      "main": [
+        [
+          {
+            "node": "Auth Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check": {
+      "main": [
+        [
+          {
+            "node": "Get Analysis from DB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check1": {
+      "main": [
+        [
+          {
+            "node": "Auth Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check1": {
+      "main": [
+        [
+          {
+            "node": "Get All Analysis from DB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "3aaab68c-f8ed-4ae8-a025-06199562267a",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "4SjgCWxP42NdLHpt",
+  "tags": []
+}

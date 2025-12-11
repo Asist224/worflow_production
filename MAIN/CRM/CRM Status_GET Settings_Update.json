@@ -1,0 +1,550 @@
+{
+  "name": "CRM Status/GET Settings/Update",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "crm-status",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "fe896d3d-2df0-434a-8899-153bef69092c",
+      "name": "CRM Status Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -32,
+        -48
+      ],
+      "webhookId": "crm-status"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  session_id,\n  crm_type,\n  crm_lead_id,\n  lead_score,\n  lead_temperature,\n  sent_at\nFROM crm_sent_leads\nWHERE sent_at > NOW() - INTERVAL '30 days'\nORDER BY sent_at DESC",
+        "options": {}
+      },
+      "id": "91f5959e-89f4-4ab3-8a90-8e5bf166fa68",
+      "name": "Get CRM Statuses",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        496,
+        -80
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Форматируем статусы для фронтенда\nconst statuses = {};\n\nitems.forEach(item => {\n  const data = item.json;\n  statuses[data.session_id] = {\n    leadScore: data.lead_score,\n    leadTemperature: data.lead_temperature,\n    crmLeadId: data.crm_lead_id,\n    crmType: data.crm_type,\n    sentAt: data.sent_at\n  };\n});\n\nreturn [{\n  json: {\n    statuses: statuses,\n    total: Object.keys(statuses).length\n  }\n}];"
+      },
+      "id": "dc26bbfa-bdbb-4b39-8f2f-d4fe654da4de",
+      "name": "Format Statuses",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "eac6287a-808f-4de8-8fbb-0f02ff6aaaf3",
+      "name": "Respond Statuses",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        896,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "path": "crm-settings",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "efa1e4bf-b5eb-4f21-ad02-c2110d33e036",
+      "name": "Webhook Get Settings",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -32,
+        320
+      ],
+      "webhookId": "crm-settings"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM crm_settings WHERE crm_type = 'bitrix24' LIMIT 1",
+        "options": {}
+      },
+      "id": "0938ba17-c376-413c-a436-621a1e922844",
+      "name": "Get Settings from DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        528,
+        256
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "e43f2b5d-87f0-4103-a807-8f210b8cdee5",
+      "name": "Respond Settings",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        704,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "update-crm-settings",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "b93563eb-e21a-4fce-8f5c-5e857eeb1034",
+      "name": "Webhook Get Update Settings",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        608
+      ],
+      "webhookId": "crm-settings"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE crm_settings \nSET \n  webhook_url = '{{ $json.body.webhookUrl }}',\n  auto_send_enabled = {{ $json.body.autoSendEnabled }},\n  min_lead_score = {{ $json.body.minLeadScore }},\n  settings = '{{ JSON.stringify($json.body.settings || {}) }}'::jsonb,\n  updated_at = NOW()\nWHERE crm_type = 'bitrix24'\nRETURNING *",
+        "options": {}
+      },
+      "id": "597876c9-3620-4e19-af48-23e219905134",
+      "name": "Get Update Settings from DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        544,
+        576
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "a718fb2c-5687-4461-857a-5bc15247079a",
+      "name": "Respond Update Settings",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        752,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        144,
+        -48
+      ],
+      "id": "1707f35e-8ec7-4eed-a22d-87f74a29bd19",
+      "name": "Security Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        320,
+        -48
+      ],
+      "id": "182cdc70-ab9e-4ced-80b7-1498286d077a",
+      "name": "Auth Check"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        496,
+        96
+      ],
+      "id": "5e5b234f-e08f-4660-80ca-b438eccd901a",
+      "name": "Error Response"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        144,
+        320
+      ],
+      "id": "35014831-7b26-4fb9-b323-0d0da24ed386",
+      "name": "Security Check1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        304,
+        320
+      ],
+      "id": "5111af29-8235-466d-9833-d1257217cbab",
+      "name": "Auth Check1"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        528,
+        400
+      ],
+      "id": "072a6138-cbfc-4fc3-ba90-79b9f8f941fe",
+      "name": "Error Response1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        144,
+        608
+      ],
+      "id": "02403824-823c-49fd-bb1d-f10e24a36a7b",
+      "name": "Security Check2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        320,
+        608
+      ],
+      "id": "298d47ac-4c5f-44a4-a793-6e227f5297e9",
+      "name": "Auth Check2"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        544,
+        752
+      ],
+      "id": "46dbcc0f-8213-438f-bd95-132f1ec69821",
+      "name": "Error Response2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "CRM Status Webhook": {
+      "main": [
+        [
+          {
+            "node": "Security Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get CRM Statuses": {
+      "main": [
+        [
+          {
+            "node": "Format Statuses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Statuses": {
+      "main": [
+        [
+          {
+            "node": "Respond Statuses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Get Settings": {
+      "main": [
+        [
+          {
+            "node": "Security Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Settings from DB": {
+      "main": [
+        [
+          {
+            "node": "Respond Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Get Update Settings": {
+      "main": [
+        [
+          {
+            "node": "Security Check2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Update Settings from DB": {
+      "main": [
+        [
+          {
+            "node": "Respond Update Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check": {
+      "main": [
+        [
+          {
+            "node": "Auth Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check": {
+      "main": [
+        [
+          {
+            "node": "Get CRM Statuses",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check1": {
+      "main": [
+        [
+          {
+            "node": "Auth Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check1": {
+      "main": [
+        [
+          {
+            "node": "Get Settings from DB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check2": {
+      "main": [
+        [
+          {
+            "node": "Auth Check2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check2": {
+      "main": [
+        [
+          {
+            "node": "Get Update Settings from DB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "fff85f41-b76a-4e18-ac6a-a2f89ff41162",
+  "meta": {
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "nsHQOOyMBC2FO43X",
+  "tags": []
+}

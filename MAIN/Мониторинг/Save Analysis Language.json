@@ -1,0 +1,445 @@
+{
+  "name": "Save Analysis Language",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "save-analysis-language",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "a447b302-8901-4622-a2a1-3b3cee78478c",
+      "name": "Webhook Save Language",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -592,
+        -208
+      ],
+      "webhookId": "save-analysis-language"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Извлекаем данные из запроса\nconst requestData = items[0].json.body || items[0].json;\nconst language = requestData.language || 'ru';\nconst updatedBy = requestData.updatedBy || 'monitoring_ui';\n\n// Валидация языка - используем те же коды что и в интерфейсе\nconst supportedLanguages = ['ru', 'en', 'es', 'fr', 'de', 'it', 'pt', 'zh', 'ja', 'ko', 'ua'];\n\nif (!supportedLanguages.includes(language)) {\n    return [{\n        json: {\n            error: true,\n            message: `Unsupported language: ${language}`,\n            supportedLanguages: supportedLanguages\n        }\n    }];\n}\n\nreturn [{\n    json: {\n        language: language,\n        updatedBy: updatedBy,\n        timestamp: new Date().toISOString()\n    }\n}];"
+      },
+      "id": "5baad175-b70a-4c38-be21-2f3bcad0a74e",
+      "name": "Process Language Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        -288
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE analysis_language_settings \nSET language_code = '{{ $json.language }}',\n    updated_at = CURRENT_TIMESTAMP,\n    updated_by = '{{ $json.updatedBy }}'\nWHERE id = 1;",
+        "options": {}
+      },
+      "id": "1cff38c1-a67b-4734-84d3-1e93143a07d4",
+      "name": "Update Language in DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        128,
+        -288
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Обрабатываем результат из БД\nconst dbResult = items[0].json;\n\nif (dbResult.setting_key && dbResult.setting_value) {\n    return [{\n        json: {\n            success: true,\n            language: dbResult.setting_value,\n            updatedBy: dbResult.updated_by,\n            updatedAt: dbResult.updated_at,\n            message: `Analysis language successfully updated to ${dbResult.setting_value}`\n        }\n    }];\n} else {\n    return [{\n        json: {\n            success: false,\n            error: 'Failed to update language setting',\n            dbResult: dbResult\n        }\n    }];\n}"
+      },
+      "id": "ecf53a2b-ea90-40fb-bbd0-2288715d6cca",
+      "name": "Format Save Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        336,
+        -288
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "146d6672-3403-4f26-8a1c-b4b150285b1f",
+      "name": "Respond Save Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        528,
+        -288
+      ]
+    },
+    {
+      "parameters": {
+        "path": "get-analysis-language",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "5030d3b2-2f64-4bec-9061-f8eb61c0a423",
+      "name": "Webhook Get Language",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        112
+      ],
+      "webhookId": "get-analysis-language"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT language_code, updated_at, updated_by \nFROM analysis_language_settings \nORDER BY id DESC \nLIMIT 1;",
+        "options": {}
+      },
+      "id": "f59a9863-8a05-48f9-82d9-7194877ca215",
+      "name": "Get Language from DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -64,
+        48
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Обрабатываем результат из БД\nconst dbResult = items[0]?.json;\n\n// Если запись найдена\nif (dbResult && dbResult.language_code) {  // ИЗМЕНЕНО: проверяем language_code вместо setting_value\n    return [{\n        json: {\n            success: true,\n            language: dbResult.language_code,  // ИЗМЕНЕНО: берем language_code\n            updatedAt: dbResult.updated_at,\n            updatedBy: dbResult.updated_by\n        }\n    }];\n} else {\n    // Возвращаем значение по умолчанию\n    return [{\n        json: {\n            success: true,\n            language: 'ru',\n            isDefault: true,\n            message: 'Using default language'\n        }\n    }];\n}"
+      },
+      "id": "4ac9001d-0842-45c4-b670-3df02f0631e6",
+      "name": "Format Get Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "f0a68eaa-cf28-4566-bfa8-86aca3274b74",
+      "name": "Respond Get Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        336,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        -208
+      ],
+      "id": "3a02bfda-ee23-4785-964d-10def7e9c53f",
+      "name": "Security Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -288,
+        -208
+      ],
+      "id": "11a87be3-9966-45d0-a4d2-64e8654d9787",
+      "name": "Auth Check"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -64,
+        -128
+      ],
+      "id": "526b6d87-2508-4fd9-9e4a-874a3aa2a9e3",
+      "name": "Error Response"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -416,
+        112
+      ],
+      "id": "d9bd14f6-20a3-43e2-8cf2-42874c03e478",
+      "name": "Security Check1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -272,
+        112
+      ],
+      "id": "5adaa8e4-97a3-4a9f-8527-2aea55fba172",
+      "name": "Auth Check1"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -64,
+        224
+      ],
+      "id": "1fbded97-ed1e-49d0-ae41-e8bb61cfa4c8",
+      "name": "Error Response1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Save Language": {
+      "main": [
+        [
+          {
+            "node": "Security Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Language Request": {
+      "main": [
+        [
+          {
+            "node": "Update Language in DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Language in DB": {
+      "main": [
+        [
+          {
+            "node": "Format Save Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Save Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Save Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Get Language": {
+      "main": [
+        [
+          {
+            "node": "Security Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Language from DB": {
+      "main": [
+        [
+          {
+            "node": "Format Get Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Get Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Get Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check": {
+      "main": [
+        [
+          {
+            "node": "Auth Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check": {
+      "main": [
+        [
+          {
+            "node": "Process Language Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check1": {
+      "main": [
+        [
+          {
+            "node": "Auth Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check1": {
+      "main": [
+        [
+          {
+            "node": "Get Language from DB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "591a7e4a-ff29-4e70-98d0-d6ca256af0c0",
+  "meta": {
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "OyhsJQ6hE62rWFff",
+  "tags": []
+}

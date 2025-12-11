@@ -1,0 +1,2543 @@
+{
+  "name": "Email Automation Main",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trigger-email-analysis",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "55f8bd36-a50b-4162-9f94-681c2551b56e",
+      "name": "Email Trigger Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1776,
+        -80
+      ],
+      "webhookId": "email-analysis-trigger",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 3
+            }
+          ]
+        }
+      },
+      "id": "7dd60b16-bcb2-4ac4-8c50-7ce3a56a026c",
+      "name": "Schedule Check",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -2000,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Получаем последние диалоги для анализа\nWITH recent_messages AS (\n    SELECT \n        session_id,\n        MAX(created_at) as last_message_time,\n        COUNT(*) as message_count\n    FROM (\n        SELECT session_id, created_at FROM n8n_chat_histories_ru\n        WHERE created_at > NOW() - INTERVAL '1 hours'\n        UNION ALL\n        SELECT session_id, created_at FROM n8n_chat_histories_en\n        WHERE created_at > NOW() - INTERVAL '1 hours'\n    ) all_messages\n    GROUP BY session_id\n    HAVING COUNT(*) >= 3 -- Минимум 3 сообщения для анализа\n),\n-- Проверяем, отправлялось ли уже письмо для этой сессии\nalready_sent AS (\n    SELECT DISTINCT session_id\n    FROM email_tracking\n    WHERE status = 'sent'\n      AND email_type IN ('welcome_pdf', 'info_request', 'pricing_info', 'setup_guide')\n      -- Не отправляем повторно в течение 7 дней\n      AND sent_at > NOW() - INTERVAL '7 days'\n),\nnot_processed AS (\n    SELECT rm.session_id\n    FROM recent_messages rm\n    LEFT JOIN already_sent as_sent ON rm.session_id = as_sent.session_id\n    WHERE as_sent.session_id IS NULL -- Только сессии без отправленных писем\n)\nSELECT \n    ac.id,\n    ac.session_id,\n    ac.message_type,\n    ac.content,\n    ac.timestamp,\n    ac.platform,\n    ac.language\nFROM (\n    SELECT \n        id,\n        session_id,\n        message::json->>'type' as message_type,\n        message::json->>'content' as content,\n        created_at as timestamp,\n        platform,\n        'ru' as language\n    FROM n8n_chat_histories_ru\n    WHERE session_id IN (SELECT session_id FROM not_processed)\n    \n    UNION ALL\n    \n    SELECT \n        id,\n        session_id,\n        message::json->>'type' as message_type,\n        message::json->>'content' as content,\n        created_at as timestamp,\n        platform,\n        'en' as language\n    FROM n8n_chat_histories_en\n    WHERE session_id IN (SELECT session_id FROM not_processed)\n) ac\nORDER BY ac.session_id, ac.timestamp;",
+        "options": {}
+      },
+      "id": "c84e59b0-003c-4af6-8d18-e451564ab99d",
+      "name": "Get Unprocessed Dialogs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1760,
+        240
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Группируем диалоги по сессиям\nconst dialogs = items;\nconst sessions = {};\n\ndialogs.forEach(item => {\n    const data = item.json;\n    if (!sessions[data.session_id]) {\n        sessions[data.session_id] = {\n            messages: [],\n            language: data.language,\n            platform: data.platform\n        };\n    }\n    \n    sessions[data.session_id].messages.push({\n        type: data.message_type,\n        content: data.content,\n        timestamp: data.timestamp\n    });\n});\n\n// Форматируем для AI анализа\nconst dialogsForAnalysis = Object.entries(sessions).map(([sessionId, data]) => {\n    return {\n        sessionId: sessionId,\n        language: data.language,\n        platform: data.platform,\n        conversation: data.messages.map(msg => \n            `${msg.type === 'human' ? 'Клиент' : 'Бот'}: ${msg.content}`\n        ).join('\\n'),\n        messageCount: data.messages.length,\n        lastMessage: data.messages[data.messages.length - 1]\n    };\n});\n\nreturn dialogsForAnalysis.map(d => ({json: d}));"
+      },
+      "id": "92f69a9c-a8fb-461f-a1f4-271604d48370",
+      "name": "Format Dialogs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1552,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Анализ диалога:\nSession ID: {{ $json.sessionId }}\nЯзык: {{ $json.language }}\nПлатформа: {{ $json.platform }}\n\nДиалог:\n{{ $json.conversation }}",
+        "options": {
+          "systemMessage": "# Роль: Email Marketing AI Agent\n\nТы - специалист по email-маркетингу и анализу диалогов для торгового бота Cryptomator.\n\n# Контекст продукта:\nCryptomator - торговый бот для автоматизации криптовалютной торговли. Основные материалы:\n- PDF презентация с описанием функционала\n- Инструкции по настройке бота\n- Описание тарифных планов\n- Обучающие материалы\n\n# Задача:\nПроанализируй диалог и определи:\n\n1. **Необходимость отправки email**:\n   - Клиент явно согласился получить материалы\n   - Клиент оставил email для связи\n   - Клиент проявил высокий интерес к продукту\n   - Клиент задал конкретные вопросы требующие детального ответа\n\n2. **Извлеки данные клиента**:\n   - Email (обязательно для отправки)\n   - Имя (если представился)\n   - Телефон (если оставил)\n   - Предпочтительный способ связи\n\n3. **Определи тип письма**:\n   - welcome_pdf - приветственное с PDF презентацией\n   - info_request - ответ на конкретные вопросы\n   - pricing_info - информация о тарифах\n   - setup_guide - инструкция по настройке\n   - followup - повторное письмо\n\n4. **Определи контент письма**:\n   - Какие файлы приложить (из Google Drive)\n   - Персонализированный текст письма\n   - Call-to-action\n\n# ВАЖНЫЕ ПРАВИЛА:\n\n1. **НЕ отправляй email если**:\n   - Нет явного email адреса\n   - Клиент не давал согласия\n   - Диалог слишком короткий (менее 5 сообщений)\n   - Клиент явно отказался от материалов\n   - Email уже был отправлен (проверь в базе)\n\n2. **ОБЯЗАТЕЛЬНО отправляй если**:\n   - Клиент прямо попросил материалы\n   - Клиент оставил email с просьбой связаться\n   - Клиент задал вопросы требующие документации\n   - Lead score > 70 и есть email\n\n3. **Персонализация**:\n   - Используй имя клиента если известно\n   - Адаптируй тон под платформу (Telegram более неформальный)\n   - Учитывай язык диалога (ru/en)\n   - Ссылайся на конкретные вопросы из диалога\n\n4. **Файлы для прикрепления**:\n   - presentation_ru.pdf / presentation_en.pdf - презентация\n   - setup_guide_ru.pdf / setup_guide_en.pdf - настройка\n   - pricing_ru.pdf / pricing_en.pdf - тарифы\n   - faq_ru.pdf / faq_en.pdf - частые вопросы\n\n# ОБЯЗАТЕЛЬНЫЙ HTML ФОРМАТ ПИСЬМА (СПАМ-БЕЗОПАСНЫЙ):\n\n### ИСПОЛЬЗУЙ ЭТОТ ШАБЛОН ДЛЯ emailContent (РУССКАЯ ВЕРСИЯ):\n\n```html\n<!DOCTYPE html>\n<html>\n<body style=\"font-family: Arial, sans-serif; line-height: 1.6; color: #333;\">\n    <div style=\"max-width: 600px; margin: 0 auto; padding: 20px;\">\n        <p>Здравствуйте{{#if name}}, {{name}}{{/if}}!</p>\n        \n        <p>Как и обещали, отправляем вам информацию о Cryptomator - торговом боте для автоматизации операций с криптовалютами.</p>\n        \n        <div style=\"background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0;\">\n            <p>Вы просили подробную информацию о возможностях нашего бота.</p>\n            <p>📎 Во вложении находится презентация с описанием функционала, примерами работы и инструкциями по использованию.</p>\n        </div>\n        \n        <div style=\"background: #ebf8ff; border: 1px solid #bee3f8; border-radius: 8px; padding: 15px; margin: 20px 0;\">\n            <h3 style=\"color: #2c5282; margin-top: 0;\">📊 Что умеет торговый бот Cryptomator:</h3>\n            <ul style=\"list-style: none; padding: 0;\">\n                <li style=\"margin-bottom: 10px;\">✅ Автоматическая торговля на криптовалютных биржах</li>\n                <li style=\"margin-bottom: 10px;\">📈 Использование 6 различных алгоритмов анализа рынка</li>\n                <li style=\"margin-bottom: 10px;\">🔐 Безопасное подключение через API без передачи средств</li>\n                <li style=\"margin-bottom: 10px;\">⚡ Простая настройка и понятный интерфейс управления</li>\n            </ul>\n        </div>\n        \n        <h3 style=\"color: #2c5282;\">💰 Доступные тарифы:</h3>\n        <div style=\"background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin: 15px 0;\">\n            <ul style=\"list-style: none; padding: 0;\">\n                <li style=\"margin-bottom: 10px;\">💚 <strong>Starter:</strong> $29/месяц - базовый функционал бота</li>\n                <li style=\"margin-bottom: 10px;\">💙 <strong>Professional:</strong> $59/месяц - расширенные возможности торговли</li>\n                <li style=\"margin-bottom: 10px;\">💜 <strong>Enterprise:</strong> $99/месяц - полный функционал и приоритетная поддержка</li>\n            </ul>\n        </div>\n        \n        <div style=\"text-align: center; margin: 25px 0;\">\n            <a href=\"https://cryptomator.pro/?utm_source=email&utm_campaign=info#prices\"\n               style=\"background-color: #3182ce; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;\">\n                🚀 Узнать больше на сайте\n            </a>\n        </div>\n        \n        <p style=\"background: #fef5e7; border-left: 4px solid #f39c12; padding: 15px; margin: 20px 0;\">\n    <strong>🎁 Специальное предложение!</strong><br>\n    Начните сегодня и получите <strong>+1 месяц бесплатной</strong> лицензии выбранного тарифа.\n</p>\n        \n        <p>Если у вас возникнут вопросы после изучения материалов, просто ответьте на это письмо.</p>\n        \n        <p>С уважением,<br>\n        <strong>Команда Cryptomator</strong></p>\n        \n        <hr style=\"border: 0; border-top: 1px solid #e2e8f0; margin: 30px 0;\">\n        \n        <div style=\"text-align: center; padding: 15px 0;\">\n            <p style=\"margin: 5px 0;\">\n                📧 Email: <a href=\"mailto:support@cryptomator.pro\" style=\"color: #3182ce; text-decoration: none;\">support@cryptomator.pro</a>\n            </p>\n            <p style=\"margin: 5px 0;\">\n                💬 Telegram: <a href=\"https://t.me/cryptomator_support\" style=\"color: #3182ce; text-decoration: none;\">@cryptomator_support</a>\n            </p>\n            <p style=\"margin: 5px 0;\">\n                🌐 Сайт: <a href=\"https://cryptomator.pro\" style=\"color: #3182ce; text-decoration: none;\">cryptomator.pro</a>\n            </p>\n        </div>\n        \n        <p style=\"font-size: 12px; color: #718096; text-align: center; margin-top: 20px;\">\n            Вы получили это письмо, так как запросили информацию о торговом боте Cryptomator.\n        </p>\n    </div>\n</body>\n</html>\n```\n\nДЛЯ АНГЛИЙСКОЙ ВЕРСИИ (если language = 'en'):\n\n```html\n<!DOCTYPE html>\n<html>\n<body style=\"font-family: Arial, sans-serif; line-height: 1.6; color: #333;\">\n    <div style=\"max-width: 600px; margin: 0 auto; padding: 20px;\">\n        <p>Hello{{#if name}}, {{name}}{{/if}}!</p>\n        \n        <p>As promised, we're sending you information about Cryptomator - a trading bot for automating cryptocurrency operations.</p>\n        \n        <div style=\"background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0;\">\n            <p>You requested detailed information about our bot capabilities.</p>\n            <p>📎 Please find attached a presentation with functionality description, examples and usage instructions.</p>\n        </div>\n        \n        <div style=\"background: #ebf8ff; border: 1px solid #bee3f8; border-radius: 8px; padding: 15px; margin: 20px 0;\">\n            <h3 style=\"color: #2c5282; margin-top: 0;\">📊 What Cryptomator Trading Bot Can Do:</h3>\n            <ul style=\"list-style: none; padding: 0;\">\n                <li style=\"margin-bottom: 10px;\">✅ Automated trading on cryptocurrency exchanges</li>\n                <li style=\"margin-bottom: 10px;\">📈 Uses 6 different market analysis algorithms</li>\n                <li style=\"margin-bottom: 10px;\">🔐 Secure API connection without transferring funds</li>\n                <li style=\"margin-bottom: 10px;\">⚡ Simple setup and user-friendly control interface</li>\n            </ul>\n        </div>\n        \n        <h3 style=\"color: #2c5282;\">💰 Available Plans:</h3>\n        <div style=\"background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin: 15px 0;\">\n            <ul style=\"list-style: none; padding: 0;\">\n                <li style=\"margin-bottom: 10px;\">💚 <strong>Starter:</strong> $29/month - basic bot functionality</li>\n                <li style=\"margin-bottom: 10px;\">💙 <strong>Professional:</strong> $59/month - advanced trading features</li>\n                <li style=\"margin-bottom: 10px;\">💜 <strong>Enterprise:</strong> $99/month - full functionality and priority support</li>\n            </ul>\n        </div>\n        \n        <div style=\"text-align: center; margin: 25px 0;\">\n            <a href=\"https://cryptomator.pro/?utm_source=email&utm_campaign=info#prices\"\n               style=\"background-color: #3182ce; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;\">\n                🚀 Learn More on Website\n            </a>\n        </div>\n        \n        <p style=\"background: #fef5e7; border-left: 4px solid #f39c12; padding: 15px; margin: 20px 0;\">\n    <strong>🎁 Special Offer!</strong><br>\n    Start today and get <strong>+1 month free</strong> license of your chosen plan.\n</p>\n        \n        <p>If you have any questions after reviewing the materials, just reply to this email.</p>\n        \n        <p>Best regards,<br>\n        <strong>Cryptomator Team</strong></p>\n        \n        <hr style=\"border: 0; border-top: 1px solid #e2e8f0; margin: 30px 0;\">\n        \n        <div style=\"text-align: center; padding: 15px 0;\">\n            <p style=\"margin: 5px 0;\">\n                📧 Email: <a href=\"mailto:support@cryptomator.pro\" style=\"color: #3182ce; text-decoration: none;\">support@cryptomator.pro</a>\n            </p>\n            <p style=\"margin: 5px 0;\">\n                💬 Telegram: <a href=\"https://t.me/cryptomator_support\" style=\"color: #3182ce; text-decoration: none;\">@cryptomator_support</a>\n            </p>\n            <p style=\"margin: 5px 0;\">\n                🌐 Website: <a href=\"https://cryptomator.pro\" style=\"color: #3182ce; text-decoration: none;\">cryptomator.pro</a>\n            </p>\n        </div>\n        \n        <p style=\"font-size: 12px; color: #718096; text-align: center; margin-top: 20px;\">\n            You received this email because you requested information about Cryptomator trading bot.\n        </p>\n    </div>\n</body>\n</html>\n```\n\nВАЖНО:\nФОРМАТ ТЕМЫ ПИСЬМА (ОБЯЗАТЕЛЬНО С ИМЕНЕМ):\nДля русского языка: \"{{name}}, как и обещали отправляем важную информацию по Cryptomator\"\nДля английского: \"{{name}}, as promised, here's important information about Cryptomator\"\nЕсли имя неизвестно:\nДля русского: \"Как и обещали, отправляем важную информацию по Cryptomator\"\nДля английского: \"As promised, here's important information about Cryptomator\"\nВАЖНО:\n\nВ поле \"emailContent\" твоего JSON-ответа должен быть ПОЛНЫЙ HTML-код выше\nВ поле \"subject\" ОБЯЗАТЕЛЬНО должно быть имя пользователя в начале (если известно)\nПодставляй правильные значения вместо {{name}}\nИспользуй русский шаблон для language='ru' и английский для language='en'\nНЕ используй слова: заработок, доход, прибыль, проценты годовых, стратегия заработка\nИспользуй нейтральные формулировки: торговый бот, автоматизация, функционал, возможности\n\n# Формат ответа - ТОЛЬКО валидный JSON:\n{\n  \"shouldSendEmail\": true/false,\n  \"reason\": \"Причина решения\",\n  \"emailData\": {\n    \"email\": \"клиент@example.com\",\n    \"name\": \"Имя клиента или null\",\n    \"phone\": \"телефон или null\",\n    \"emailType\": \"welcome_pdf/info_request/pricing_info/setup_guide/followup\",\n    \"subject\": \"Тема письма\",\n    \"language\": \"ru/en\",\n    \"attachments\": [\n      {\n        \"fileName\": \"strategy_150_ru.pdf\",\n        \"driveId\": \"файл_id_из_google_drive\"\n      }\n    ],\n    \"emailContent\": \"HTML контент письма с персонализацией\",\n    \"urgency\": \"high/medium/low\",\n    \"leadScore\": число от 0 до 100\n  },\n  \"extractedNeeds\": [\"список выявленных потребностей\"],\n  \"followUpRecommendation\": \"Рекомендация для менеджера\"\n}\n\n# Проверки перед отправкой:\n\nEmail валиден (содержит @ и домен)\nНет записи в email_tracking для этой сессии\nКонтент соответствует языку клиента\nВыбраны правильные файлы для языка\nВ теме письма есть имя пользователя (если известно)\nНет спам-слов (заработок, доход, проценты, прибыль)\n\nВозвращай ТОЛЬКО валидный JSON без дополнительного текста!"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        -1376,
+        224
+      ],
+      "id": "a2bf0df5-e51c-430d-a880-9e6687f37bfd",
+      "name": "Email Decision Agent"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -1440,
+        400
+      ],
+      "id": "b312dced-8394-4740-b404-8d26f7b4e69f",
+      "name": "Gemini Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "abo0BDHSJPM0pgRU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mapping файлов с реальными ID из Google Drive\nconst FILE_MAPPINGS = {\n  'welcome_pdf': {\n    'ru': '1xVXrc_yDynRHugGa-tu7gZYB72N8uieF',\n    'en': '1Hu5FXAtGDGuoZ_h7CnoE_0rCnKpSCrNq'\n  },\n  'strategy': {\n    'ru': '1xVXrc_yDynRHugGa-tu7gZYB72N8uieF',\n    'en': '1Hu5FXAtGDGuoZ_h7CnoE_0rCnKpSCrNq'\n  }\n};\n\n// Получаем данные из предыдущих узлов\nconst aiOutput = $input.first().json.output || $input.first().json;\nconst formatDialogsData = $items(\"Format Dialogs\")[0].json;\n\nlet emailDecision;\n\ntry {\n    // Парсим ответ AI\n    if (typeof aiOutput === 'string') {\n        // Очистка JSON от markdown и лишних символов\n        let cleanJson = aiOutput;\n        cleanJson = cleanJson.replace(/```json\\s*/g, '');\n        cleanJson = cleanJson.replace(/```\\s*/g, '');\n        cleanJson = cleanJson.trim();\n        \n        emailDecision = JSON.parse(cleanJson);\n    } else {\n        emailDecision = aiOutput;\n    }\n    \n    // Если AI решил отправить email\n    if (emailDecision.shouldSendEmail) {\n        // Определяем язык и тип email\n        const language = emailDecision.emailData?.language || 'ru';\n        const emailType = emailDecision.emailData?.emailType || 'welcome_pdf';\n        \n        // Получаем правильный ID файла\n        const fileId = FILE_MAPPINGS[emailType]?.[language] || \n                      FILE_MAPPINGS['welcome_pdf'][language];\n        \n        // Обновляем данные для отправки\n        emailDecision.emailData = {\n            ...emailDecision.emailData,\n            fileId: fileId,\n            attachments: [{\n                driveId: fileId,\n                fileName: `strategy_${language}.pdf`,\n                mimeType: 'application/pdf'\n            }]\n        };\n    }\n    \n    // Добавляем метаданные\n    emailDecision.sessionId = formatDialogsData.sessionId;\n    emailDecision.platform = formatDialogsData.platform;\n    emailDecision.processedAt = new Date().toISOString();\n\n} catch (error) {\n    console.error('Parse error details:', error);\n    \n    emailDecision = {\n        shouldSendEmail: false,\n        reason: 'Ошибка парсинга ответа AI',\n        error: error.toString(),\n        sessionId: formatDialogsData?.sessionId || 'unknown',\n        platform: formatDialogsData?.platform || 'unknown',\n        processedAt: new Date().toISOString()\n    };\n}\n\n// Логирование для отладки\nconsole.log('Email decision result:', emailDecision);\n\nreturn [{json: emailDecision}];"
+      },
+      "id": "9fa108a2-4a3b-4afb-ab60-0cd871f09cb0",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1104,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.shouldSendEmail }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "id": "eda947b2-635d-4137-b710-1b2e4c383b66"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "086a480c-d086-41a9-9f5b-22d92516bfbc",
+      "name": "Should Send Email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -768,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n    COUNT(*) as duplicate_count,\n    '{{ $json.sessionId }}' as session_id,\n    '{{ $json.emailData.email }}' as email,\n    MAX(sent_at) as last_sent_at,\n    STRING_AGG(email_type, ', ') as sent_types\nFROM email_tracking\nWHERE session_id = '{{ $json.sessionId }}'\n  AND status = 'sent'\n  AND (\n    -- Проверяем любые информационные письма за последние 7 дней\n    (email_type IN ('welcome_pdf', 'info_request', 'pricing_info', 'setup_guide') \n     AND sent_at > NOW() - INTERVAL '7 days')\n    OR\n    -- Или точно такое же письмо за последние 30 дней\n    (email = '{{ $json.emailData.email }}' \n     AND email_type = '{{ $json.emailData.emailType }}'\n     AND sent_at > NOW() - INTERVAL '30 days')\n  );",
+        "options": {}
+      },
+      "id": "d0a34dcf-4c2c-4cb2-abd8-1c0766c17f2a",
+      "name": "Check Duplicate",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -640,
+        96
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.duplicate_count }}",
+              "rightValue": "0",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "id": "acad2f38-9ae5-4adf-b6eb-25917bb92518"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7be6cfac-7723-45ce-aafc-1c8eed91b76b",
+      "name": "Is New Email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.emailData.fileId }}",
+          "mode": "id"
+        },
+        "options": {
+          "googleFileConversion": {
+            "conversion": {
+              "docsToFormat": "application/pdf"
+            }
+          }
+        }
+      },
+      "id": "ccbafda3-9758-46f8-8743-f8048e61f0ec",
+      "name": "Get Files from Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -32,
+        32
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "2ZNOKD6ZFqAfrDq2",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.emailData.email }}",
+        "subject": "={{ $json.emailData.subject }}",
+        "message": "={{ $json.emailData.emailContent }}",
+        "options": {
+          "appendAttribution": false,
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {}
+            ]
+          },
+          "senderName": "Cryptomator Team",
+          "replyTo": "support@cryptomator.pro"
+        }
+      },
+      "id": "6406375e-02de-4691-a2b1-ce8ed3e52579",
+      "name": "Send Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        160,
+        32
+      ],
+      "webhookId": "090d73f6-561b-472b-b6cc-85cf70e39e80",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ev0cwU3ZEXqPZ9wU",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Сохраняем информацию об отправленном email\nINSERT INTO email_tracking (\n    session_id,\n    email,\n    client_name,\n    email_type,\n    subject,\n    content,\n    attachments,\n    status,\n    platform,\n    language,\n    sent_at\n) VALUES (\n    '{{ $json.sessionId }}',\n    '{{ $json.email }}',\n    '{{ $json.clientName }}',\n    '{{ $json.emailType }}',\n    '{{ $json.subject }}',\n    '{{ $json.content }}',\n    '{{ $json.attachments }}'::jsonb,\n    '{{ $json.status }}',\n    '{{ $json.platform }}',\n    '{{ $json.language }}',\n    NOW()\n)\nRETURNING *;",
+        "options": {}
+      },
+      "id": "0d397a2e-5018-44cf-ab62-5c430f89cc65",
+      "name": "Save Email Record",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        560,
+        32
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "-1002588885971",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "MarkdownV2"
+        }
+      },
+      "id": "16dbaa07-d525-4c47-9b13-890f1764b8da",
+      "name": "Notify Manager",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        960,
+        32
+      ],
+      "webhookId": "68e9f810-a972-4f5b-9433-259b598cc8d8",
+      "credentials": {
+        "telegramApi": {
+          "id": "bHlhE9zUMfwWqM9t",
+          "name": "Manager Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({status: 'success', message: 'Workflow executed', processed: $json.processed || 0}) }}",
+        "options": {}
+      },
+      "id": "a8ca8481-9149-4c97-89a0-f9e7b1193839",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1152,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные email из Parse AI Response\nconst emailData = $items(\"Parse AI Response\")[0].json;\n\n// Получаем результат проверки дубликатов\nconst duplicateCheck = $input.first().json;\n\n// Передаем все данные дальше, включая duplicate_count\nreturn [{\n  json: {\n    ...emailData,\n    shouldSendEmail: emailData.shouldSendEmail,\n    emailData: emailData.emailData,\n    sessionId: emailData.sessionId,\n    platform: emailData.platform,\n    duplicate_count: duplicateCheck.duplicate_count // Добавляем это поле!\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        96
+      ],
+      "id": "afac6186-d11d-4e9c-80e7-6662bcdec4a8",
+      "name": "Merge Email Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные о письме из предыдущих узлов\nconst emailData = $items(\"Is New Email?\")[0].json;\nconst gmailResponse = $input.first().json;\n\n// Функция для экранирования SQL строк\nfunction escapeSql(str) {\n  if (!str) return '';\n  return str.replace(/'/g, \"''\");\n}\n\n// Подготавливаем данные для сохранения в БД\nreturn [{\n  json: {\n    sessionId: emailData.sessionId || 'test_en_001',\n    email: emailData.emailData.email,\n    clientName: escapeSql(emailData.emailData.name),\n    emailType: emailData.emailData.emailType || 'welcome_pdf',\n    subject: escapeSql(emailData.emailData.subject),\n    content: escapeSql(emailData.emailData.emailContent),\n    attachments: JSON.stringify(emailData.emailData.attachments || []),\n    status: 'sent',\n    platform: emailData.platform || 'telegram',\n    language: emailData.emailData.language || 'ru',\n    gmailId: gmailResponse.id,\n    gmailThreadId: gmailResponse.threadId,\n    sentAt: new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        368,
+        32
+      ],
+      "id": "5663d3b1-b8ea-41c8-9c79-c9cf3e74850e",
+      "name": "Save Email Record1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные из предыдущего узла Save Email Record\nconst saveResult = $input.first().json;\n\n// Функция для экранирования специальных символов Markdown V2\nfunction escapeMarkdown(text) {\n  if (!text) return '';\n  return String(text)\n    .replace(/\\\\/g, '\\\\\\\\')\n    .replace(/\\*/g, '\\\\*')\n    .replace(/_/g, '\\\\_')\n    .replace(/\\[/g, '\\\\[')\n    .replace(/\\]/g, '\\\\]')\n    .replace(/\\(/g, '\\\\(')\n    .replace(/\\)/g, '\\\\)')\n    .replace(/~/g, '\\\\~')\n    .replace(/`/g, '\\\\`')\n    .replace(/>/g, '\\\\>')\n    .replace(/#/g, '\\\\#')\n    .replace(/\\+/g, '\\\\+')\n    .replace(/-/g, '\\\\-')\n    .replace(/=/g, '\\\\=')\n    .replace(/\\|/g, '\\\\|')\n    .replace(/\\{/g, '\\\\{')\n    .replace(/\\}/g, '\\\\}')\n    .replace(/\\./g, '\\\\.')\n    .replace(/!/g, '\\\\!');\n}\n\n// Безопасное экранирование данных\nconst safeName = escapeMarkdown(saveResult.client_name || 'Не указан');\nconst safeEmail = escapeMarkdown(saveResult.email);\nconst safeSubject = escapeMarkdown(saveResult.subject);\nconst safePlatform = escapeMarkdown(saveResult.platform);\n\n// Формируем красивый отчет для Telegram с правильным экранированием\nconst report = `📧 *Email успешно отправлен\\\\!*\n\n👤 *Клиент:* ${safeName}\n📮 *Email:* ${safeEmail}\n🌐 *Платформа:* ${safePlatform}\n🗣️ *Язык:* ${saveResult.language === 'ru' ? '🇷🇺 Русский' : '🇬🇧 English'}\n\n📎 *Тип письма:* ${escapeMarkdown(saveResult.email_type)}\n📄 *Тема:* ${safeSubject}\n\n✅ *Статус:* ${saveResult.status}\n🆔 *ID записи:* ${saveResult.id}\n🔗 *Session ID:* ${escapeMarkdown(saveResult.session_id)}\n\n⏰ *Время отправки:* ${escapeMarkdown(new Date().toLocaleString('ru-RU', {\n  timeZone: 'Europe/Moscow'\n}))}\n\n💯 *Lead Score:* ${saveResult.lead_score || 0}\n\n\\\\#email\\\\_sent \\\\#${saveResult.platform} \\\\#${saveResult.language}`;\n\nreturn [{\n  json: {\n    message: report,\n    parse_mode: 'MarkdownV2',  // Используем MarkdownV2\n    chat_id: '-1002588885971'  // Правильный ID группы\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        768,
+        32
+      ],
+      "id": "b47ea576-5761-4799-9b3f-70123b7a7134",
+      "name": "Prepare Telegram Report"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Проверяем что переменные определены\nINSERT INTO email_follow_ups (\n    email,\n    thread_id,\n    follow_up_date,\n    status,\n    notes,\n    created_at\n) \nSELECT\n    '{{ $json.to }}',  -- Должно быть 'to', не 'email'\n    '{{ $json.threadId }}',  -- Должно быть 'threadId'\n    NOW() + INTERVAL '3 days',\n    'pending',\n    'Lead Score: {{ $json.leadScore || 0 }}',\n    NOW()\nWHERE '{{ $json.to }}' != 'undefined'  -- Защита от undefined\n  AND '{{ $json.threadId }}' != 'undefined'\n  AND NOT EXISTS (\n    SELECT 1 FROM email_follow_ups \n    WHERE email = '{{ $json.to }}'\n    AND (\n        status = 'pending'\n        OR (status = 'sent' AND sent_at > NOW() - INTERVAL '7 days')\n    )\n);\n\nSELECT 'Follow-up processed' as status;",
+        "options": {}
+      },
+      "id": "ef0da003-1883-4b7b-9fdb-0d215624289d",
+      "name": "Schedule Follow-up",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        528,
+        -192
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 12
+            }
+          ]
+        }
+      },
+      "id": "b142612c-8717-43b5-a814-8bde252502b1",
+      "name": "Check Twice Daily",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -2016,
+        1392
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Получаем follow-ups которые нужно обработать сегодня\nWITH pending_followups AS (\n    SELECT \n        f.*,\n        gc.messages,\n        gc.lead_score,\n        gc.language,\n        gc.subject,\n        gc.message_count,\n        -- Исправленная логика определения типа\n        CASE \n            WHEN gc.message_count IS NULL OR gc.message_count = 0 THEN 'no_response'\n            WHEN gc.lead_score >= 70 THEN 'high_interest'\n            WHEN gc.message_count >= 2 THEN 'active_discussion'  -- Изменено с 3 на 2\n            WHEN gc.lead_score >= 50 THEN 'standard'\n            ELSE 'low_interest'\n        END as followup_type\n    FROM email_follow_ups f\n    LEFT JOIN gmail_conversations gc ON f.thread_id = gc.thread_id\n    WHERE f.status = 'pending'\n      AND f.follow_up_date <= NOW()\n      AND f.follow_up_date > NOW() - INTERVAL '24 hours'\n)\nSELECT * FROM pending_followups\nORDER BY follow_up_date ASC\nLIMIT 20;",
+        "options": {}
+      },
+      "id": "fa31c508-99eb-4c22-930a-5f169f8f20f2",
+      "name": "Get Pending Follow-ups",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1840,
+        1392
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.lead_score }}",
+              "rightValue": 50,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              },
+              "id": "9199afa8-e9b6-41a9-9867-ec632dbd6765"
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "765f23f6-c831-48ac-8bc5-5b9c739a2232",
+      "name": "Check Follow-up Type",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1648,
+        1392
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Email: {{ $json.email }}\nЯзык: {{ $json.language }}\nLead Score: {{ $json.lead_score }}\nТип follow-up: {{ $json.followup_type }}\nПоследняя тема: {{ $json.subject }}\nИстория: {{ $json.messages }}",
+        "options": {
+          "systemMessage": "Ты - менеджер по продажам Cryptomator. Твоя задача - создать эффективное follow-up письмо.\n\n# ТИПЫ FOLLOW-UP:\n\n## no_response (клиент не ответил на первое письмо)\nНе пиши! Возвращай shouldSend: false. Одного письма достаточно.\n\n## high_interest (lead_score >= 70)\nОтправь письмо с:\n- Персональным предложением\n- Ограниченной по времени скидкой 15%\n- Ссылкой на календарь для звонка\n\n## active_discussion (активная переписка)\nОтправь письмо с:\n- Ответами на возможные сомнения\n- Кейсами успешных клиентов\n- Специальным предложением\n\n## standard\nОценивай по контексту. Если не уверен - не отправляй.\n\n# ПРАВИЛА:\n1. НЕ отправляй follow-up если:\n   - Клиент не ответил на первое письмо (no_response)\n   - Lead score < 30\n   - Прошло больше 7 дней с последнего контакта\n   \n2. ОБЯЗАТЕЛЬНО отправляй если:\n   - Lead score >= 70\n   - Была активная переписка (3+ сообщения)\n\n# ШАБЛОН ПИСЬМА:\n\n```html\n<!DOCTYPE html>\n<html>\n<body style=\"font-family: Arial, sans-serif; line-height: 1.6; color: #333;\">\n    <div style=\"max-width: 600px; margin: 0 auto; padding: 20px;\">\n        <p>{приветствие с именем если известно}</p>\n        \n        <p>{персонализированное вступление основанное на предыдущей переписке}</p>\n        \n        <div style=\"background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0;\">\n            {основное сообщение - ответ на сомнения или специальное предложение}\n        </div>\n        \n        <div style=\"background: #fef5e7; border-left: 4px solid #f39c12; padding: 15px; margin: 20px 0;\">\n            <strong>💎 Эксклюзивное предложение</strong><br>\n            {спецпредложение с дедлайном}\n        </div>\n        \n        <div style=\"text-align: center; margin: 25px 0;\">\n            <a href=\"https://cryptomator.pro/?utm_source=email&utm_campaign=followup&lang={язык}#prices\" \n               style=\"background-color: #3182ce; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;\">\n                {призыв к действию}\n            </a>\n        </div>\n        \n        <p>С уважением,<br>\n        <strong>Команда Cryptomator</strong></p>\n    </div>\n</body>\n</html>\n```\n\n# JSON ОТВЕТ (ОБЯЗАТЕЛЬНО на языке из поля language):\n```json\n{\n  \"shouldSend\": true/false,\n  \"reason\": \"Если language='ru' - причина на русском языке. Если language='en' - reason in English\",\n  \"emailContent\": \"HTML письма на языке клиента (ru/en)\",\n  \"subject\": \"Если language='ru' - тема на русском. Если language='en' - subject in English\",\n  \"discount\": \"размер скидки если есть / discount amount if any\",\n  \"urgency\": \"high/medium/low\"\n}\n```\n\nВАЖНО:\n\nЕсли в данных указано language='ru' - ВСЕ поля (reason, emailContent, subject) должны быть на РУССКОМ языке\nЕсли в данных указано language='en' - ВСЕ поля должны быть на АНГЛИЙСКОМ языке\nПоле reason ВСЕГДА должно объяснять решение на языке клиента\n\nПримеры:\nДля language='ru':\n{\n  \"shouldSend\": true,\n  \"reason\": \"Lead score 70, высокий интерес. Клиент задавал вопросы о тарифах, отправляю персональное предложение со скидкой 15%\",\n  \"emailContent\": \"<html>...</html>\",\n  \"subject\": \"Специальное предложение для вас - скидка 15%\",\n  \"discount\": \"15%\",\n  \"urgency\": \"high\"\n}\n\nДля language='en':\n\n{\n  \"shouldSend\": true,\n  \"reason\": \"Lead score 70, high interest type. Client has shown significant interest after presentation. Sending personalized offer with discount\",\n  \"emailContent\": \"<html>...</html>\",\n  \"subject\": \"Special offer for you - 15% discount\",\n  \"discount\": \"15%\",\n  \"urgency\": \"high\"\n}"
+        }
+      },
+      "id": "47fc6db1-7c75-4be2-836f-46541b053f97",
+      "name": "Generate Follow-up",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        -1376,
+        1168
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Парсим ответ AI\nconst aiResponse = $input.first().json;\nconst originalData = $items(\"Check Follow-up Type\")[0].json;\n\nlet decision;\ntry {\n    if (typeof aiResponse.output === 'string') {\n        const cleanJson = aiResponse.output\n            .replace(/```json\\n?/g, '')\n            .replace(/```\\n?/g, '')\n            .trim();\n        decision = JSON.parse(cleanJson);\n    } else {\n        decision = aiResponse.output;\n    }\n} catch (error) {\n    // Если ошибка парсинга - не отправляем\n    decision = {\n        shouldSend: false,\n        reason: 'Ошибка генерации письма'\n    };\n}\n\n// Добавляем данные из оригинального запроса\nreturn [{\n    json: {\n        ...originalData,\n        ...decision,\n        followup_id: originalData.id\n    }\n}];"
+      },
+      "id": "cc73b543-da95-4581-ac02-377b791f7b52",
+      "name": "Parse Decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1040,
+        1184
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.shouldSend }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "id": "81343c75-40af-4fbe-8071-b3b55779e19b"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9b0bc603-9121-4efa-b056-21d253e22b82",
+      "name": "Should Send?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -816,
+        1248
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.emailContent }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "Cryptomator Team",
+          "replyTo": "support@cryptomator.pro"
+        }
+      },
+      "id": "6cf97c19-1d1d-47d5-9ea6-b96b273c7312",
+      "name": "Send Follow-up Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -608,
+        1232
+      ],
+      "webhookId": "e2bf2b84-361a-4aa3-be4a-995f48c02372",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ev0cwU3ZEXqPZ9wU",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Обновляем статус follow-up\nUPDATE email_follow_ups\nSET \n    status = 'sent',\n    sent_at = NOW(),\n    notes = CONCAT(notes, ' | Sent: ', NOW()::text)\nWHERE id = {{ $json.followup_id }};\n\n-- Обновляем gmail_conversations\nUPDATE gmail_conversations\nSET \n    message_count = message_count + 1\nWHERE thread_id = '{{ $json.thread_id }}';\n\nSELECT 'Follow-up sent' as status;",
+        "options": {}
+      },
+      "id": "867d182a-21ee-484a-9c8b-2409df73f644",
+      "name": "Update Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -224,
+        1232
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Помечаем как пропущенный\nUPDATE email_follow_ups\nSET \n    status = 'skipped',\n    notes = CONCAT(notes, ' | Skipped: ', '{{ $json.reason.replace(/'/g, \"''\") }}')\nWHERE id = {{ $json.followup_id }};\n\nSELECT 'Skipped' as status;",
+        "options": {}
+      },
+      "id": "af7c6a35-97a6-461f-9930-33ea2de0d902",
+      "name": "Mark as Skipped",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -304,
+        1488
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "ead364a6-a921-4d9b-abe7-632c595d62c8",
+      "name": "Gemini Model1",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -1424,
+        1328
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "abo0BDHSJPM0pgRU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "-1002588885971",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "61385941-7b8c-402b-bf5e-b498fd0b97b5",
+      "name": "Notify Telegram1",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        256,
+        1408
+      ],
+      "webhookId": "984ce731-decd-4600-a4e1-6841c6db60c9",
+      "credentials": {
+        "telegramApi": {
+          "id": "bHlhE9zUMfwWqM9t",
+          "name": "Manager Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем входящие данные напрямую из предыдущего узла\nconst inputData = $input.first().json;\n\n// Извлекаем нужные поля из входящих данных\nconst email = inputData.email || inputData.from || 'no-email';\nconst threadId = inputData.gmailThreadId || inputData.threadId || 'no-thread';\nconst leadScore = inputData.leadScore || 50;\n\n// Логируем для отладки\nconsole.log('Input data:', inputData);\nconsole.log('Extracted - Email:', email, 'ThreadId:', threadId, 'LeadScore:', leadScore);\n\n// Возвращаем данные для Schedule Follow-up\nreturn [{\n  json: {\n    to: email,\n    threadId: threadId,\n    leadScore: leadScore,\n    followUpDays: 3,\n    internalNote: `Первый контакт. Lead Score: ${leadScore}`\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        336,
+        -192
+      ],
+      "id": "765c1115-39a3-49d7-b575-f37099f52713",
+      "name": "Prepare Follow-up Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные из предыдущих узлов\nconst parseDecision = $items(\"Parse Decision\")[0].json;\nconst pendingData = $items(\"Get Pending Follow-ups\")[0].json;\n\n// Подготавливаем данные для Update Status\nreturn [{\n  json: {\n    followup_id: pendingData.id,\n    email: pendingData.email,\n    thread_id: pendingData.thread_id,\n    lead_score: pendingData.lead_score,\n    emailContent: parseDecision.emailContent ? \n                  parseDecision.emailContent.substring(0, 500) : \n                  'Follow-up sent'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        1232
+      ],
+      "id": "a49faf33-2648-44e2-8f26-64204143d24d",
+      "name": "Prepare Update Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные для пропущенных follow-ups\nconst parseDecision = $items(\"Parse Decision\")[0].json;\nconst pendingData = $items(\"Get Pending Follow-ups\")[0].json;\n\n// Подготавливаем данные для Mark as Skipped\nreturn [{\n  json: {\n    followup_id: pendingData.id,\n    reason: parseDecision.reason || 'Низкий lead score или no_response'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        1376
+      ],
+      "id": "3d18513e-735d-4183-9495-249f63ec58bd",
+      "name": "Prepare Skip Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные из предыдущего узла\nconst sqlResult = $input.first().json;\nconst pendingData = $items(\"Get Pending Follow-ups\")[0]?.json || {};\nconst parseDecision = $items(\"Parse Decision\")[0]?.json || {};\n\n// Определяем статус\nlet status = 'Неизвестно';\nif (sqlResult?.status === 'Follow-up sent') {\n  status = 'Отправлено';\n} else if (sqlResult?.status === 'Skipped') {\n  status = 'Пропущено';\n}\n\n// Получаем данные\nconst email = pendingData.email || 'Не указан';\nconst leadScore = pendingData.lead_score || 0;\n\n// Очищаем reason от специальных символов для Telegram\nlet reason = parseDecision.reason || 'Автоматическая обработка';\n// Удаляем проблемные символы\nreason = reason\n  .replace(/'/g, '')\n  .replace(/\"/g, '')\n  .replace(/`/g, '')\n  .replace(/\\n/g, ' ')\n  .substring(0, 200); // Ограничиваем длину\n\n// Формируем сообщение без спецсимволов\nconst icon = status === 'Отправлено' ? '✅' : '⏭️';\nconst message = `📊 Follow-up Report\n\n${icon} Статус: ${status}\n📧 Email: ${email}\n💯 Lead Score: ${leadScore}\n📝 Причина: ${reason}`;\n\nreturn [{\n  json: {\n    message: message\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        1408
+      ],
+      "id": "911bb64e-866a-46d5-b30f-f77b5b8e862e",
+      "name": "Prepare Telegram Data"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Создание таблиц для отслеживания синхронизации с SendPulse\nCREATE TABLE IF NOT EXISTS sendpulse_sync (\n    id SERIAL PRIMARY KEY,\n    email VARCHAR(255) NOT NULL,\n    addressbook_id INTEGER NOT NULL,\n    addressbook_name VARCHAR(100) NOT NULL,\n    sync_status VARCHAR(50) NOT NULL,\n    sync_date TIMESTAMP DEFAULT NOW(),\n    error_message TEXT,\n    UNIQUE(email, addressbook_id)\n);\n\nCREATE TABLE IF NOT EXISTS sendpulse_addressbooks (\n    id INTEGER PRIMARY KEY,\n    name VARCHAR(100) NOT NULL,\n    type VARCHAR(50) NOT NULL, -- 'leads' or 'customers'\n    language VARCHAR(10) NOT NULL,\n    last_sync TIMESTAMP\n);\n\n-- Добавляем информацию об адресных книгах (замените ID на реальные)\nINSERT INTO sendpulse_addressbooks (id, name, type, language)\nVALUES \n    (123456, 'leads_ru', 'leads', 'ru'),\n    (123457, 'leads_en', 'leads', 'en'),\n    (123458, 'customers_ru', 'customers', 'ru'),\n    (123459, 'customers_en', 'customers', 'en')\nON CONFLICT (id) DO NOTHING;\n\nSELECT 'Tables created successfully' as status;",
+        "options": {}
+      },
+      "id": "81e6c890-148b-4c9e-870d-c0377c4e66c2",
+      "name": "Initialize SendPulse Tables",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -2000,
+        -80
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Подготовка данных для SendPulse OAuth\n// ВАЖНО: Замените эти значения на ваши реальные API credentials из SendPulse\nconst SENDPULSE_API_ID = 'e00470078ad763936dc9578bbe148414'; \nconst SENDPULSE_API_SECRET = 'e98d876685d4779e7248fd6a9cc65e13';\n\n// Формируем данные для получения токена\nreturn [{\n  json: {\n    grant_type: 'client_credentials',\n    client_id: SENDPULSE_API_ID,\n    client_secret: SENDPULSE_API_SECRET\n  }\n}];"
+      },
+      "id": "7527c788-87fd-4750-b115-502880c162d8",
+      "name": "Prepare SendPulse Auth",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        768,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.sendpulse.com/oauth/access_token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grant_type",
+              "value": "={{ $json.grant_type }}"
+            },
+            {
+              "name": "client_id",
+              "value": "={{ $json.client_id }}"
+            },
+            {
+              "name": "client_secret",
+              "value": "={{ $json.client_secret }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1a88054f-c41b-4054-8c69-589cdfdbed27",
+      "name": "Get SendPulse Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные email из узла Save Email Record1\nconst emailData = $items(\"Save Email Record1\")[0].json;\n\n// Получаем токен SendPulse из узла Get SendPulse Token\nconst sendPulseToken = $items(\"Get SendPulse Token\")[0].json;\n\n// ID адресных книг в SendPulse\nconst ADDRESSBOOKS = {\n  'leads_ru': 1590447,     // ID русской книги лидов\n  'leads_en': 1591644,     // ID английской книги лидов\n  'customers_ru': 1590611, // ID книги русских клиентов\n  'customers_en': 1591645  // ID книги английских клиентов\n};\n\n// Выбираем адресную книгу на основе языка\nconst language = emailData.language || 'ru';\nconst addressbookId = language === 'ru' ? ADDRESSBOOKS.leads_ru : ADDRESSBOOKS.leads_en;\nconst customersBookId = language === 'ru' ? ADDRESSBOOKS.customers_ru : ADDRESSBOOKS.customers_en;\n\n// Логирование для отладки\nconsole.log('Email data from Save Email Record1:', emailData);\nconsole.log('Token received:', sendPulseToken.access_token ? 'Yes' : 'No');\n\n// Подготавливаем данные для добавления в SendPulse\nreturn [{\n  json: {\n    token: sendPulseToken.access_token,\n    tokenType: sendPulseToken.token_type || 'Bearer',\n    addressbookId: addressbookId,\n    customersBookId: customersBookId,\n    emailData: {\n      email: emailData.email,\n      variables: {\n        name: emailData.clientName || '',\n        phone: emailData.phone || '',\n        platform: emailData.platform || 'telegram',\n        session_id: emailData.sessionId,\n        lead_score: emailData.leadScore || 50,\n        added_date: new Date().toISOString().split('T')[0]\n      }\n    },\n    language: language,\n    originalData: emailData\n  }\n}];"
+      },
+      "id": "154bf010-e17e-4017-a1d5-1145174918ff",
+      "name": "Prepare Contact Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1152,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.sendpulse.com/addressbooks/{{ $json.customersBookId }}/emails/{{ $json.emailData.email }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.tokenType }} {{ $json.token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "c220054d-c249-4a8d-8523-2f6bc66bcca3",
+      "name": "Check if Customer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1344,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.message }}",
+              "rightValue": "Email not found",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              },
+              "id": "6fe44b79-011f-486b-9db5-95bd0caf74e0"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9333463f-947a-4fcb-a483-a7ae2064cdef",
+      "name": "Is Not Customer?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1536,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.sendpulse.com/addressbooks/{{ $items(\"Prepare Contact Data\")[0].json.addressbookId }}/emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $items(\"Prepare Contact Data\")[0].json.tokenType }} {{ $items(\"Prepare Contact Data\")[0].json.token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"emails\": [\n    {\n      \"email\": {{ JSON.stringify($items(\"Prepare Contact Data\")[0].json.emailData.email) }},\n      \"variables\": {\n        \"name\": {{ JSON.stringify($items(\"Prepare Contact Data\")[0].json.emailData.variables.name) }},\n        \"Phone\": {{ JSON.stringify($items(\"Prepare Contact Data\")[0].json.emailData.variables.phone) }},\n        \"platform\": {{ JSON.stringify($items(\"Prepare Contact Data\")[0].json.emailData.variables.platform) }},\n        \"session_id\": {{ JSON.stringify($items(\"Prepare Contact Data\")[0].json.emailData.variables.session_id) }},\n        \"lead_score\": {{ JSON.stringify($items(\"Prepare Contact Data\")[0].json.emailData.variables.lead_score) }},\n        \"added_date\": {{ JSON.stringify($items(\"Prepare Contact Data\")[0].json.emailData.variables.added_date) }}\n      }\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "1284cfd9-9af4-4560-a2aa-e2a630eeefad",
+      "name": "Add to SendPulse",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO sendpulse_sync (\n    email,\n    addressbook_id,\n    addressbook_name,\n    sync_status,\n    sync_date\n) VALUES (\n    '{{ $items(\"Prepare Contact Data\")[0].json.emailData.email }}',\n    {{ $items(\"Prepare Contact Data\")[0].json.addressbookId }},\n    '{{ $items(\"Prepare Contact Data\")[0].json.language === \"ru\" ? \"leads_ru\" : \"leads_en\" }}',\n    'added',\n    NOW()\n)\nON CONFLICT (email, addressbook_id) \nDO UPDATE SET \n    sync_status = 'updated',\n    sync_date = NOW()\nRETURNING *;",
+        "options": {}
+      },
+      "id": "ab90c5f0-76fc-4d1e-b6e4-31e61367684b",
+      "name": "Log SendPulse Sync",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2400,
+        -560
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Логируем что пользователь уже является клиентом\nconst data = $items(\"Prepare Contact Data\")[0].json;\n\nconsole.log(`User ${data.emailData.email} is already a customer. Skipping add to leads list.`);\n\n// Возвращаем информацию для логирования\nreturn [{\n  json: {\n    email: data.emailData.email,\n    status: 'already_customer',\n    message: 'User is already a customer, not added to leads list',\n    addressbookId: data.customersBookId,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "fdbb7f9c-ccd8-4e33-bb4f-0425007c3fa7",
+      "name": "Log Existing Customer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1712,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.sendpulse.com/addressbooks/{{ $json.addressbookId }}/emails/{{ $json.emailData.email }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.tokenType }} {{ $json.token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "f25ac454-23f7-4cc2-9331-469e5e77cd65",
+      "name": "Check if Already Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1872,
+        -368
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.message }}",
+              "rightValue": "Email not found",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              },
+              "id": "6fe44b79-011f-486b-9db5-95bd0caf74e0"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "279e8b6a-a155-4b7d-b3aa-9e4880e76866",
+      "name": "Already in Leads?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2048,
+        -368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные email из узла Save Email Record1\nconst emailData = $items(\"Save Email Record1\")[0].json;\n\n// Получаем токен SendPulse из узла Get SendPulse Token\nconst sendPulseToken = $items(\"Get SendPulse Token\")[0].json;\n\n// ID адресных книг в SendPulse\nconst ADDRESSBOOKS = {\n  'leads_ru': 1590447,     // ID русской книги лидов\n  'leads_en': 1591644,     // ID английской книги лидов\n  'customers_ru': 1590611, // ID книги русских клиентов\n  'customers_en': 1591645  // ID книги английских клиентов\n};\n\n// Выбираем адресную книгу на основе языка\nconst language = emailData.language || 'ru';\nconst addressbookId = language === 'ru' ? ADDRESSBOOKS.leads_ru : ADDRESSBOOKS.leads_en;\nconst customersBookId = language === 'ru' ? ADDRESSBOOKS.customers_ru : ADDRESSBOOKS.customers_en;\n\n// Логирование для отладки\nconsole.log('Email data from Save Email Record1:', emailData);\nconsole.log('Token received:', sendPulseToken.access_token ? 'Yes' : 'No');\n\n// Подготавливаем данные для добавления в SendPulse\nreturn [{\n  json: {\n    token: sendPulseToken.access_token,\n    tokenType: sendPulseToken.token_type || 'Bearer',\n    addressbookId: addressbookId,\n    customersBookId: customersBookId,\n    emailData: {\n      email: emailData.email,\n      variables: {\n        name: emailData.clientName || '',\n        phone: emailData.phone || '',\n        platform: emailData.platform || 'telegram',\n        session_id: emailData.sessionId,\n        lead_score: emailData.leadScore || 50,\n        added_date: new Date().toISOString().split('T')[0]\n      }\n    },\n    language: language,\n    originalData: emailData\n  }\n}];"
+      },
+      "id": "10cf3b30-2a35-47a3-882a-21223c58bb6e",
+      "name": "Prepare Contact Data1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1696,
+        -368
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "9083b0f0-dfaf-4956-ab55-a023f38304a0",
+      "name": "SendPulse Sync Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -2016,
+        1728
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Получаем всех пользователей из leads книг для проверки\nSELECT DISTINCT \n    ss.email,\n    ss.addressbook_id,\n    ss.addressbook_name,\n    CASE \n        WHEN ss.addressbook_name LIKE '%_ru' THEN 'ru'\n        ELSE 'en'\n    END as language\nFROM sendpulse_sync ss\nWHERE ss.sync_status IN ('added', 'updated')\n  AND ss.addressbook_name IN ('leads_ru', 'leads_en')\n  AND ss.sync_date > NOW() - INTERVAL '30 days'\nLIMIT 100;",
+        "options": {}
+      },
+      "id": "276bc794-099d-4d17-8a0f-06f8f745f101",
+      "name": "Get Leads to Check",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1472,
+        1728
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "78fd219a-d817-4d57-9d1c-9b9ab5385a32",
+      "name": "Split Leads Batch",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -1280,
+        1728
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Подготовка данных для проверки\nconst currentItem = $input.first().json;\nconst sendPulseToken = $items(\"Get SendPulse Token1\")[0].json;\n\n// ID адресных книг\nconst ADDRESSBOOKS = {\n  'customers_ru': 1590611,\n  'customers_en': 1591645\n};\n\n// Определяем ID книги клиентов на основе языка\nconst customersBookId = currentItem.language === 'ru' ? \n  ADDRESSBOOKS.customers_ru : ADDRESSBOOKS.customers_en;\n\nconsole.log('Checking email:', currentItem.email);\nconsole.log('Customer book ID:', customersBookId);\nconsole.log('Lead book ID:', currentItem.addressbook_id);\n\nreturn [{\n  json: {\n    ...currentItem,\n    token: sendPulseToken.access_token,\n    tokenType: sendPulseToken.token_type || 'Bearer',\n    customersBookId: customersBookId\n  }\n}];"
+      },
+      "id": "580302a8-0174-4dce-b21d-a03a08e8cc81",
+      "name": "Prepare Check Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -992,
+        1696
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Проверяем результат запроса\nconst response = $input.first().json;\nconst checkData = $items(\"Prepare Check Data\")[0].json;\n\nconsole.log('Check response:', JSON.stringify(response, null, 2));\n\n// Проверяем, является ли пользователь клиентом\nlet isCustomer = false;\n\n// Если есть данные контакта (имя, переменные и т.д.) - значит email найден\nif (response && response.email === checkData.email) {\n  isCustomer = true;\n} else if (response.variables && Array.isArray(response.variables)) {\n  // Альтернативная проверка - если есть массив переменных\n  isCustomer = true;\n} else if (response.abook_id) {\n  // Или если есть ID адресной книги\n  isCustomer = true;\n}\n\nconsole.log(`Email ${checkData.email} is customer: ${isCustomer}`);\n\nreturn [{\n  json: {\n    ...checkData,\n    isCustomer: isCustomer,\n    checkResponse: response\n  }\n}];"
+      },
+      "id": "6cab623f-ae06-46c3-8d1e-fbcd5e24b7fa",
+      "name": "Process Check Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        1696
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.isCustomer }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "id": "29e0950c-37f1-422c-9986-afc9f9b588a4"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0ca54629-12bd-4c4f-97ea-806cc1e5d3c7",
+      "name": "Became Customer?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -352,
+        1696
+      ]
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=https://api.sendpulse.com/addressbooks/{{ $json.addressbook_id }}/emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.tokenType }} {{ $json.token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"emails\": [\"{{ $json.email }}\"]\n}",
+        "options": {}
+      },
+      "id": "11762f96-92d4-418b-a934-5b706b9f9947",
+      "name": "Remove from Leads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -176,
+        1632
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Логируем, что пользователь еще не клиент\nconst data = $input.first().json;\n\nconsole.log(`Email ${data.email} is still a lead, keeping in leads list`);\n\n// Передаем данные обратно в Split Batch для продолжения цикла\nreturn [{\n  json: {\n    processed: true,\n    email: data.email,\n    stillLead: true\n  }\n}];"
+      },
+      "id": "8972582b-3f0d-4c7e-8404-39063af3bee1",
+      "name": "Log Still Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        1792
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Подготовка данных для SendPulse OAuth\nconst SENDPULSE_API_ID = 'e00470078ad763936dc9578bbe148414';\nconst SENDPULSE_API_SECRET = 'e98d876685d4779e7248fd6a9cc65e13';\n\n// Формируем данные для получения токена\nreturn [{\n  json: {\n    grant_type: 'client_credentials',\n    client_id: SENDPULSE_API_ID,\n    client_secret: SENDPULSE_API_SECRET\n  }\n}];"
+      },
+      "id": "4bdbd0aa-56ff-4747-bdb1-dfbfe1b3b2a1",
+      "name": "Prepare SendPulse Auth1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1840,
+        1728
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.sendpulse.com/oauth/access_token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grant_type",
+              "value": "={{ $json.grant_type }}"
+            },
+            {
+              "name": "client_id",
+              "value": "={{ $json.client_id }}"
+            },
+            {
+              "name": "client_secret",
+              "value": "={{ $json.client_secret }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b0c8ad99-3fa3-420d-b9a2-4cbd8c852ce9",
+      "name": "Get SendPulse Token1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1664,
+        1728
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Логируем успешную очистку\nconst result = $input.first().json;\n\nconsole.log(`Successfully moved to customers: ${result.email}`);\nconsole.log(`Removed from addressbook: ${result.addressbook_id}`);\nconsole.log(`Status updated at: ${result.sync_date}`);\n\n// Передаем данные обратно в Split Batch для продолжения цикла\nreturn [{\n  json: {\n    processed: true,\n    email: result.email,\n    movedAt: result.sync_date\n  }\n}];"
+      },
+      "id": "92d4b8b1-4dbc-4e82-a47f-8c7b2530dfca",
+      "name": "Log Success1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        384,
+        1632
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем результаты синхронизации\nconst totalProcessed = $items(\"Get Leads to Check\").length;\n\n// Подсчитываем результаты (если нужно)\nconst summary = {\n  status: 'completed',\n  totalProcessed: totalProcessed,\n  completedAt: new Date().toISOString(),\n  message: `SendPulse sync completed. Processed ${totalProcessed} lead(s).`\n};\n\nconsole.log('=== SYNC COMPLETE ===');\nconsole.log(summary.message);\nconsole.log('====================');\n\nreturn [{json: summary}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1072,
+        1552
+      ],
+      "id": "cc478dc1-c381-40cd-9f78-43e90045b89a",
+      "name": "Sync Complete Report"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.sendpulse.com/addressbooks/{{ $json.customersBookId }}/emails/{{ $json.email }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.tokenType }} {{ $json.token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "0ec67ccb-ce88-4641-bf41-1b22bc4a1e62",
+      "name": "Check Customer Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -752,
+        1696
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE sendpulse_sync\nSET \n    sync_status = 'moved_to_customers',\n    sync_date = NOW()\nWHERE email = '{{ $json.email }}'\n  AND addressbook_id = {{ $json.addressbook_id }}\nRETURNING *;",
+        "options": {}
+      },
+      "id": "b68f71b2-9d7e-488d-a452-30ef559c04d5",
+      "name": "Remove from Leads2",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        192,
+        1632
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные из начальных узлов\nconst checkData = $items(\"Process Check Result\")[0].json;\nconst removeResult = $input.first().json;\n\n// Подготавливаем данные для Update Sync Status\nreturn [{\n  json: {\n    email: checkData.email,\n    addressbook_id: checkData.addressbook_id,\n    removeResult: removeResult.result || true,\n    status: 'moved_to_customers'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1632
+      ],
+      "id": "cd07d3e1-783b-4922-8571-43f9f8797378",
+      "name": "Prepare Update Data1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "73212611-2a14-4a98-8587-14fed2aa3c0f",
+              "leftValue": "={{ $json.emailData.emailContent }}||{{ $json.reason }}",
+              "rightValue": 50,
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -960,
+        256
+      ],
+      "id": "9202d0c9-e06e-4da3-863b-0602322f7ca6",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -1088,
+        768
+      ],
+      "id": "b65afaa3-e3dc-4533-a5e8-0c6b88fcd274",
+      "name": "Gemini Model Reply",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "abo0BDHSJPM0pgRU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Парсим ответ AI агента\nconst aiResponse = $input.first().json;\nconst historyData = $json;\nconst clientEmail = $('Get History').first().json.email;\n\nconst retryCount = historyData.retryCount || 0;\nif (retryCount > 2) {\n  return []; // Останавливаем после 3 попыток\n}\n\nlet emailContent = '';\nlet shouldSendReply = true;\nlet replyData = {};\n\ntry {\n  // Получаем output от AI\n  let output = aiResponse.output;\n  \n  if (typeof output === 'string') {\n    const trimmedOutput = output.trim();\n    \n    // Проверяем, начинается ли с HTML тегов\n    if (trimmedOutput.startsWith('<!DOCTYPE') || \n        trimmedOutput.startsWith('<html')) {\n      // Это чистый HTML\n      emailContent = trimmedOutput;\n    } else {\n      // Это JSON - нужно распарсить\n      try {\n        // Очищаем от markdown блоков кода\n        const cleanJson = trimmedOutput\n          .replace(/```json\\n?/g, '')\n          .replace(/```\\n?/g, '')\n          .trim();\n        \n        // Парсим JSON\n        const parsedData = JSON.parse(cleanJson);\n        \n        // Извлекаем данные\n        if (parsedData.replyData && parsedData.replyData.emailContent) {\n          emailContent = parsedData.replyData.emailContent;\n          replyData = parsedData;\n        } else if (parsedData.emailContent) {\n          emailContent = parsedData.emailContent;\n          replyData = parsedData;\n        } else {\n          // Может быть вложенный JSON в строке?\n          // Попробуем распарсить emailContent если он строка с JSON\n          if (typeof parsedData === 'string' && parsedData.includes('emailContent')) {\n            const innerParsed = JSON.parse(parsedData);\n            if (innerParsed.replyData && innerParsed.replyData.emailContent) {\n              emailContent = innerParsed.replyData.emailContent;\n              replyData = innerParsed;\n            }\n          }\n        }\n        \n        // Проверяем shouldReply\n        if (parsedData.shouldReply === false) {\n          shouldSendReply = false;\n        }\n        \n      } catch (parseError) {\n        console.error('Ошибка парсинга JSON:', parseError);\n        // Может быть HTML замаскирован под строку\n        if (trimmedOutput.includes('<!DOCTYPE') || trimmedOutput.includes('<html')) {\n          // Попробуем извлечь HTML из строки\n          const htmlMatch = trimmedOutput.match(/<!DOCTYPE[\\s\\S]*<\\/html>/);\n          if (htmlMatch) {\n            emailContent = htmlMatch[0];\n          }\n        }\n      }\n    }\n  } else if (typeof output === 'object') {\n    replyData = output;\n    if (replyData.replyData && replyData.replyData.emailContent) {\n      emailContent = replyData.replyData.emailContent;\n    } else if (replyData.emailContent) {\n      emailContent = replyData.emailContent;\n    }\n  }\n  \n} catch (e) {\n  console.error('Ошибка обработки AI ответа:', e);\n  return [];\n}\n\n// Если не нужно отвечать\nif (!shouldSendReply) {\n  console.log('AI решил не отвечать');\n  return [];\n}\n\n// Проверяем, что есть HTML контент\nif (!emailContent || !emailContent.includes('<')) {\n  console.error('HTML контент не найден или некорректный:', emailContent.substring(0, 100));\n  return [];\n}\n\n// Если нет контента - возвращаем флаг для повтора\nif (!emailContent || emailContent.length < 50) {\n  return [{\n    json: {\n      needsRetry: true,\n      email: clientEmail,\n      retryCount: retryCount + 1,  // ЗДЕСЬ увеличиваем счетчик\n      ...historyData\n    }\n  }];\n}\n\n// Подготавливаем данные для отправки\nreturn [{\n  json: {\n    to: clientEmail,\n    subject: $('Loop Over Items').first().json.subject,\n    emailContent: emailContent, // Только HTML!\n    language: replyData.replyData?.language || historyData.language || 'ru',\n    attachments: replyData.replyData?.attachments || [],\n    threadId: historyData.thread_id,\n    messageId: historyData.messageId,\n    originalBody: historyData.conversation_history || '',\n    senderName: historyData.full_name || 'Client',\n    urgency: replyData.replyData?.urgency || 'medium',\n    leadScore: replyData.clientData?.leadScore || historyData.lead_score || 0,\n    intent: replyData.clientData?.intent || 'information',\n    internalNote: replyData.internalNote || '',\n    followUpDays: replyData.replyData?.followUpDays || 3\n  }\n}];"
+      },
+      "id": "ba46e865-e71c-4a9f-b94b-37f8c4efa864",
+      "name": "Parse AI Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.emailContent }}",
+        "options": {
+          "appendAttribution": false,
+          "bccList": "",
+          "ccList": "",
+          "senderName": "Cryptomator Team",
+          "replyTo": "={{ $json.to }}"
+        }
+      },
+      "id": "b52cae22-e085-4668-8f77-b86097be15b1",
+      "name": "Send Gmail Reply",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -1984,
+        912
+      ],
+      "webhookId": "8eb71c68-b6e1-41b8-b35d-cb51b60a4b61",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ev0cwU3ZEXqPZ9wU",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $items('Process Incoming')[0].json.messageId }}"
+      },
+      "id": "8e1a90fa-a100-461a-af4d-d0fbe1902f77",
+      "name": "Mark as Read",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -1600,
+        912
+      ],
+      "webhookId": "3a5b53fc-89d0-4694-a5b3-4bd8fe1bd679",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ev0cwU3ZEXqPZ9wU",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Готовим красивый отчет для Telegram с правильным экранированием\nconst emailData = $input.first().json;\n\n// Функция для экранирования ТОЛЬКО опасных символов для Markdown v2\nfunction escapeMarkdown(text) {\n  if (!text) return '';\n  // Экранируем только символы, которые ломают Markdown\n  return String(text)\n    .replace(/\\\\/g, '\\\\\\\\')  // Обратный слеш\n    .replace(/\\*/g, '\\\\*')   // Звездочка\n    .replace(/_/g, '\\\\_')    // Подчеркивание\n    .replace(/\\[/g, '\\\\[')   // Квадратные скобки\n    .replace(/\\]/g, '\\\\]')\n    .replace(/\\(/g, '\\\\(')   // Круглые скобки\n    .replace(/\\)/g, '\\\\)')\n    .replace(/~/g, '\\\\~')    // Тильда\n    .replace(/`/g, '\\\\`')    // Обратная кавычка\n    .replace(/>/g, '\\\\>')    // Больше\n    .replace(/#/g, '\\\\#')    // Решетка\n    .replace(/\\+/g, '\\\\+')   // Плюс\n    .replace(/-/g, '\\\\-')    // Минус\n    .replace(/=/g, '\\\\=')    // Равно\n    .replace(/\\|/g, '\\\\|')   // Вертикальная черта\n    .replace(/\\{/g, '\\\\{')   // Фигурные скобки\n    .replace(/\\}/g, '\\\\}')\n    .replace(/\\./g, '\\\\.')   // Точка\n    .replace(/!/g, '\\\\!');   // Восклицательный знак\n}\n\nconst urgencyEmoji = {\n  'high': '🔴',\n  'medium': '🟡', \n  'low': '🟢'\n};\n\nconst intentEmoji = {\n  'purchase': '💰',\n  'information': 'ℹ️',\n  'support': '🛠️',\n  'complaint': '⚠️'\n};\n\n// Безопасное экранирование текстовых полей\nconst safeName = escapeMarkdown(emailData.senderName || emailData.to || 'Клиент');\nconst safeEmail = escapeMarkdown(emailData.to || 'не указан');\nconst safeSubject = escapeMarkdown(emailData.subject || 'Без темы');\nconst safeNote = escapeMarkdown(emailData.internalNote || 'Автоматический ответ отправлен');\n\n// Формируем красивое сообщение с Markdown V2\nconst message = `📧 *Автоответ отправлен*\n\n👤 *Клиент:* ${safeName}\n📮 *Email:* ${safeEmail}\n📝 *Тема:* ${safeSubject}\n🌐 *Язык:* ${emailData.language === 'ru' ? '🇷🇺 Русский' : '🇬🇧 English'}\n\n${urgencyEmoji[emailData.urgency] || '🟡'} *Приоритет:* ${emailData.urgency || 'medium'}\n${intentEmoji[emailData.intent] || 'ℹ️'} *Намерение:* ${emailData.intent || 'information'}\n💯 *Lead Score:* ${emailData.leadScore || 0}/100\n\n📌 *Заметка:* ${safeNote}\n⏰ *Follow\\\\-up через:* ${emailData.followUpDays || 3} дней\n\n\\\\#email\\\\_reply \\\\#${emailData.language || 'ru'} \\\\#${emailData.intent || 'info'}`;\n\nreturn [{\n  json: {\n    message: message,\n    chat_id: '-1002588885971'\n  }\n}];"
+      },
+      "id": "8864e356-e6e7-4ab8-bbec-4f212e04e058",
+      "name": "Prepare Telegram Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1200,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "MarkdownV2"
+        }
+      },
+      "id": "47d26b66-c289-417d-af33-99ce5bd34cf3",
+      "name": "Notify Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -1008,
+        912
+      ],
+      "webhookId": "c8083b85-cd33-439b-b371-c8152b2ae32e",
+      "credentials": {
+        "telegramApi": {
+          "id": "fn7ywFo6SxQJtPcU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=КОНТЕКСТ ПИСЬМА:\n\nОт: {{ $('Process Incoming').item.json.from }} ({{ $('Process Incoming').item.json.senderName }})\nТема: {{ $('Process Incoming').item.json.subject }}\nЯзык: {{ $('Process Incoming').item.json.language === 'ru' ? 'Русский' : 'English' }}\nТекст письма:\n{{ $('Process Incoming').item.json.body }}\n\nИСТОРИЯ ПЕРЕПИСКИ:\n{{ $json.conversation_history || 'Новый клиент' }}\n\nДАННЫЕ КЛИЕНТА:\nИмя: {{ $json.full_name || $('Process Incoming').item.json.senderName }}\nLead Score: {{ $json.lead_score || 0 }}\nКоличество писем: {{ $json.message_count || 0 }}",
+        "options": {
+          "systemMessage": "# РОЛЬ: Email Менеджер Cryptomator\n\nТы - профессиональный менеджер по продажам Cryptomator, отвечающий на email-запросы клиентов. Твоя задача - конвертировать входящие письма в продажи, поддерживать клиентов и строить долгосрочные отношения.\n\n# ВАЖНО: Используй Google Sheets Tool для получения:\n- Актуальных цен и тарифов\n- Отзывов клиентов\n- Технических характеристик\n- FAQ и частых вопросов\n- Если не знаешь точный ответ на вопрос клиента\n- всегда проверяй Google Sheets Tool перед ответом\n\n## КРИТИЧЕСКИ ВАЖНЫЕ ПРАВИЛА:\n\n### 1. ЯЗЫКОВАЯ АДАПТАЦИЯ\n- ВСЕГДА отвечай на том языке, на котором написано письмо\n- Русские письма = русский ответ\n- English emails = English response\n- Смешанный текст = язык большинства\n\n### 2. ПЕРСОНАЛИЗАЦИЯ\n- Используй имя клиента, если оно известно\n- НЕ используй плейсхолдеры [Имя], [Name]\n- Если имя неизвестно - обращайся без имени\n\n### 3. КОНТЕКСТ И ИСТОРИЯ\n- ВСЕГДА учитывай историю переписки\n- Ссылайся на предыдущие обсуждения\n- Не повторяй уже данную информацию\n- Развивай диалог логично\n\n## СТРУКТУРА EMAIL-ОТВЕТОВ:\n\n### Для ПЕРВОГО письма:\n```\nПриветствие + благодарность за интерес\nПрямой ответ на вопросы\nДополнительная ценная информация\nМягкое предложение следующего шага\nКонтакты для связи\n```\n\n### Для ПРОДОЛЖЕНИЯ диалога:\n```\nБлагодарность за ответ\nОтветы на новые вопросы\nРазвитие темы / углубление\nКонкретное предложение\nПризыв к действию\n```\n\n## ТИПОВЫЕ СЦЕНАРИИ:\n\n### 1. ЗАПРОС ИНФОРМАЦИИ О ПРОДУКТЕ\n**RU**: \"Спасибо за интерес к Cryptomator! Наш торговый бот работает на 6 проверенных алгоритмах и обеспечивает доходность до 150% годовых. В приложении - подробная презентация. Готовы начать с пробного периода?\"\n\n**EN**: \"Thank you for your interest in Cryptomator! Our trading bot operates on 6 proven algorithms delivering up to 150% annual returns. Please find the detailed presentation attached. Would you like to start with a trial period?\"\n\n### 2. ВОПРОСЫ О ЦЕНАХ\n**RU**: \n- Starter: $29/месяц - идеально для начала\n- Professional: $59/месяц - расширенные возможности\n- Enterprise: $99/месяц - максимальный функционал\n\"Какой тариф больше соответствует вашим целям?\"\n\n**EN**:\n- Starter: $29/month - perfect for beginners\n- Professional: $59/month - advanced features\n- Enterprise: $99/month - maximum functionality\n\"Which plan best matches your trading goals?\"\n\n### 3. ТЕХНИЧЕСКИЕ ВОПРОСЫ\n**RU**: \"Отличный вопрос! Cryptomator интегрируется через API с основными биржами (Binance, OKX, Bybit). Настройка занимает 15 минут, есть видео-инструкция. Нужна помощь с подключением?\"\n\n**EN**: \"Great question! Cryptomator integrates via API with major exchanges (Binance, OKX, Bybit). Setup takes 15 minutes with video guide included. Need help with connection?\"\n\n### 4. СОМНЕНИЯ И ВОЗРАЖЕНИЯ\n**RU**: \"Понимаю ваши опасения. Более 500 клиентов уже используют Cryptomator. Ваши средства остаются на вашей бирже, мы не имеем доступа к выводу. Хотите обсудить гарантии безопасности подробнее?\"\n\n**EN**: \"I understand your concerns. Over 500 clients already use Cryptomator. Your funds stay on your exchange, we have no withdrawal access. Would you like to discuss security guarantees in detail?\"\n\n## РАБОТА С ВОЗРАЖЕНИЯМИ:\n\n### \"Дорого\" / \"Expensive\"\n**RU**: \"$29 = меньше $1 в день. Одна успешная сделка окупает месячную подписку. При средней доходности наших клиентов ROI составляет 300-500% в первый месяц.\"\n\n**EN**: \"$29 = less than $1 per day. One successful trade covers the monthly subscription. With our average client returns, ROI is 300-500% in the first month.\"\n\n### \"Нужно подумать\" / \"Need to think\"\n**RU**: \"Конечно! Пока вы думаете, отправляю материалы для изучения. Кстати, сейчас действует скидка 20% для новых клиентов - до конца недели.\"\n\n**EN**: \"Of course! While you consider, I'm sending materials for review. By the way, we have a 20% discount for new clients - valid until end of week.\"\n\n## ПРАВИЛА ВЛОЖЕНИЙ:\n\n### Когда прикреплять PDF:\n- Первый запрос информации → презентация\n- Запрос о стратегии → описание +150%\n- После demo запроса → инструкция\n\n### PDF файлы:\n- RU: driveId: \"1xVXrc_yDynRHugGa-tu7gZYB72N8uieF\"\n- EN: driveId: \"1Hu5FXAtGDGuoZ_h7CnoE_0rCnKpSCrNq\"\n\n## ЭСКАЛАЦИЯ:\n\nКогда переадресовать менеджеру:\n- Запросы об индивидуальных условиях\n- Технические проблемы с оплатой\n- Корпоративные клиенты\n- Жалобы или конфликты\n\n## ОБЯЗАТЕЛЬНЫЙ HTML ФОРМАТ ОТВЕТА:\n\n### ПРАВИЛО ВЫБОРА ШАБЛОНА:\n- Если это ПЕРВОЕ письмо клиенту (message_count = 0 или conversation_history = \"Новый клиент\") → используй ПОЛНЫЙ шаблон с тарифами\n- Если это ПРОДОЛЖЕНИЕ переписки (message_count > 0 или есть история) → используй УПРОЩЕННЫЙ шаблон без тарифов\n- Проверяй поле conversation_history: если там \"Новый клиент\" - это первое письмо\n\n### ДЛЯ ПЕРВОГО ПИСЬМА (когда message_count = 0 или conversation_history = \"Новый клиент\"):\n```html\n<!DOCTYPE html>\n<html>\n<body style=\"font-family: Arial, sans-serif; line-height: 1.6; color: #333;\">\n    <div style=\"max-width: 600px; margin: 0 auto; padding: 20px;\">\n        <p>Добрый день, {имя если известно}!</p>\n        \n        <p>Спасибо за ваш интерес к Cryptomator.</p>\n        \n        <div style=\"background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0;\">\n            <p>{прямой ответ на вопросы клиента}</p>\n        </div>\n        \n        <div style=\"background: #ebf8ff; border: 1px solid #bee3f8; border-radius: 8px; padding: 15px; margin: 20px 0;\">\n            <h3 style=\"color: #2c5282; margin-top: 0;\">📊 Преимущества Cryptomator:</h3>\n            <ul style=\"list-style: none; padding: 0;\">\n                <li style=\"margin-bottom: 10px;\">✅ Автоматическая торговля 24/7</li>\n                <li style=\"margin-bottom: 10px;\">📈 Стратегия +150% годовых</li>\n                <li style=\"margin-bottom: 10px;\">🔐 Ваши средства остаются на бирже</li>\n                <li style=\"margin-bottom: 10px;\">⚡ Простая настройка за 15 минут</li>\n            </ul>\n        </div>\n        \n        <h3 style=\"color: #2c5282;\">💰 Наши тарифы:</h3>\n        <div style=\"background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin: 15px 0;\">\n            <ul style=\"list-style: none; padding: 0;\">\n                <li style=\"margin-bottom: 10px;\">💚 <strong>Starter:</strong> $29/месяц - идеальный выбор для новичков</li>\n                <li style=\"margin-bottom: 10px;\">💙 <strong>Professional:</strong> $59/месяц - расширенные возможности для опытных трейдеров</li>\n                <li style=\"margin-bottom: 10px;\">💜 <strong>Enterprise:</strong> $99/месяц - максимальный функционал для профессионалов</li>\n            </ul>\n        </div>\n        \n        <div style=\"text-align: center; margin: 25px 0;\">\n            <a href=\"https://cryptomator.pro\" style=\"background-color: #3182ce; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;\">🚀 Попробовать демо</a>\n        </div>\n        \n        <p>Буду рад ответить на любые дополнительные вопросы!</p>\n        \n        <p>С наилучшими пожеланиями,<br>\n        <strong>Команда Cryptomator</strong></p>\n        \n        <hr style=\"border: 0; border-top: 1px solid #e2e8f0; margin: 30px 0;\">\n        \n        <div style=\"text-align: center; padding: 15px 0;\">\n            <p style=\"margin: 5px 0;\">\n                📧 Email: <a href=\"mailto:support@cryptomator.pro\" style=\"color: #3182ce; text-decoration: none;\">support@cryptomator.pro</a>\n            </p>\n            <p style=\"margin: 5px 0;\">\n                💬 Telegram: <a href=\"https://t.me/cryptomator_support\" style=\"color: #3182ce; text-decoration: none;\">@cryptomator_support</a>\n            </p>\n            <p style=\"margin: 5px 0;\">\n                🌐 Сайт: <a href=\"https://cryptomator.pro\" style=\"color: #3182ce; text-decoration: none;\">cryptomator.pro</a>\n            </p>\n        </div>\n        \n        <p style=\"font-size: 12px; color: #718096; text-align: center; margin-top: 20px;\">\n            Это письмо отправлено автоматически на основе нашего диалога.<br>\n            Если у вас есть вопросы, просто ответьте на это письмо.\n        </p>\n    </div>\n</body>\n</html>\n\n### ДЛЯ ПРОДОЛЖЕНИЯ ПЕРЕПИСКИ (когда message_count > 0 или есть история):\n<!DOCTYPE html>\n<html>\n<body style=\"font-family: Arial, sans-serif; line-height: 1.6; color: #333;\">\n    <div style=\"max-width: 600px; margin: 0 auto; padding: 20px;\">\n        <p>{приветствие с именем если известно}!</p>\n        \n        <p>Спасибо за ваш ответ.</p>\n        \n        <div style=\"background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0;\">\n            <p>{прямой и подробный ответ на вопросы клиента}</p>\n            {если нужны дополнительные разъяснения, добавь их здесь}\n        </div>\n        \n        {только если уместно предложить конкретное действие:}\n        <div style=\"text-align: center; margin: 25px 0;\">\n            <a href=\"https://cryptomator.pro\" style=\"background-color: #3182ce; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;\">🚀 {призыв к действию}</a>\n        </div>\n        \n        <p>Надеюсь, эта информация была полезной.</p>\n        \n        <p>С наилучшими пожеланиями,<br>\n        <strong>Команда Cryptomator</strong></p>\n        \n        <hr style=\"border: 0; border-top: 1px solid #e2e8f0; margin: 30px 0;\">\n        \n        <p style=\"font-size: 12px; color: #718096; text-align: center;\">\n    📧 <a href=\"mailto:support@cryptomator.pro\" style=\"color: #3182ce; text-decoration: none;\">support@cryptomator.pro</a> | \n    💬 <a href=\"https://t.me/cryptomator_support\" style=\"color: #3182ce; text-decoration: none;\">@cryptomator_support</a> | \n    🌐 <a href=\"https://cryptomator.pro\" style=\"color: #3182ce; text-decoration: none;\">cryptomator.pro</a>\n</p>\n    </div>\n</body>\n</html>\n\n## ФОРМАТ JSON ОТВЕТА:\n\n```json\n{\n  \"shouldReply\": true,\n  \"replyData\": {\n    \"subject\": \"Re: {оригинальная тема письма}\",\n    \"emailContent\": \"{полный HTML код письма выше с заполненными данными}\",\n    \"language\": \"{ru или en}\",\n    \"urgency\": \"medium\",\n    \"followUpDays\": 3\n  },\n  \"clientData\": {\n    \"leadScore\": {число от 0 до 100},\n    \"intent\": \"{information/purchase/support}\",\n    \"readyToBuy\": {true или false}\n  },\n  \"internalNote\": \"{заметка для команды если нужна}\"\n}\n```\n\n## ПОДПИСЬ (адаптировать под язык):\n\n**RU**:\n```\nС уважением,\n[Имя менеджера]\nКоманда Cryptomator\n\n📧 support@cryptomator.pro\n🌐 cryptomator.pro\n📱 Telegram: @cryptomator_support\n```\n\n**EN**:\n```\nBest regards,\n[Manager name]\nCryptomator Team\n\n📧 support@cryptomator.pro\n🌐 cryptomator.pro\n📱 Telegram: @cryptomator_support\n```\n\n## ЗАПРЕЩЕНО:\n- Обещать невозможное\n- Давать финансовые советы\n- Гарантировать конкретную прибыль\n- Обсуждать конкурентов негативно\n- Использовать агрессивные продажи\n- Отвечать на спам или оскорбления\n\n## ПРОВЕРКА ПЕРЕД ОТПРАВКОЙ:\n✓ Язык соответствует письму клиента?\n✓ Все вопросы получили ответы?\n✓ Есть следующий шаг для клиента?\n✓ Приложены нужные материалы?\n✓ Тон профессиональный и дружелюбный?\n\nПОМНИ: Каждое письмо - это шанс на продажу. Будь полезным, компетентным и ориентированным на решение проблем клиента."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        -1024,
+        576
+      ],
+      "id": "1f147c85-80d9-4b19-bf35-9cb0633c8e1c",
+      "name": "Gmail Reply Agent1"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "limit": 10,
+        "filters": {
+          "labelIds": [
+            "UNREAD"
+          ],
+          "q": "is:unread newer_than:3d -from:noreply -from:no-reply -from:donotreply"
+        }
+      },
+      "id": "ed07b42d-c753-48ee-87ec-a7b285236da0",
+      "name": "Get Unread Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -1776,
+        576
+      ],
+      "webhookId": "af7ee390-f5bf-4d16-978d-0f36d1f2ab79",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ev0cwU3ZEXqPZ9wU",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Обработка входящих писем с отладкой\nconst emails = $input.all();\nconst processedEmails = [];\nconst debugLog = [];\n\ndebugLog.push(`📧 Получено писем: ${emails.length}`);\ndebugLog.push('-------------------');\n\nfor (const item of emails) {\n  const email = item.json;\n  \n  // Извлекаем данные\n  const headers = email.payload?.headers || [];\n  const from = headers.find(h => h.name === 'From')?.value || email.From || '';\n  const subject = headers.find(h => h.name === 'Subject')?.value || email.Subject || '';\n  const messageId = email.id;\n  const threadId = email.threadId;\n  \n  // Извлекаем email и имя\n  let senderEmail = '';\n  let senderName = '';\n  \n  const emailMatch = from.match(/<([^>]+)>/) || from.match(/([^\\s]+@[^\\s]+)/);\n  if (emailMatch) {\n    senderEmail = emailMatch[1].toLowerCase().trim();\n  }\n  \n  if (from.includes('<')) {\n    senderName = from.split('<')[0].trim().replace(/['\"]/g, '');\n  } else {\n    senderName = from.split('@')[0];\n  }\n  \n  // Получаем тело\n  let body = email.snippet || '';\n  \n  // Логируем обработку\n  let emailLog = `\\n📨 Email #${emails.indexOf(item) + 1}:`;\n  emailLog += `\\n  От: ${senderName} <${senderEmail}>`;\n  emailLog += `\\n  Тема: ${subject}`;\n  \n  // ФИЛЬТРАЦИЯ\n  let skipReason = null;\n  \n  // 1. Проверяем noreply\n  if (senderEmail.includes('noreply') || senderEmail.includes('no-reply')) {\n    skipReason = 'NoReply адрес';\n  }\n  \n  // 2. Проверяем Facebook\n  else if (senderEmail.includes('facebook')) {\n    skipReason = 'Facebook';\n  }\n  \n  // 3. Проверяем Google\n  else if (senderEmail.includes('workspace@google')) {\n    skipReason = 'Google Workspace';\n  }\n  \n  // 4. Проверяем наши уведомления (но НЕ ответы)\n  else if (senderEmail.includes('cryptomator.pro')) {\n    const isReply = subject && subject.toLowerCase().includes('re:');\n    if (!isReply) {\n      skipReason = 'Наше автоматическое уведомление';\n    }\n  }\n  \n  // 5. Проверяем пустое письмо\n  else if (!body || body.length < 3) {\n    skipReason = 'Пустое письмо';\n  }\n  \n  // Добавляем результат в лог\n  if (skipReason) {\n    emailLog += `\\n  ❌ ПРОПУЩЕНО: ${skipReason}`;\n    debugLog.push(emailLog);\n    continue;\n  }\n  \n  emailLog += `\\n  ✅ ПРИНЯТО К ОБРАБОТКЕ`;\n  debugLog.push(emailLog);\n  \n  // Определяем язык\n  const hasRussian = /[а-яА-ЯёЁ]/.test(body + subject);\n  const language = hasRussian ? 'ru' : 'en';\n  \n  // Добавляем в обработку\n  processedEmails.push({\n    messageId: messageId,\n    threadId: threadId,\n    from: senderEmail,\n    senderName: senderName || 'Client',\n    subject: subject || 'No subject',\n    body: body.substring(0, 3000),\n    language: language,\n    timestamp: new Date(parseInt(email.internalDate || Date.now())).toISOString()\n  });\n}\n\ndebugLog.push('-------------------');\ndebugLog.push(`✉️ Итого обработано: ${processedEmails.length} из ${emails.length}`);\n\n// Если ничего не обработано, возвращаем лог для отладки\nif (processedEmails.length === 0) {\n  console.log('Нет новых писем для обработки:', debugLog.join('\\n'));\n  return []; // Пустой массив остановит workflow\n}\n\n// Возвращаем обработанные письма с логом\nreturn processedEmails.map((e, index) => ({\n  json: {\n    ...e,\n    debug: index === 0 ? debugLog.join('\\n') : undefined\n  }\n}));"
+      },
+      "id": "76dc3441-8422-4003-8c72-0236ccc9202b",
+      "name": "Process Incoming",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1584,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Проверяем историю или создаем пустую запись\nWITH existing_conversation AS (\n    SELECT * FROM gmail_conversations \n    WHERE email = '{{ $json.from }}'\n    LIMIT 1\n)\nSELECT \n    COALESCE(thread_id, '{{ $json.threadId }}') as thread_id,\n    COALESCE(email, '{{ $json.from }}') as email,\n    COALESCE(messages::text, 'Новый клиент') as conversation_history,\n    COALESCE(lead_score, 0) as lead_score,\n    COALESCE(message_count, 0) as message_count,\n    '{{ $json.senderName }}' as full_name,\n    'email' as platform,\n    '{{ $json.language }}' as language\nFROM existing_conversation\nUNION ALL\nSELECT \n    '{{ $json.threadId }}' as thread_id,\n    '{{ $json.from }}' as email,\n    'Новый клиент' as conversation_history,\n    0 as lead_score,\n    0 as message_count,\n    '{{ $json.senderName }}' as full_name,\n    'email' as platform,\n    '{{ $json.language }}' as language\nWHERE NOT EXISTS (SELECT 1 FROM existing_conversation);",
+        "options": {}
+      },
+      "id": "6f5c070d-59c2-4757-90bc-3203eeae441e",
+      "name": "Get History",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1216,
+        576
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "17jog8YLtJJAolGVCLKATWsz6fVJi-aPrGxP3fKtokS4",
+          "mode": "list",
+          "cachedResultName": "CryptomatorBase RU",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/17jog8YLtJJAolGVCLKATWsz6fVJi-aPrGxP3fKtokS4/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Лист1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/17jog8YLtJJAolGVCLKATWsz6fVJi-aPrGxP3fKtokS4/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.6,
+      "position": [
+        -784,
+        768
+      ],
+      "id": "5b4b29c1-d47f-461b-a4d1-ed6a8816c554",
+      "name": "Google Sheets ru",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "DvPu60dZpHogNtbY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Передаем ID сообщения для пометки как прочитанное\n// Берем данные из Send Gmail Reply (ответ Gmail API) и Parse AI Reply\nconst gmailResponse = $items(\"Send Gmail Reply\")[0].json;\nconst parseData = $items(\"Parse AI Reply\")[0].json;\n\nreturn [{\n  json: {\n    messageId: parseData.messageId || gmailResponse.messageId,\n    threadId: parseData.threadId || gmailResponse.threadId,\n    status: 'processed'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1792,
+        912
+      ],
+      "id": "fd41ca68-9e18-48ba-aa75-0ef626470d12",
+      "name": "Pass Message ID"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные из правильных источников\nconst parseData = $items(\"Parse AI Reply\")[0].json;\nconst markAsReadData = $json; // Данные от предыдущего узла Mark as Read\n\nreturn [{\n  json: {\n    to: parseData.to,\n    senderName: parseData.senderName || parseData.to.split('@')[0],\n    subject: parseData.subject,\n    language: parseData.language || 'ru',\n    urgency: parseData.urgency || 'medium',\n    intent: parseData.intent || 'information',\n    leadScore: parseData.leadScore || 0,\n    internalNote: parseData.internalNote || 'Автоматический ответ отправлен',\n    followUpDays: parseData.followUpDays || 3\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1392,
+        912
+      ],
+      "id": "81000934-58d5-46de-b99b-c8b140febf37",
+      "name": "Prepare Notification Data"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "id": "e0ad61e0-7f62-4733-ab90-980e7564a8c5",
+      "name": "Schedule Check answer",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -2000,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -1408,
+        576
+      ],
+      "id": "b78be5a3-76cf-49d5-97a9-2cea3d41ae7c",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -336,
+        592
+      ],
+      "id": "5377ebe2-04f4-4165-b4ab-59434989cb95",
+      "name": "Wait",
+      "webhookId": "285307e1-14c7-4381-b783-7fd9d73dc07c"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "73212611-2a14-4a98-8587-14fed2aa3c0f",
+              "leftValue": "={{ $json.emailContent }}",
+              "rightValue": 50,
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -512,
+        576
+      ],
+      "id": "3575b4e7-b5f8-4249-89bf-d485adb2e222",
+      "name": "If1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Email Trigger Webhook": {
+      "main": [
+        []
+      ]
+    },
+    "Schedule Check": {
+      "main": [
+        [
+          {
+            "node": "Get Unprocessed Dialogs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Unprocessed Dialogs": {
+      "main": [
+        [
+          {
+            "node": "Format Dialogs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Dialogs": {
+      "main": [
+        [
+          {
+            "node": "Email Decision Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Decision Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Send Email?": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Check Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Merge Email Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is New Email?": {
+      "main": [
+        [
+          {
+            "node": "Get Files from Drive",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Get Files from Drive": {
+      "main": [
+        [
+          {
+            "node": "Send Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Gmail": {
+      "main": [
+        [
+          {
+            "node": "Save Email Record1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Email Record": {
+      "main": [
+        [
+          {
+            "node": "Prepare Telegram Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare SendPulse Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Manager": {
+      "main": [
+        []
+      ]
+    },
+    "Gemini Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Email Decision Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Email Data": {
+      "main": [
+        [
+          {
+            "node": "Is New Email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Email Record1": {
+      "main": [
+        [
+          {
+            "node": "Save Email Record",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare Follow-up Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Telegram Report": {
+      "main": [
+        [
+          {
+            "node": "Notify Manager",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Twice Daily": {
+      "main": [
+        [
+          {
+            "node": "Get Pending Follow-ups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Pending Follow-ups": {
+      "main": [
+        [
+          {
+            "node": "Check Follow-up Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Follow-up Type": {
+      "main": [
+        [
+          {
+            "node": "Generate Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark as Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Follow-up": {
+      "main": [
+        [
+          {
+            "node": "Parse Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Decision": {
+      "main": [
+        [
+          {
+            "node": "Should Send?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Send?": {
+      "main": [
+        [
+          {
+            "node": "Send Follow-up Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Skip Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-up Email": {
+      "main": [
+        [
+          {
+            "node": "Prepare Update Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status": {
+      "main": [
+        [
+          {
+            "node": "Prepare Telegram Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark as Skipped": {
+      "main": [
+        [
+          {
+            "node": "Prepare Telegram Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate Follow-up",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Follow-up Data": {
+      "main": [
+        [
+          {
+            "node": "Schedule Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Update Data": {
+      "main": [
+        [
+          {
+            "node": "Update Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Skip Data": {
+      "main": [
+        [
+          {
+            "node": "Mark as Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Telegram Data": {
+      "main": [
+        [
+          {
+            "node": "Notify Telegram1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare SendPulse Auth": {
+      "main": [
+        [
+          {
+            "node": "Get SendPulse Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get SendPulse Token": {
+      "main": [
+        [
+          {
+            "node": "Prepare Contact Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Contact Data": {
+      "main": [
+        [
+          {
+            "node": "Check if Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Customer": {
+      "main": [
+        [
+          {
+            "node": "Is Not Customer?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Not Customer?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Contact Data1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Existing Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add to SendPulse": {
+      "main": [
+        [
+          {
+            "node": "Log SendPulse Sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Already Lead": {
+      "main": [
+        [
+          {
+            "node": "Already in Leads?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already in Leads?": {
+      "main": [
+        [
+          {
+            "node": "Add to SendPulse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Contact Data1": {
+      "main": [
+        [
+          {
+            "node": "Check if Already Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SendPulse Sync Schedule": {
+      "main": [
+        [
+          {
+            "node": "Prepare SendPulse Auth1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Leads to Check": {
+      "main": [
+        [
+          {
+            "node": "Split Leads Batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Leads Batch": {
+      "main": [
+        [
+          {
+            "node": "Sync Complete Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Check Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Check Data": {
+      "main": [
+        [
+          {
+            "node": "Check Customer Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Check Result": {
+      "main": [
+        [
+          {
+            "node": "Became Customer?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Became Customer?": {
+      "main": [
+        [
+          {
+            "node": "Remove from Leads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Still Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove from Leads": {
+      "main": [
+        [
+          {
+            "node": "Prepare Update Data1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Still Lead": {
+      "main": [
+        [
+          {
+            "node": "Split Leads Batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare SendPulse Auth1": {
+      "main": [
+        [
+          {
+            "node": "Get SendPulse Token1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get SendPulse Token1": {
+      "main": [
+        [
+          {
+            "node": "Get Leads to Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Success1": {
+      "main": [
+        [
+          {
+            "node": "Split Leads Batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Customer Status": {
+      "main": [
+        [
+          {
+            "node": "Process Check Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove from Leads2": {
+      "main": [
+        [
+          {
+            "node": "Log Success1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Update Data1": {
+      "main": [
+        [
+          {
+            "node": "Remove from Leads2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Should Send Email?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Unprocessed Dialogs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Model Reply": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gmail Reply Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Reply": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Gmail Reply": {
+      "main": [
+        [
+          {
+            "node": "Pass Message ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark as Read": {
+      "main": [
+        [
+          {
+            "node": "Prepare Notification Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Telegram Notification": {
+      "main": [
+        [
+          {
+            "node": "Notify Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Telegram": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Reply Agent1": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Unread Emails": {
+      "main": [
+        [
+          {
+            "node": "Process Incoming",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Incoming": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get History": {
+      "main": [
+        [
+          {
+            "node": "Gmail Reply Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets ru": {
+      "ai_tool": [
+        [
+          {
+            "node": "Gmail Reply Agent1",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Message ID": {
+      "main": [
+        [
+          {
+            "node": "Mark as Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Notification Data": {
+      "main": [
+        [
+          {
+            "node": "Prepare Telegram Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Check answer": {
+      "main": [
+        [
+          {
+            "node": "Get Unread Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Get History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Get Unread Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Send Gmail Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "3478586e-2135-45f8-8dc5-df335b9dccfc",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "GEZN4j4cHmla7fY6",
+  "tags": [
+    {
+      "updatedAt": "2025-09-03T09:45:35.751Z",
+      "createdAt": "2025-09-03T09:45:35.751Z",
+      "id": "uTKPUIySFeffjezP",
+      "name": "n8n Template"
+    },
+    {
+      "updatedAt": "2025-06-14T19:41:35.278Z",
+      "createdAt": "2025-06-14T19:41:35.278Z",
+      "id": "WPOeYvY1qmMvkJUj",
+      "name": "MCP"
+    },
+    {
+      "updatedAt": "2025-09-03T09:48:57.223Z",
+      "createdAt": "2025-09-03T09:48:57.223Z",
+      "id": "zb1DYOZS48nXTeVN",
+      "name": "labeling"
+    },
+    {
+      "updatedAt": "2025-09-03T09:48:57.239Z",
+      "createdAt": "2025-09-03T09:48:57.239Z",
+      "id": "uR2uXtRVmTSg8TkR",
+      "name": "label"
+    },
+    {
+      "updatedAt": "2025-09-03T09:48:57.229Z",
+      "createdAt": "2025-09-03T09:48:57.229Z",
+      "id": "S45Qq5Endh9uUUss",
+      "name": "email"
+    },
+    {
+      "updatedAt": "2025-09-03T09:48:57.237Z",
+      "createdAt": "2025-09-03T09:48:57.237Z",
+      "id": "dzslqMOyfvIHlq0f",
+      "name": "prod"
+    }
+  ]
+}

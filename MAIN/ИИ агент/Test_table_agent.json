@@ -1,0 +1,322 @@
+{
+  "name": "Test_table_agent",
+  "nodes": [
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolName": "documents",
+        "toolDescription": "Используй для семантического поиска информации в документах и таблицах. Возвращает релевантные фрагменты текста. Вызови для полного поиска инструменты List Documents, Get Table Rows, Query Tables SQL",
+        "tableName": {
+          "__rl": true,
+          "value": "documents",
+          "mode": "id"
+        },
+        "topK": 10,
+        "options": {
+          "queryName": "match_documents"
+        }
+      },
+      "id": "ceaa79de-0e19-4ae1-b190-3256c9a1fcdd",
+      "name": "RAG Search",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1,
+      "position": [
+        736,
+        272
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "7ldcSWe5TTPVh3zH",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Показывает список всех доступных документов и таблиц с их метаданными. Используй чтобы узнать file_id для дальнейших запросов по колонке id",
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "document_metadata",
+          "mode": "list"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "id": "f3226cf5-f3ca-464e-8ef5-792826d51e96",
+      "name": "List Documents",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.5,
+      "position": [
+        528,
+        256
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Получает все строки из указанной таблицы. Укажи file_id таблицы.",
+        "operation": "executeQuery",
+        "query": "SELECT row_data, row_number FROM document_rows WHERE dataset_id = '{{ $fromAI(\"file_id\") }}' ORDER BY row_number LIMIT 100",
+        "options": {}
+      },
+      "id": "17ba73c4-d90f-47ca-8723-5912f9742ee5",
+      "name": "Get Table Rows",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.5,
+      "position": [
+        384,
+        256
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Выполняет SQL запрос к табличным данным. Таблица: document_rows. Поля: dataset_id (это file_id), row_data (JSON с данными строки).",
+        "operation": "executeQuery",
+        "query": "{{ $fromAI('sql_query') }}",
+        "options": {}
+      },
+      "id": "a2dfb64d-b506-476b-807c-f9d498031d55",
+      "name": "Query Tables SQL",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.5,
+      "position": [
+        224,
+        256
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "contextWindowLength": 100
+      },
+      "id": "631f2c53-b50b-4900-a15d-2f0c16d0fe1e",
+      "name": "Chat Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.2,
+      "position": [
+        64,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput }}",
+        "options": {
+          "systemMessage": "=Ты помощник для поиска информации в базе документов и таблиц.\nКРИТИЧЕСКИ ВАЖНО! ОБЯЗАТЕЛЬНО ВЫЗЫВАЙ все tool: **List Documents**, **Get Table Rows**, **Query Tables SQL**, **RAG Search** для поиска информации и ответов.\nЕсли ты не обратился ко всем базам данным, твой ответ недействителен.\n\nДоступные инструменты tool:\n1. RAG Search - *match_documents* семантический поиск по всем документам и таблицам\n2. **List Documents** - показать список всех доступных файлов. Используй чтобы узнать file_id для дальнейших запросов.\n3. **Get Table Rows** - получить строки из конкретной таблицы. Получает все строки из указанной таблицы. Укажи file_id таблицы.\n4. **Query Tables SQL** - выполнить SQL запрос к табличным данным. Таблица: document_rows. Поля: dataset_id (это file_id), row_data (JSON с данными строки).\n\nДля работы с таблицами:\n- Используй List Documents чтобы найти нужную таблицу и её file_id\n- В Query Tables SQL используй dataset_id = file_id\n- Данные строк хранятся в поле row_data как JSON\n- Пример запроса: SELECT row_data->>'Student Name'\n\nПорядок работы:\n1. Начни с **RAG Search** для поиска релевантной информации\n2. Если нужны точные данные из таблиц - используй SQL запросы\n\nЕсли не нашел ответ - честно скажи об этом."
+        }
+      },
+      "id": "b4a0f81a-a335-4641-b449-44cfa0d622c8",
+      "name": "AI Agent1",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [
+        96,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "92ce771e-1066-47f5-92e1-8a932969ac0c",
+      "name": "Respond to Webhook1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -112,
+        336
+      ],
+      "id": "9a245091-17cf-44dc-9dd3-154bc6a43bc1",
+      "name": "Google Gemini Chat Model1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "abo0BDHSJPM0pgRU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        672,
+        448
+      ],
+      "id": "c523db4d-7431-42f4-a341-4f8d5ab82170",
+      "name": "Embeddings Google Gemini",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "abo0BDHSJPM0pgRU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "public": true,
+        "options": {}
+      },
+      "id": "6b910263-5532-4f2d-8346-2d3f5332aea9",
+      "name": "When chat message received",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -224,
+        0
+      ],
+      "webhookId": "e104e40e-6134-4825-a6f0-8a646d882662"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "RAG Search": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Documents": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Table Rows": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Tables SQL": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini": {
+      "ai_embedding": [
+        [
+          {
+            "node": "RAG Search",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "e8396d30-972b-4297-8214-9a70595f153d",
+  "meta": {
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "y54OaObdjvQMqTP7",
+  "tags": []
+}

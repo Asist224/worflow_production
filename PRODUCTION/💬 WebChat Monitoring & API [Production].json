@@ -1,0 +1,1233 @@
+{
+  "name": "💬 WebChat Monitoring & API [Production]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# ⚙️ НАСТРОЙКА WORKFLOW\n\n---\n\n## 1️⃣ Измените API ключ\n\nВо ВСЕХ узлах **⚙️ CONFIG** замените:\n```\napi_key: YOUR-API-KEY-HERE\n```\n\n---\n\n## 2️⃣ Названия таблиц\n\nВ **⚙️ CONFIG** узлах указаны\nиспользуемые таблицы.\nИзмените если нужно:\n• `table_monitoring`\n• `table_chat_ru`\n• `table_chat_en`\n• `table_contacts`\n\n✅ SQL запросы автоматически\nиспользуют эти переменные!\n\n---\n\n## 3️⃣ PostgreSQL\n\nКо всем 🗄️ узлам подключите\nваши PostgreSQL credentials\n\n---\n\n## 4️⃣ Endpoints\n\n• `/chat-monitoring` POST\n• `/chat-monitoring-data` GET\n• `/chat-dialogs` GET\n• `/server-time` GET\n• `/real-message-count` GET ⚠️\n• `/get-contact-data` GET\n\n⚠️ = публичный (без API key)\n\n---\n\n## 5️⃣ Активация\n\nНажмите **Active** →",
+        "height": 880,
+        "width": 340,
+        "color": 7
+      },
+      "id": "1fbd0f84-1c9a-450a-b225-5b217d54b616",
+      "name": "📋 ИНСТРУКЦИЯ",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -4464,
+        1600
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat-monitoring",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -3888,
+        2016
+      ],
+      "id": "cd6adb66-5823-43c2-9916-4795e87001ca",
+      "name": "🌐 POST: Save Activity",
+      "webhookId": "eb90ca04-d6ee-45f7-aada-b9b996978901"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"api_key\": \"YOUR-API-KEY-HERE\",\n  \"rate_limit_window_ms\": 60000,\n  \"rate_limit_max_requests\": 60,\n  \"table_monitoring\": \"webchat_monitoring\"\n}",
+        "options": {}
+      },
+      "id": "02dae29e-512d-4e7f-bca1-f2abc9af83ba",
+      "name": "⚙️ CONFIG - Save",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -3696,
+        2016
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('⚙️ CONFIG - Save').item.json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms || 60000;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests || 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3504,
+        2016
+      ],
+      "id": "e15989d9-163c-436a-96ff-6c0ce8006f12",
+      "name": "🔐 Security - Save"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -3312,
+        2016
+      ],
+      "id": "38311325-2089-49ca-bbfc-8fdb4c71ca31",
+      "name": "✅ Auth - Save"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -3120,
+        2112
+      ],
+      "id": "cee8e6e8-4c80-4f8d-aa1e-897a8b48a8f1",
+      "name": "❌ Error - Save"
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhook = items[0].json;\nconst inputData = webhook.body || webhook;\n\nconst currentTime = new Date();\nconst currentTimeISO = currentTime.toISOString();\n\nconst monitoringData = {\n    recordId: `${inputData.sessionId}_${Date.now()}`,\n    recordTimestamp: currentTimeISO,\n    session_id: inputData.sessionId,\n    user_id: inputData.userId,\n    user_name: inputData.userName,\n    config_name: inputData.configName,\n    platform: inputData.platform,\n    timestamp: currentTimeISO,\n    session_start_time: currentTimeISO,\n    last_activity_time: currentTimeISO,\n    session_duration: inputData.sessionDuration || 0,\n    event_type: inputData.eventType || 'activity',\n    message_count: inputData.messageCount || 0,\n    current_language: inputData.currentLanguage || 'ru',\n    is_minimized: inputData.isMinimized || false,\n    user_agent: inputData.userAgent || '',\n    screen_resolution: inputData.screenResolution || '',\n    language: inputData.language || '',\n    timezone: inputData.timezone || '',\n    referrer: inputData.referrer || '',\n    current_url: inputData.currentUrl || '',\n    domain: inputData.domain || '',\n    geo_ip: inputData.geo?.ip || 'Unknown',\n    geo_country: inputData.geo?.country || 'Unknown',\n    geo_city: inputData.geo?.city || 'Unknown',\n    geo_region: inputData.geo?.region || 'Unknown',\n    geo_latitude: inputData.geo?.latitude || null,\n    geo_longitude: inputData.geo?.longitude || null\n};\n\nreturn [{json: monitoringData}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3120,
+        1936
+      ],
+      "id": "9372456a-76d5-44c0-bb60-c3ec0ce70e84",
+      "name": "💻 Parse Activity Data"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- 🗄️ ТАБЛИЦА: {{ $('⚙️ CONFIG - Save').item.json.table_monitoring }}\n\nINSERT INTO {{ $('⚙️ CONFIG - Save').item.json.table_monitoring }} (\n    record_id, record_timestamp, session_id, user_id, user_name,\n    config_name, platform, timestamp, session_start_time, \n    last_activity_time, session_duration, event_type, message_count,\n    current_language, is_minimized, user_agent, screen_resolution,\n    language, timezone, referrer, current_url, domain,\n    geo_ip, geo_country, geo_city, geo_region, geo_latitude, geo_longitude\n)\nVALUES (\n    '{{ $json.recordId }}',\n    '{{ $json.recordTimestamp }}',\n    '{{ $json.session_id }}',\n    '{{ $json.user_id }}',\n    '{{ $json.user_name }}',\n    '{{ $json.config_name }}',\n    '{{ $json.platform }}',\n    '{{ $json.timestamp }}',\n    '{{ $json.session_start_time }}',\n    '{{ $json.last_activity_time }}',\n    {{ $json.session_duration }},\n    '{{ $json.event_type }}',\n    {{ $json.message_count }},\n    '{{ $json.current_language }}',\n    {{ $json.is_minimized }},\n    '{{ $json.user_agent }}',\n    '{{ $json.screen_resolution }}',\n    '{{ $json.language }}',\n    '{{ $json.timezone }}',\n    '{{ $json.referrer }}',\n    '{{ $json.current_url }}',\n    '{{ $json.domain }}',\n    '{{ $json.geo_ip }}',\n    '{{ $json.geo_country }}',\n    '{{ $json.geo_city }}',\n    '{{ $json.geo_region }}',\n    {{ $json.geo_latitude || 'NULL' }},\n    {{ $json.geo_longitude || 'NULL' }}\n)\nON CONFLICT (session_id) \nDO UPDATE SET\n    config_name = EXCLUDED.config_name,\n    platform = EXCLUDED.platform,\n    last_activity_time = EXCLUDED.last_activity_time,\n    session_duration = EXTRACT(EPOCH FROM (EXCLUDED.last_activity_time::timestamp - {{ $('⚙️ CONFIG - Save').item.json.table_monitoring }}.session_start_time::timestamp))::integer,\n    message_count = {{ $('⚙️ CONFIG - Save').item.json.table_monitoring }}.message_count,\n    current_language = EXCLUDED.current_language,\n    is_minimized = EXCLUDED.is_minimized,\n    geo_ip = EXCLUDED.geo_ip,\n    geo_country = EXCLUDED.geo_country,\n    geo_city = EXCLUDED.geo_city,\n    geo_region = EXCLUDED.geo_region,\n    geo_latitude = EXCLUDED.geo_latitude,\n    geo_longitude = EXCLUDED.geo_longitude,\n    event_type = EXCLUDED.event_type,\n    user_id = CASE \n        WHEN {{ $('⚙️ CONFIG - Save').item.json.table_monitoring }}.user_id IS NULL OR {{ $('⚙️ CONFIG - Save').item.json.table_monitoring }}.user_id = '' \n        THEN EXCLUDED.user_id \n        ELSE {{ $('⚙️ CONFIG - Save').item.json.table_monitoring }}.user_id \n    END,\n    user_name = CASE \n        WHEN {{ $('⚙️ CONFIG - Save').item.json.table_monitoring }}.user_name IS NULL OR {{ $('⚙️ CONFIG - Save').item.json.table_monitoring }}.user_name = '' \n        THEN EXCLUDED.user_name \n        ELSE {{ $('⚙️ CONFIG - Save').item.json.table_monitoring }}.user_name \n    END\nRETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -2896,
+        1936
+      ],
+      "id": "b7e12f60-431a-4797-84c1-2753016179bd",
+      "name": "🗄️ Save Monitoring",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"status\": \"success\",\n  \"message\": \"Data saved\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -2672,
+        1936
+      ],
+      "id": "7d802764-e138-46aa-ab0a-2742532632ca",
+      "name": "📤 Success - Save"
+    },
+    {
+      "parameters": {
+        "path": "chat-monitoring-data",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -3888,
+        2384
+      ],
+      "id": "6ce02290-c11f-48bf-982d-5e23df8021b1",
+      "name": "🌐 GET: Sessions List",
+      "webhookId": "f5630924-169d-40d7-977a-7602530143f8"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"api_key\": \"YOUR-API-KEY-HERE\",\n  \"rate_limit_window_ms\": 60000,\n  \"rate_limit_max_requests\": 60,\n  \"table_monitoring\": \"webchat_monitoring\",\n  \"table_chat_ru\": \"n8n_chat_histories_ru\",\n  \"table_chat_en\": \"n8n_chat_histories_en\"\n}",
+        "options": {}
+      },
+      "id": "3e6cee2c-25eb-4f13-92b1-409497dcc3d1",
+      "name": "⚙️ CONFIG - Sessions",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -3696,
+        2384
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('⚙️ CONFIG - Sessions').item.json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms || 60000;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests || 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3504,
+        2384
+      ],
+      "id": "02de8290-09ca-4d09-ac8a-ef541236f06b",
+      "name": "🔐 Security - Sessions"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -3312,
+        2384
+      ],
+      "id": "fa48c6f6-d79e-445c-acb4-e0af30aa1a59",
+      "name": "✅ Auth - Sessions"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -3120,
+        2512
+      ],
+      "id": "6ccf9b65-7109-4900-8cda-a554338f1e54",
+      "name": "❌ Error - Sessions"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- 🗄️ ТАБЛИЦЫ: {{ $('⚙️ CONFIG - Sessions').item.json.table_monitoring }}, {{ $('⚙️ CONFIG - Sessions').item.json.table_chat_ru }}, {{ $('⚙️ CONFIG - Sessions').item.json.table_chat_en }}\n\nWITH real_message_counts AS (\n    SELECT \n        session_id,\n        COUNT(*) as real_count,\n        array_agg(created_at ORDER BY created_at) as message_timestamps\n    FROM (\n        SELECT session_id, created_at FROM {{ $('⚙️ CONFIG - Sessions').item.json.table_chat_ru }}\n        UNION ALL\n        SELECT session_id, created_at FROM {{ $('⚙️ CONFIG - Sessions').item.json.table_chat_en }}\n    ) all_messages\n    GROUP BY session_id\n),\nsession_stats AS (\n    SELECT \n        wm.session_id,\n        MIN(wm.session_start_time) as session_start,\n        MAX(wm.last_activity_time) as last_activity,\n        EXTRACT(EPOCH FROM (MAX(wm.last_activity_time) - MIN(wm.session_start_time)))::integer as duration,\n        COALESCE(rmc.real_count, 0) as messages,\n        COALESCE(rmc.message_timestamps, ARRAY[]::timestamp[]) as message_timestamps,\n        FIRST_VALUE(wm.user_id) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as user_id,\n        FIRST_VALUE(wm.user_name) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as user_name,\n        FIRST_VALUE(wm.config_name) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as config_name,\n        FIRST_VALUE(wm.current_language) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as language,\n        FIRST_VALUE(wm.geo_ip) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as ip,\n        FIRST_VALUE(wm.geo_country) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as country,\n        FIRST_VALUE(wm.geo_city) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as city,\n        FIRST_VALUE(wm.user_agent) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as user_agent,\n        FIRST_VALUE(wm.referrer) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as referrer,\n        FIRST_VALUE(wm.domain) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as domain,\n        FIRST_VALUE(wm.platform) OVER (PARTITION BY wm.session_id ORDER BY wm.timestamp) as platform\n    FROM {{ $('⚙️ CONFIG - Sessions').item.json.table_monitoring }} wm\n    LEFT JOIN real_message_counts rmc ON wm.session_id = rmc.session_id\n    WHERE wm.last_activity_time >= NOW() - INTERVAL '30 days'\n        AND wm.user_id IS NOT NULL \n        AND wm.user_id != ''\n        AND wm.user_id != 'undefined'\n    GROUP BY wm.session_id, wm.timestamp, wm.user_id, wm.user_name, wm.config_name, \n             wm.current_language, wm.geo_ip, wm.geo_country, wm.geo_city, wm.user_agent, \n             wm.referrer, wm.domain, wm.platform, rmc.real_count, rmc.message_timestamps\n)\nSELECT DISTINCT ON (session_id) \n    *,\n    CASE \n        WHEN last_activity > NOW() - INTERVAL '5 minutes' THEN 'active'\n        ELSE 'inactive'\n    END as status\nFROM session_stats\nORDER BY session_id, last_activity DESC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -3120,
+        2336
+      ],
+      "id": "3b9b10cc-bb2a-4858-bb52-4e93114d2bbc",
+      "name": "🗄️ Get Sessions",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const formattedData = items.map(item => {\n    const data = item.json;\n    \n    let messageTimestamps = [];\n    if (data.message_timestamps) {\n        if (typeof data.message_timestamps === 'string') {\n            const timestampsStr = data.message_timestamps.replace(/[{}]/g, '');\n            if (timestampsStr) {\n                messageTimestamps = timestampsStr.split(',').map(ts => ts.trim());\n            }\n        } else if (Array.isArray(data.message_timestamps)) {\n            messageTimestamps = data.message_timestamps;\n        }\n    }\n    \n    return {\n        sessionId: data.session_id,\n        userId: data.user_id || 'unknown',\n        userName: data.user_name || 'Guest',\n        configName: data.config_name || 'unknown',\n        timestamp: data.last_activity,\n        sessionStartTime: data.session_start,\n        lastActivityTime: data.last_activity,\n        sessionDuration: parseInt(data.duration) || 0,\n        messageCount: parseInt(data.messages) || 0,\n        messageTimestamps: messageTimestamps,\n        currentLanguage: data.language || 'ru',\n        userAgent: data.user_agent || '',\n        referrer: data.referrer || '',\n        domain: data.domain || '',\n        platform: data.platform || 'webchat',\n        geo: {\n            ip: data.ip || 'unknown',\n            country: data.country || 'unknown',\n            city: data.city || 'unknown'\n        }\n    };\n});\n\nreturn [{json: {data: formattedData}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2896,
+        2336
+      ],
+      "id": "c898f694-45cf-4ff4-8a53-06037655fd67",
+      "name": "💻 Format Sessions"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -2672,
+        2336
+      ],
+      "id": "b817489c-ef6e-4f97-8f7e-46dbc051afb4",
+      "name": "📤 Sessions Response"
+    },
+    {
+      "parameters": {
+        "path": "chat-dialogs",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -3872,
+        2688
+      ],
+      "id": "f2312d0a-b391-4308-a123-ee72eff6cd36",
+      "name": "🌐 GET: Dialogs",
+      "webhookId": "b3b47b0c-151f-4415-b444-091d814e736e"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"api_key\": \"YOUR-API-KEY-HERE\",\n  \"rate_limit_window_ms\": 60000,\n  \"rate_limit_max_requests\": 60,\n  \"table_chat_ru\": \"n8n_chat_histories_ru\",\n  \"table_chat_en\": \"n8n_chat_histories_en\"\n}",
+        "options": {}
+      },
+      "id": "cfe4ffec-65fa-43b0-a314-c9f150619f58",
+      "name": "⚙️ CONFIG - Dialogs",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -3680,
+        2688
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('⚙️ CONFIG - Dialogs').item.json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms || 60000;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests || 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3488,
+        2688
+      ],
+      "id": "66f463a2-08c1-4527-94a3-93052a70b87e",
+      "name": "🔐 Security - Dialogs"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -3296,
+        2688
+      ],
+      "id": "dce313df-c8a5-4432-aff7-1f1ca6cd1ad3",
+      "name": "✅ Auth - Dialogs"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -3104,
+        2832
+      ],
+      "id": "b45b07a8-1ba4-48bd-a242-2cda62c3d6c6",
+      "name": "❌ Error - Dialogs"
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhookData = items[0].json;\nconst sessionId = webhookData.query?.session_id;\n\nif (!sessionId) {\n    throw new Error('session_id parameter is required');\n}\n\nreturn [{json: {session_id: sessionId}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3104,
+        2672
+      ],
+      "id": "bde7cd88-dba1-4978-a33c-92a1c008f067",
+      "name": "💻 Extract Session ID"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- 🗄️ ТАБЛИЦЫ: {{ $('⚙️ CONFIG - Dialogs').item.json.table_chat_ru }}, {{ $('⚙️ CONFIG - Dialogs').item.json.table_chat_en }}\n\nWITH all_chats AS (\n    SELECT \n        id,\n        session_id,\n        message::json->>'type' as message_type,\n        message::json->>'content' as content,\n        created_at as timestamp,\n        platform,\n        'ru' as language\n    FROM {{ $('⚙️ CONFIG - Dialogs').item.json.table_chat_ru }}\n    WHERE session_id = '{{ $json.session_id }}'\n\n    UNION ALL\n\n    SELECT \n        id,\n        session_id,\n        message::json->>'type' as message_type,\n        message::json->>'content' as content,\n        created_at as timestamp,\n        platform,\n        'en' as language\n    FROM {{ $('⚙️ CONFIG - Dialogs').item.json.table_chat_en }}\n    WHERE session_id = '{{ $json.session_id }}'\n)\nSELECT * FROM all_chats\nORDER BY timestamp ASC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -2912,
+        2672
+      ],
+      "id": "66a77feb-d17c-470c-be77-12f30d2d6895",
+      "name": "🗄️ Get Dialogs",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "if (!items || items.length === 0 || !items[0].json) {\n    return [{json: {dialogs: [], message: \"Нет сообщений для этой сессии\"}}];\n}\n\nconst formattedDialogs = items.map(item => {\n    const data = item.json;\n    const messageType = data.message_type === 'human' ? 'user' : 'bot';\n    \n    let messageText = data.content || '';\n    try {\n        if (messageText.startsWith('{') || messageText.startsWith('[')) {\n            const parsed = JSON.parse(messageText);\n            messageText = parsed.text || parsed.message || messageText;\n        }\n    } catch (e) {}\n    \n    const languageFlag = {'ru': '🇷🇺', 'en': '🇬🇧', 'de': '🇩🇪', 'es': '🇪🇸', 'fr': '🇫🇷'};\n    const platformIcon = {\n        'web': '💻', 'webchat': '💬', 'telegram': '✈️', 'whatsapp': '💬',\n        'viber': '💜', 'facebook': '👤', 'instagram': '📷', 'vk': '🔵',\n        'slack': '🔷', 'discord': '🎮', 'mobile': '📲', 'api': '🔌',\n        'email': '📧', 'sms': '📨'\n    };\n    \n    return {\n        id: data.id,\n        session_id: data.session_id,\n        message_type: messageType,\n        message_text: messageText,\n        response_text: messageType === 'bot' ? messageText : '',\n        timestamp: data.timestamp,\n        language: data.language || 'unknown',\n        language_flag: languageFlag[data.language] || '🌐',\n        platform: data.platform || 'web',\n        platform_icon: platformIcon[data.platform] || '❓'\n    };\n});\n\nreturn [{json: {dialogs: formattedDialogs}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2752,
+        2672
+      ],
+      "id": "1549e6d4-66e9-4f7e-8e44-78353520a887",
+      "name": "💻 Format Dialogs"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -2592,
+        2672
+      ],
+      "id": "0142d728-7c81-46ea-ba63-63e537614b15",
+      "name": "📤 Dialogs Response"
+    },
+    {
+      "parameters": {
+        "path": "server-time",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "c33ee707-82dc-482e-bece-1cf8bfab691e",
+      "name": "🌐 GET: Server Time",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -3856,
+        3056
+      ],
+      "webhookId": "80106ead-1754-441d-a2b5-bc238d1dab07"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"api_key\": \"YOUR-API-KEY-HERE\",\n  \"rate_limit_window_ms\": 60000,\n  \"rate_limit_max_requests\": 60\n}",
+        "options": {}
+      },
+      "id": "b0e22053-1baf-4a1f-b5c7-017c091f4d3d",
+      "name": "⚙️ CONFIG - Time",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -3664,
+        3056
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('⚙️ CONFIG - Time').item.json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms || 60000;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests || 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3472,
+        3056
+      ],
+      "id": "b536cfac-2d88-4015-96d8-5a60ed0e0406",
+      "name": "🔐 Security - Time"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -3280,
+        3056
+      ],
+      "id": "817348c4-c048-431c-ace0-b2b3a487779c",
+      "name": "✅ Auth - Time"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -3088,
+        3200
+      ],
+      "id": "2dd46ee5-5875-4510-9054-fa94b265973e",
+      "name": "❌ Error - Time"
+    },
+    {
+      "parameters": {
+        "jsCode": "const serverTime = new Date();\n\nreturn [{\n    json: {\n        serverTime: serverTime.toISOString(),\n        serverTimestamp: serverTime.getTime(),\n        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'\n    }\n}];"
+      },
+      "id": "9d22c88e-f9a6-4ef4-9b99-00e3fe35cb95",
+      "name": "🕐 Get Server Time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3088,
+        3040
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "ac19f6dd-2138-4224-a96e-509444b31096",
+      "name": "📤 Time Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -2864,
+        3040
+      ]
+    },
+    {
+      "parameters": {
+        "path": "real-message-count",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "903373a8-c1f0-45d5-83b2-7d07332fd70f",
+      "name": "🌐 GET: Message Count",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -3888,
+        1792
+      ],
+      "webhookId": "real-message-count-webhook"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"table_monitoring\": \"webchat_monitoring\",\n  \"table_chat_ru\": \"n8n_chat_histories_ru\",\n  \"table_chat_en\": \"n8n_chat_histories_en\"\n}",
+        "options": {}
+      },
+      "id": "326bec32-f603-42c9-939c-34a537007b93",
+      "name": "⚙️ CONFIG - Count",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -3696,
+        1792
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- 🗄️ ТАБЛИЦЫ: {{ $('⚙️ CONFIG - Count').item.json.table_monitoring }}, {{ $('⚙️ CONFIG - Count').item.json.table_chat_ru }}, {{ $('⚙️ CONFIG - Count').item.json.table_chat_en }}\n-- ⚠️ Этот endpoint БЕЗ авторизации (публичный)\n\nWITH message_counts AS (\n    SELECT \n        session_id,\n        COUNT(*) as real_messages\n    FROM (\n        SELECT session_id FROM {{ $('⚙️ CONFIG - Count').item.json.table_chat_ru }}\n        UNION ALL\n        SELECT session_id FROM {{ $('⚙️ CONFIG - Count').item.json.table_chat_en }}\n    ) all_messages\n    GROUP BY session_id\n)\nSELECT \n    wm.session_id,\n    COALESCE(mc.real_messages, 0) as message_count\nFROM {{ $('⚙️ CONFIG - Count').item.json.table_monitoring }} wm\nLEFT JOIN message_counts mc ON wm.session_id = mc.session_id\nWHERE wm.session_id IN (\n    SELECT DISTINCT session_id \n    FROM {{ $('⚙️ CONFIG - Count').item.json.table_monitoring }} \n    WHERE last_activity_time > NOW() - INTERVAL '24 hours'\n);",
+        "options": {}
+      },
+      "id": "c7c73445-bd8a-4c59-b620-93eaf96f0429",
+      "name": "🗄️ Get Message Count",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -3504,
+        1792
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "66364af4-2b84-4f0c-8ad3-1f1a7d68413a",
+      "name": "📤 Count Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -3296,
+        1792
+      ]
+    },
+    {
+      "parameters": {
+        "path": "get-contact-data",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "42241984-1e08-4319-8e06-875c0ce820d3",
+      "name": "🌐 GET: Contact Data",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -3856,
+        3376
+      ],
+      "webhookId": "get-contact-data-webhook"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"api_key\": \"YOUR-API-KEY-HERE\",\n  \"rate_limit_window_ms\": 60000,\n  \"rate_limit_max_requests\": 60,\n  \"table_contacts\": \"user_contact_data\",\n  \"table_monitoring\": \"webchat_monitoring\"\n}",
+        "options": {}
+      },
+      "id": "56587bc4-5c35-49d5-9865-5382eb855677",
+      "name": "⚙️ CONFIG - Contacts",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -3664,
+        3376
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('⚙️ CONFIG - Contacts').item.json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms || 60000;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests || 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3472,
+        3376
+      ],
+      "id": "6b5aab1f-1ab0-4dba-a9fd-e8996a01c7da",
+      "name": "🔐 Security - Contacts"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -3280,
+        3376
+      ],
+      "id": "ff626024-9be3-4d66-b80d-9c87541e9783",
+      "name": "✅ Auth - Contacts"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -3088,
+        3536
+      ],
+      "id": "f7c781a2-2787-4323-a1f1-91f4023c1aae",
+      "name": "❌ Error - Contacts"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- 🗄️ ТАБЛИЦЫ: {{ $('⚙️ CONFIG - Contacts').item.json.table_contacts }}, {{ $('⚙️ CONFIG - Contacts').item.json.table_monitoring }}\n\nSELECT \n    ucd.session_id,\n    ucd.full_name,\n    ucd.first_name,\n    ucd.last_name,\n    ucd.phone,\n    ucd.phone_raw,\n    ucd.email,\n    ucd.telegram,\n    ucd.whatsapp,\n    ucd.instagram,\n    ucd.other_contacts,\n    ucd.company,\n    ucd.position,\n    ucd.location,\n    ucd.preferred_contact,\n    ucd.confidence_score,\n    ucd.extracted_from,\n    ucd.last_updated\nFROM {{ $('⚙️ CONFIG - Contacts').item.json.table_contacts }} ucd\nWHERE ucd.session_id IN (\n    SELECT DISTINCT session_id \n    FROM {{ $('⚙️ CONFIG - Contacts').item.json.table_monitoring }} \n    WHERE last_activity_time >= NOW() - INTERVAL '30 days'\n);",
+        "options": {}
+      },
+      "id": "e362aa3f-e3ca-4879-bd54-a46543d56da5",
+      "name": "🗄️ Get Contacts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -3088,
+        3360
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const contacts = {};\n\nitems.forEach(item => {\n    const data = item.json;\n    let messengers = [];\n    \n    if (data.telegram) messengers.push(`TG: ${data.telegram}`);\n    if (data.whatsapp) messengers.push(`WA: ${data.whatsapp}`);\n    if (data.instagram) messengers.push(`IG: ${data.instagram}`);\n  \n    if (data.other_contacts) {\n        try {\n            const other = typeof data.other_contacts === 'string' \n                ? JSON.parse(data.other_contacts) \n                : data.other_contacts;\n            \n            Object.entries(other).forEach(([platform, contact]) => {\n                if (platform.startsWith('email') && data.email) {\n                    if (contact !== data.email) messengers.push(`${platform}: ${contact}`);\n                } else if (contact) {\n                    messengers.push(`${platform}: ${contact}`);\n                }\n            });\n        } catch (e) {}\n    }\n    \n    contacts[data.session_id] = {\n        name: data.full_name || `${data.first_name || ''} ${data.last_name || ''}`.trim() || null,\n        firstName: data.first_name,\n        lastName: data.last_name,\n        phone: data.phone || data.phone_raw,\n        email: data.email,\n        messengers: messengers.join(', ') || null,\n        telegram: data.telegram,\n        whatsapp: data.whatsapp,\n        instagram: data.instagram,\n        company: data.company,\n        position: data.position,\n        location: data.location,\n        preferredContact: data.preferred_contact,\n        confidence: data.confidence_score,\n        extractedFrom: data.extracted_from,\n        lastUpdated: data.last_updated\n    };\n});\n\nreturn [{json: {contacts}}];"
+      },
+      "id": "9f3b4c02-2db4-4d32-9b59-c4edf703e599",
+      "name": "💻 Format Contacts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2896,
+        3360
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "8a54ead1-9ddf-4abc-8268-49fe04c15aa1",
+      "name": "📤 Contacts Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2688,
+        3360
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "🌐 POST: Save Activity": {
+      "main": [
+        [
+          {
+            "node": "⚙️ CONFIG - Save",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ CONFIG - Save": {
+      "main": [
+        [
+          {
+            "node": "🔐 Security - Save",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔐 Security - Save": {
+      "main": [
+        [
+          {
+            "node": "✅ Auth - Save",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✅ Auth - Save": {
+      "main": [
+        [
+          {
+            "node": "💻 Parse Activity Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "❌ Error - Save",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💻 Parse Activity Data": {
+      "main": [
+        [
+          {
+            "node": "🗄️ Save Monitoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🗄️ Save Monitoring": {
+      "main": [
+        [
+          {
+            "node": "📤 Success - Save",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🌐 GET: Sessions List": {
+      "main": [
+        [
+          {
+            "node": "⚙️ CONFIG - Sessions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ CONFIG - Sessions": {
+      "main": [
+        [
+          {
+            "node": "🔐 Security - Sessions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔐 Security - Sessions": {
+      "main": [
+        [
+          {
+            "node": "✅ Auth - Sessions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✅ Auth - Sessions": {
+      "main": [
+        [
+          {
+            "node": "🗄️ Get Sessions",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "❌ Error - Sessions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🗄️ Get Sessions": {
+      "main": [
+        [
+          {
+            "node": "💻 Format Sessions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💻 Format Sessions": {
+      "main": [
+        [
+          {
+            "node": "📤 Sessions Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🌐 GET: Dialogs": {
+      "main": [
+        [
+          {
+            "node": "⚙️ CONFIG - Dialogs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ CONFIG - Dialogs": {
+      "main": [
+        [
+          {
+            "node": "🔐 Security - Dialogs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔐 Security - Dialogs": {
+      "main": [
+        [
+          {
+            "node": "✅ Auth - Dialogs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✅ Auth - Dialogs": {
+      "main": [
+        [
+          {
+            "node": "💻 Extract Session ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "❌ Error - Dialogs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💻 Extract Session ID": {
+      "main": [
+        [
+          {
+            "node": "🗄️ Get Dialogs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🗄️ Get Dialogs": {
+      "main": [
+        [
+          {
+            "node": "💻 Format Dialogs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💻 Format Dialogs": {
+      "main": [
+        [
+          {
+            "node": "📤 Dialogs Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🌐 GET: Server Time": {
+      "main": [
+        [
+          {
+            "node": "⚙️ CONFIG - Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ CONFIG - Time": {
+      "main": [
+        [
+          {
+            "node": "🔐 Security - Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔐 Security - Time": {
+      "main": [
+        [
+          {
+            "node": "✅ Auth - Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✅ Auth - Time": {
+      "main": [
+        [
+          {
+            "node": "🕐 Get Server Time",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "❌ Error - Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🕐 Get Server Time": {
+      "main": [
+        [
+          {
+            "node": "📤 Time Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🌐 GET: Message Count": {
+      "main": [
+        [
+          {
+            "node": "⚙️ CONFIG - Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ CONFIG - Count": {
+      "main": [
+        [
+          {
+            "node": "🗄️ Get Message Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🗄️ Get Message Count": {
+      "main": [
+        [
+          {
+            "node": "📤 Count Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🌐 GET: Contact Data": {
+      "main": [
+        [
+          {
+            "node": "⚙️ CONFIG - Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ CONFIG - Contacts": {
+      "main": [
+        [
+          {
+            "node": "🔐 Security - Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔐 Security - Contacts": {
+      "main": [
+        [
+          {
+            "node": "✅ Auth - Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✅ Auth - Contacts": {
+      "main": [
+        [
+          {
+            "node": "🗄️ Get Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "❌ Error - Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🗄️ Get Contacts": {
+      "main": [
+        [
+          {
+            "node": "💻 Format Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💻 Format Contacts": {
+      "main": [
+        [
+          {
+            "node": "📤 Contacts Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "ecefa7b2-c6f0-44d6-8ff9-8cc61c2f0ae6",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "94367Qm7NKhHzXEU",
+  "tags": []
+}

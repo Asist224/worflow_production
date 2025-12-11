@@ -1,0 +1,550 @@
+{
+  "name": "Email_auto_responder",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        256,
+        432
+      ],
+      "id": "0aaa0fb4-4ee6-4613-bb12-3cee0febf6eb",
+      "name": "Gemini Model Reply",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "abo0BDHSJPM0pgRU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Парсим ответ AI агента\nconst aiResponse = $input.first().json;\nconst historyData = $json;\nconst clientEmail = $('Get History').first().json.email;\n\nconst retryCount = historyData.retryCount || 0;\nif (retryCount > 2) {\n  return []; // Останавливаем после 3 попыток\n}\n\nlet emailContent = '';\nlet shouldSendReply = true;\nlet replyData = {};\n\ntry {\n  // Получаем output от AI\n  let output = aiResponse.output;\n  \n  if (typeof output === 'string') {\n    const trimmedOutput = output.trim();\n    \n    // Проверяем, начинается ли с HTML тегов\n    if (trimmedOutput.startsWith('<!DOCTYPE') || \n        trimmedOutput.startsWith('<html')) {\n      // Это чистый HTML\n      emailContent = trimmedOutput;\n    } else {\n      // Это JSON - нужно распарсить\n      try {\n        // Очищаем от markdown блоков кода\n        const cleanJson = trimmedOutput\n          .replace(/```json\\n?/g, '')\n          .replace(/```\\n?/g, '')\n          .trim();\n        \n        // Парсим JSON\n        const parsedData = JSON.parse(cleanJson);\n        \n        // Извлекаем данные\n        if (parsedData.replyData && parsedData.replyData.emailContent) {\n          emailContent = parsedData.replyData.emailContent;\n          replyData = parsedData;\n        } else if (parsedData.emailContent) {\n          emailContent = parsedData.emailContent;\n          replyData = parsedData;\n        } else {\n          // Может быть вложенный JSON в строке?\n          // Попробуем распарсить emailContent если он строка с JSON\n          if (typeof parsedData === 'string' && parsedData.includes('emailContent')) {\n            const innerParsed = JSON.parse(parsedData);\n            if (innerParsed.replyData && innerParsed.replyData.emailContent) {\n              emailContent = innerParsed.replyData.emailContent;\n              replyData = innerParsed;\n            }\n          }\n        }\n        \n        // Проверяем shouldReply\n        if (parsedData.shouldReply === false) {\n          shouldSendReply = false;\n        }\n        \n      } catch (parseError) {\n        console.error('Ошибка парсинга JSON:', parseError);\n        // Может быть HTML замаскирован под строку\n        if (trimmedOutput.includes('<!DOCTYPE') || trimmedOutput.includes('<html')) {\n          // Попробуем извлечь HTML из строки\n          const htmlMatch = trimmedOutput.match(/<!DOCTYPE[\\s\\S]*<\\/html>/);\n          if (htmlMatch) {\n            emailContent = htmlMatch[0];\n          }\n        }\n      }\n    }\n  } else if (typeof output === 'object') {\n    replyData = output;\n    if (replyData.replyData && replyData.replyData.emailContent) {\n      emailContent = replyData.replyData.emailContent;\n    } else if (replyData.emailContent) {\n      emailContent = replyData.emailContent;\n    }\n  }\n  \n} catch (e) {\n  console.error('Ошибка обработки AI ответа:', e);\n  return [];\n}\n\n// Если не нужно отвечать\nif (!shouldSendReply) {\n  console.log('AI решил не отвечать');\n  return [];\n}\n\n// Проверяем, что есть HTML контент\nif (!emailContent || !emailContent.includes('<')) {\n  console.error('HTML контент не найден или некорректный:', emailContent.substring(0, 100));\n  return [];\n}\n\n// Если нет контента - возвращаем флаг для повтора\nif (!emailContent || emailContent.length < 50) {\n  return [{\n    json: {\n      needsRetry: true,\n      email: clientEmail,\n      retryCount: retryCount + 1,  // ЗДЕСЬ увеличиваем счетчик\n      ...historyData\n    }\n  }];\n}\n\n// Подготавливаем данные для отправки\nreturn [{\n  json: {\n    to: clientEmail,\n    subject: $('Loop Over Items').first().json.subject,\n    emailContent: emailContent, // Только HTML!\n    language: replyData.replyData?.language || historyData.language || 'ru',\n    attachments: replyData.replyData?.attachments || [],\n    threadId: historyData.thread_id,\n    messageId: historyData.messageId,\n    originalBody: historyData.conversation_history || '',\n    senderName: historyData.full_name || 'Client',\n    urgency: replyData.replyData?.urgency || 'medium',\n    leadScore: replyData.clientData?.leadScore || historyData.lead_score || 0,\n    intent: replyData.clientData?.intent || 'information',\n    internalNote: replyData.internalNote || '',\n    followUpDays: replyData.replyData?.followUpDays || 3\n  }\n}];"
+      },
+      "id": "81e211e3-d505-40c0-9aae-821c8a922c82",
+      "name": "Parse AI Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.emailContent }}",
+        "options": {
+          "appendAttribution": false,
+          "bccList": "",
+          "ccList": "",
+          "senderName": "Cryptomator Team",
+          "replyTo": "={{ $json.to }}"
+        }
+      },
+      "id": "8c198521-9d82-4534-af32-c6026723fc5f",
+      "name": "Send Gmail Reply",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -640,
+        576
+      ],
+      "webhookId": "8eb71c68-b6e1-41b8-b35d-cb51b60a4b61",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ev0cwU3ZEXqPZ9wU",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $items('Process Incoming')[0].json.messageId }}"
+      },
+      "id": "b0a8c79d-2d4b-450b-8682-e1251c2d7e5f",
+      "name": "Mark as Read",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -256,
+        576
+      ],
+      "webhookId": "3a5b53fc-89d0-4694-a5b3-4bd8fe1bd679",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ev0cwU3ZEXqPZ9wU",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Готовим красивый отчет для Telegram с правильным экранированием\nconst emailData = $input.first().json;\n\n// Функция для экранирования ТОЛЬКО опасных символов для Markdown v2\nfunction escapeMarkdown(text) {\n  if (!text) return '';\n  // Экранируем только символы, которые ломают Markdown\n  return String(text)\n    .replace(/\\\\/g, '\\\\\\\\')  // Обратный слеш\n    .replace(/\\*/g, '\\\\*')   // Звездочка\n    .replace(/_/g, '\\\\_')    // Подчеркивание\n    .replace(/\\[/g, '\\\\[')   // Квадратные скобки\n    .replace(/\\]/g, '\\\\]')\n    .replace(/\\(/g, '\\\\(')   // Круглые скобки\n    .replace(/\\)/g, '\\\\)')\n    .replace(/~/g, '\\\\~')    // Тильда\n    .replace(/`/g, '\\\\`')    // Обратная кавычка\n    .replace(/>/g, '\\\\>')    // Больше\n    .replace(/#/g, '\\\\#')    // Решетка\n    .replace(/\\+/g, '\\\\+')   // Плюс\n    .replace(/-/g, '\\\\-')    // Минус\n    .replace(/=/g, '\\\\=')    // Равно\n    .replace(/\\|/g, '\\\\|')   // Вертикальная черта\n    .replace(/\\{/g, '\\\\{')   // Фигурные скобки\n    .replace(/\\}/g, '\\\\}')\n    .replace(/\\./g, '\\\\.')   // Точка\n    .replace(/!/g, '\\\\!');   // Восклицательный знак\n}\n\nconst urgencyEmoji = {\n  'high': '🔴',\n  'medium': '🟡', \n  'low': '🟢'\n};\n\nconst intentEmoji = {\n  'purchase': '💰',\n  'information': 'ℹ️',\n  'support': '🛠️',\n  'complaint': '⚠️'\n};\n\n// Безопасное экранирование текстовых полей\nconst safeName = escapeMarkdown(emailData.senderName || emailData.to || 'Клиент');\nconst safeEmail = escapeMarkdown(emailData.to || 'не указан');\nconst safeSubject = escapeMarkdown(emailData.subject || 'Без темы');\nconst safeNote = escapeMarkdown(emailData.internalNote || 'Автоматический ответ отправлен');\n\n// Формируем красивое сообщение с Markdown V2\nconst message = `📧 *Автоответ отправлен*\n\n👤 *Клиент:* ${safeName}\n📮 *Email:* ${safeEmail}\n📝 *Тема:* ${safeSubject}\n🌐 *Язык:* ${emailData.language === 'ru' ? '🇷🇺 Русский' : '🇬🇧 English'}\n\n${urgencyEmoji[emailData.urgency] || '🟡'} *Приоритет:* ${emailData.urgency || 'medium'}\n${intentEmoji[emailData.intent] || 'ℹ️'} *Намерение:* ${emailData.intent || 'information'}\n💯 *Lead Score:* ${emailData.leadScore || 0}/100\n\n📌 *Заметка:* ${safeNote}\n⏰ *Follow\\\\-up через:* ${emailData.followUpDays || 3} дней\n\n\\\\#email\\\\_reply \\\\#${emailData.language || 'ru'} \\\\#${emailData.intent || 'info'}`;\n\nreturn [{\n  json: {\n    message: message,\n    chat_id: '-1002588885971'\n  }\n}];"
+      },
+      "id": "716f63b2-5c1f-419a-b642-2c18ca520d57",
+      "name": "Prepare Telegram Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        144,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "MarkdownV2"
+        }
+      },
+      "id": "ecceb5fa-7ae6-47a7-9811-240bc1a8f2c2",
+      "name": "Notify Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        336,
+        576
+      ],
+      "webhookId": "c8083b85-cd33-439b-b371-c8152b2ae32e",
+      "credentials": {
+        "telegramApi": {
+          "id": "fn7ywFo6SxQJtPcU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=КОНТЕКСТ ПИСЬМА:\n\nОт: {{ $('Process Incoming').item.json.from }} ({{ $('Process Incoming').item.json.senderName }})\nТема: {{ $('Process Incoming').item.json.subject }}\nЯзык: {{ $('Process Incoming').item.json.language === 'ru' ? 'Русский' : 'English' }}\nТекст письма:\n{{ $('Process Incoming').item.json.body }}\n\nИСТОРИЯ ПЕРЕПИСКИ:\n{{ $json.conversation_history || 'Новый клиент' }}\n\nДАННЫЕ КЛИЕНТА:\nИмя: {{ $json.full_name || $('Process Incoming').item.json.senderName }}\nLead Score: {{ $json.lead_score || 0 }}\nКоличество писем: {{ $json.message_count || 0 }}",
+        "options": {
+          "systemMessage": "# РОЛЬ: Email Менеджер Cryptomator\n\nТы - профессиональный менеджер по продажам Cryptomator, отвечающий на email-запросы клиентов. Твоя задача - конвертировать входящие письма в продажи, поддерживать клиентов и строить долгосрочные отношения.\n\n# ВАЖНО: Используй Google Sheets Tool для получения:\n- Актуальных цен и тарифов\n- Отзывов клиентов\n- Технических характеристик\n- FAQ и частых вопросов\n- Если не знаешь точный ответ на вопрос клиента\n- всегда проверяй Google Sheets Tool перед ответом\n\n## КРИТИЧЕСКИ ВАЖНЫЕ ПРАВИЛА:\n\n### 1. ЯЗЫКОВАЯ АДАПТАЦИЯ\n- ВСЕГДА отвечай на том языке, на котором написано письмо\n- Русские письма = русский ответ\n- English emails = English response\n- Смешанный текст = язык большинства\n\n### 2. ПЕРСОНАЛИЗАЦИЯ\n- Используй имя клиента, если оно известно\n- НЕ используй плейсхолдеры [Имя], [Name]\n- Если имя неизвестно - обращайся без имени\n\n### 3. КОНТЕКСТ И ИСТОРИЯ\n- ВСЕГДА учитывай историю переписки\n- Ссылайся на предыдущие обсуждения\n- Не повторяй уже данную информацию\n- Развивай диалог логично\n\n## СТРУКТУРА EMAIL-ОТВЕТОВ:\n\n### Для ПЕРВОГО письма:\n```\nПриветствие + благодарность за интерес\nПрямой ответ на вопросы\nДополнительная ценная информация\nМягкое предложение следующего шага\nКонтакты для связи\n```\n\n### Для ПРОДОЛЖЕНИЯ диалога:\n```\nБлагодарность за ответ\nОтветы на новые вопросы\nРазвитие темы / углубление\nКонкретное предложение\nПризыв к действию\n```\n\n## ТИПОВЫЕ СЦЕНАРИИ:\n\n### 1. ЗАПРОС ИНФОРМАЦИИ О ПРОДУКТЕ\n**RU**: \"Спасибо за интерес к Cryptomator! Наш торговый бот работает на 6 проверенных алгоритмах и обеспечивает доходность до 150% годовых. В приложении - подробная презентация. Готовы начать с пробного периода?\"\n\n**EN**: \"Thank you for your interest in Cryptomator! Our trading bot operates on 6 proven algorithms delivering up to 150% annual returns. Please find the detailed presentation attached. Would you like to start with a trial period?\"\n\n### 2. ВОПРОСЫ О ЦЕНАХ\n**RU**: \n- Starter: $29/месяц - идеально для начала\n- Professional: $59/месяц - расширенные возможности\n- Enterprise: $99/месяц - максимальный функционал\n\"Какой тариф больше соответствует вашим целям?\"\n\n**EN**:\n- Starter: $29/month - perfect for beginners\n- Professional: $59/month - advanced features\n- Enterprise: $99/month - maximum functionality\n\"Which plan best matches your trading goals?\"\n\n### 3. ТЕХНИЧЕСКИЕ ВОПРОСЫ\n**RU**: \"Отличный вопрос! Cryptomator интегрируется через API с основными биржами (Binance, OKX, Bybit). Настройка занимает 15 минут, есть видео-инструкция. Нужна помощь с подключением?\"\n\n**EN**: \"Great question! Cryptomator integrates via API with major exchanges (Binance, OKX, Bybit). Setup takes 15 minutes with video guide included. Need help with connection?\"\n\n### 4. СОМНЕНИЯ И ВОЗРАЖЕНИЯ\n**RU**: \"Понимаю ваши опасения. Более 500 клиентов уже используют Cryptomator. Ваши средства остаются на вашей бирже, мы не имеем доступа к выводу. Хотите обсудить гарантии безопасности подробнее?\"\n\n**EN**: \"I understand your concerns. Over 500 clients already use Cryptomator. Your funds stay on your exchange, we have no withdrawal access. Would you like to discuss security guarantees in detail?\"\n\n## РАБОТА С ВОЗРАЖЕНИЯМИ:\n\n### \"Дорого\" / \"Expensive\"\n**RU**: \"$29 = меньше $1 в день. Одна успешная сделка окупает месячную подписку. При средней доходности наших клиентов ROI составляет 300-500% в первый месяц.\"\n\n**EN**: \"$29 = less than $1 per day. One successful trade covers the monthly subscription. With our average client returns, ROI is 300-500% in the first month.\"\n\n### \"Нужно подумать\" / \"Need to think\"\n**RU**: \"Конечно! Пока вы думаете, отправляю материалы для изучения. Кстати, сейчас действует скидка 20% для новых клиентов - до конца недели.\"\n\n**EN**: \"Of course! While you consider, I'm sending materials for review. By the way, we have a 20% discount for new clients - valid until end of week.\"\n\n## ПРАВИЛА ВЛОЖЕНИЙ:\n\n### Когда прикреплять PDF:\n- Первый запрос информации → презентация\n- Запрос о стратегии → описание +150%\n- После demo запроса → инструкция\n\n### PDF файлы:\n- RU: driveId: \"1xVXrc_yDynRHugGa-tu7gZYB72N8uieF\"\n- EN: driveId: \"1Hu5FXAtGDGuoZ_h7CnoE_0rCnKpSCrNq\"\n\n## ЭСКАЛАЦИЯ:\n\nКогда переадресовать менеджеру:\n- Запросы об индивидуальных условиях\n- Технические проблемы с оплатой\n- Корпоративные клиенты\n- Жалобы или конфликты\n\n## ОБЯЗАТЕЛЬНЫЙ HTML ФОРМАТ ОТВЕТА:\n\n### ПРАВИЛО ВЫБОРА ШАБЛОНА:\n- Если это ПЕРВОЕ письмо клиенту (message_count = 0 или conversation_history = \"Новый клиент\") → используй ПОЛНЫЙ шаблон с тарифами\n- Если это ПРОДОЛЖЕНИЕ переписки (message_count > 0 или есть история) → используй УПРОЩЕННЫЙ шаблон без тарифов\n- Проверяй поле conversation_history: если там \"Новый клиент\" - это первое письмо\n\n### ДЛЯ ПЕРВОГО ПИСЬМА (когда message_count = 0 или conversation_history = \"Новый клиент\"):\n```html\n<!DOCTYPE html>\n<html>\n<body style=\"font-family: Arial, sans-serif; line-height: 1.6; color: #333;\">\n    <div style=\"max-width: 600px; margin: 0 auto; padding: 20px;\">\n        <p>Добрый день, {имя если известно}!</p>\n        \n        <p>Спасибо за ваш интерес к Cryptomator.</p>\n        \n        <div style=\"background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0;\">\n            <p>{прямой ответ на вопросы клиента}</p>\n        </div>\n        \n        <div style=\"background: #ebf8ff; border: 1px solid #bee3f8; border-radius: 8px; padding: 15px; margin: 20px 0;\">\n            <h3 style=\"color: #2c5282; margin-top: 0;\">📊 Преимущества Cryptomator:</h3>\n            <ul style=\"list-style: none; padding: 0;\">\n                <li style=\"margin-bottom: 10px;\">✅ Автоматическая торговля 24/7</li>\n                <li style=\"margin-bottom: 10px;\">📈 Стратегия +150% годовых</li>\n                <li style=\"margin-bottom: 10px;\">🔐 Ваши средства остаются на бирже</li>\n                <li style=\"margin-bottom: 10px;\">⚡ Простая настройка за 15 минут</li>\n            </ul>\n        </div>\n        \n        <h3 style=\"color: #2c5282;\">💰 Наши тарифы:</h3>\n        <div style=\"background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin: 15px 0;\">\n            <ul style=\"list-style: none; padding: 0;\">\n                <li style=\"margin-bottom: 10px;\">💚 <strong>Starter:</strong> $29/месяц - идеальный выбор для новичков</li>\n                <li style=\"margin-bottom: 10px;\">💙 <strong>Professional:</strong> $59/месяц - расширенные возможности для опытных трейдеров</li>\n                <li style=\"margin-bottom: 10px;\">💜 <strong>Enterprise:</strong> $99/месяц - максимальный функционал для профессионалов</li>\n            </ul>\n        </div>\n        \n        <div style=\"text-align: center; margin: 25px 0;\">\n            <a href=\"https://cryptomator.pro\" style=\"background-color: #3182ce; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;\">🚀 Попробовать демо</a>\n        </div>\n        \n        <p>Буду рад ответить на любые дополнительные вопросы!</p>\n        \n        <p>С наилучшими пожеланиями,<br>\n        <strong>Команда Cryptomator</strong></p>\n        \n        <hr style=\"border: 0; border-top: 1px solid #e2e8f0; margin: 30px 0;\">\n        \n        <div style=\"text-align: center; padding: 15px 0;\">\n            <p style=\"margin: 5px 0;\">\n                📧 Email: <a href=\"mailto:support@cryptomator.pro\" style=\"color: #3182ce; text-decoration: none;\">support@cryptomator.pro</a>\n            </p>\n            <p style=\"margin: 5px 0;\">\n                💬 Telegram: <a href=\"https://t.me/cryptomator_support\" style=\"color: #3182ce; text-decoration: none;\">@cryptomator_support</a>\n            </p>\n            <p style=\"margin: 5px 0;\">\n                🌐 Сайт: <a href=\"https://cryptomator.pro\" style=\"color: #3182ce; text-decoration: none;\">cryptomator.pro</a>\n            </p>\n        </div>\n        \n        <p style=\"font-size: 12px; color: #718096; text-align: center; margin-top: 20px;\">\n            Это письмо отправлено автоматически на основе нашего диалога.<br>\n            Если у вас есть вопросы, просто ответьте на это письмо.\n        </p>\n    </div>\n</body>\n</html>\n\n### ДЛЯ ПРОДОЛЖЕНИЯ ПЕРЕПИСКИ (когда message_count > 0 или есть история):\n<!DOCTYPE html>\n<html>\n<body style=\"font-family: Arial, sans-serif; line-height: 1.6; color: #333;\">\n    <div style=\"max-width: 600px; margin: 0 auto; padding: 20px;\">\n        <p>{приветствие с именем если известно}!</p>\n        \n        <p>Спасибо за ваш ответ.</p>\n        \n        <div style=\"background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0;\">\n            <p>{прямой и подробный ответ на вопросы клиента}</p>\n            {если нужны дополнительные разъяснения, добавь их здесь}\n        </div>\n        \n        {только если уместно предложить конкретное действие:}\n        <div style=\"text-align: center; margin: 25px 0;\">\n            <a href=\"https://cryptomator.pro\" style=\"background-color: #3182ce; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;\">🚀 {призыв к действию}</a>\n        </div>\n        \n        <p>Надеюсь, эта информация была полезной.</p>\n        \n        <p>С наилучшими пожеланиями,<br>\n        <strong>Команда Cryptomator</strong></p>\n        \n        <hr style=\"border: 0; border-top: 1px solid #e2e8f0; margin: 30px 0;\">\n        \n        <p style=\"font-size: 12px; color: #718096; text-align: center;\">\n    📧 <a href=\"mailto:support@cryptomator.pro\" style=\"color: #3182ce; text-decoration: none;\">support@cryptomator.pro</a> | \n    💬 <a href=\"https://t.me/cryptomator_support\" style=\"color: #3182ce; text-decoration: none;\">@cryptomator_support</a> | \n    🌐 <a href=\"https://cryptomator.pro\" style=\"color: #3182ce; text-decoration: none;\">cryptomator.pro</a>\n</p>\n    </div>\n</body>\n</html>\n\n## ФОРМАТ JSON ОТВЕТА:\n\n```json\n{\n  \"shouldReply\": true,\n  \"replyData\": {\n    \"subject\": \"Re: {оригинальная тема письма}\",\n    \"emailContent\": \"{полный HTML код письма выше с заполненными данными}\",\n    \"language\": \"{ru или en}\",\n    \"urgency\": \"medium\",\n    \"followUpDays\": 3\n  },\n  \"clientData\": {\n    \"leadScore\": {число от 0 до 100},\n    \"intent\": \"{information/purchase/support}\",\n    \"readyToBuy\": {true или false}\n  },\n  \"internalNote\": \"{заметка для команды если нужна}\"\n}\n```\n\n## ПОДПИСЬ (адаптировать под язык):\n\n**RU**:\n```\nС уважением,\n[Имя менеджера]\nКоманда Cryptomator\n\n📧 support@cryptomator.pro\n🌐 cryptomator.pro\n📱 Telegram: @cryptomator_support\n```\n\n**EN**:\n```\nBest regards,\n[Manager name]\nCryptomator Team\n\n📧 support@cryptomator.pro\n🌐 cryptomator.pro\n📱 Telegram: @cryptomator_support\n```\n\n## ЗАПРЕЩЕНО:\n- Обещать невозможное\n- Давать финансовые советы\n- Гарантировать конкретную прибыль\n- Обсуждать конкурентов негативно\n- Использовать агрессивные продажи\n- Отвечать на спам или оскорбления\n\n## ПРОВЕРКА ПЕРЕД ОТПРАВКОЙ:\n✓ Язык соответствует письму клиента?\n✓ Все вопросы получили ответы?\n✓ Есть следующий шаг для клиента?\n✓ Приложены нужные материалы?\n✓ Тон профессиональный и дружелюбный?\n\nПОМНИ: Каждое письмо - это шанс на продажу. Будь полезным, компетентным и ориентированным на решение проблем клиента."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        320,
+        240
+      ],
+      "id": "d53a1e07-8c08-4633-8bda-4cd3d3b19490",
+      "name": "Gmail Reply Agent1"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "limit": 10,
+        "filters": {
+          "labelIds": [
+            "UNREAD"
+          ],
+          "q": "is:unread newer_than:3d -from:noreply -from:no-reply -from:donotreply"
+        }
+      },
+      "id": "eaea932d-e5d6-4e03-bb60-7801b52687bf",
+      "name": "Get Unread Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -432,
+        240
+      ],
+      "webhookId": "af7ee390-f5bf-4d16-978d-0f36d1f2ab79",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ev0cwU3ZEXqPZ9wU",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Обработка входящих писем с отладкой\nconst emails = $input.all();\nconst processedEmails = [];\nconst debugLog = [];\n\ndebugLog.push(`📧 Получено писем: ${emails.length}`);\ndebugLog.push('-------------------');\n\nfor (const item of emails) {\n  const email = item.json;\n  \n  // Извлекаем данные\n  const headers = email.payload?.headers || [];\n  const from = headers.find(h => h.name === 'From')?.value || email.From || '';\n  const subject = headers.find(h => h.name === 'Subject')?.value || email.Subject || '';\n  const messageId = email.id;\n  const threadId = email.threadId;\n  \n  // Извлекаем email и имя\n  let senderEmail = '';\n  let senderName = '';\n  \n  const emailMatch = from.match(/<([^>]+)>/) || from.match(/([^\\s]+@[^\\s]+)/);\n  if (emailMatch) {\n    senderEmail = emailMatch[1].toLowerCase().trim();\n  }\n  \n  if (from.includes('<')) {\n    senderName = from.split('<')[0].trim().replace(/['\"]/g, '');\n  } else {\n    senderName = from.split('@')[0];\n  }\n  \n  // Получаем тело\n  let body = email.snippet || '';\n  \n  // Логируем обработку\n  let emailLog = `\\n📨 Email #${emails.indexOf(item) + 1}:`;\n  emailLog += `\\n  От: ${senderName} <${senderEmail}>`;\n  emailLog += `\\n  Тема: ${subject}`;\n  \n  // ФИЛЬТРАЦИЯ\n  let skipReason = null;\n  \n  // 1. Проверяем noreply\n  if (senderEmail.includes('noreply') || senderEmail.includes('no-reply')) {\n    skipReason = 'NoReply адрес';\n  }\n  \n  // 2. Проверяем Facebook\n  else if (senderEmail.includes('facebook')) {\n    skipReason = 'Facebook';\n  }\n  \n  // 3. Проверяем Google\n  else if (senderEmail.includes('workspace@google')) {\n    skipReason = 'Google Workspace';\n  }\n  \n  // 4. Проверяем наши уведомления (но НЕ ответы)\n  else if (senderEmail.includes('cryptomator.pro')) {\n    const isReply = subject && subject.toLowerCase().includes('re:');\n    if (!isReply) {\n      skipReason = 'Наше автоматическое уведомление';\n    }\n  }\n  \n  // 5. Проверяем пустое письмо\n  else if (!body || body.length < 3) {\n    skipReason = 'Пустое письмо';\n  }\n  \n  // Добавляем результат в лог\n  if (skipReason) {\n    emailLog += `\\n  ❌ ПРОПУЩЕНО: ${skipReason}`;\n    debugLog.push(emailLog);\n    continue;\n  }\n  \n  emailLog += `\\n  ✅ ПРИНЯТО К ОБРАБОТКЕ`;\n  debugLog.push(emailLog);\n  \n  // Определяем язык\n  const hasRussian = /[а-яА-ЯёЁ]/.test(body + subject);\n  const language = hasRussian ? 'ru' : 'en';\n  \n  // Добавляем в обработку\n  processedEmails.push({\n    messageId: messageId,\n    threadId: threadId,\n    from: senderEmail,\n    senderName: senderName || 'Client',\n    subject: subject || 'No subject',\n    body: body.substring(0, 3000),\n    language: language,\n    timestamp: new Date(parseInt(email.internalDate || Date.now())).toISOString()\n  });\n}\n\ndebugLog.push('-------------------');\ndebugLog.push(`✉️ Итого обработано: ${processedEmails.length} из ${emails.length}`);\n\n// Если ничего не обработано, возвращаем лог для отладки\nif (processedEmails.length === 0) {\n  console.log('Нет новых писем для обработки:', debugLog.join('\\n'));\n  return []; // Пустой массив остановит workflow\n}\n\n// Возвращаем обработанные письма с логом\nreturn processedEmails.map((e, index) => ({\n  json: {\n    ...e,\n    debug: index === 0 ? debugLog.join('\\n') : undefined\n  }\n}));"
+      },
+      "id": "3d76aa23-3963-4f88-a21f-7f6540f14f3f",
+      "name": "Process Incoming",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Проверяем историю или создаем пустую запись\nWITH existing_conversation AS (\n    SELECT * FROM gmail_conversations \n    WHERE email = '{{ $json.from }}'\n    LIMIT 1\n)\nSELECT \n    COALESCE(thread_id, '{{ $json.threadId }}') as thread_id,\n    COALESCE(email, '{{ $json.from }}') as email,\n    COALESCE(messages::text, 'Новый клиент') as conversation_history,\n    COALESCE(lead_score, 0) as lead_score,\n    COALESCE(message_count, 0) as message_count,\n    '{{ $json.senderName }}' as full_name,\n    'email' as platform,\n    '{{ $json.language }}' as language\nFROM existing_conversation\nUNION ALL\nSELECT \n    '{{ $json.threadId }}' as thread_id,\n    '{{ $json.from }}' as email,\n    'Новый клиент' as conversation_history,\n    0 as lead_score,\n    0 as message_count,\n    '{{ $json.senderName }}' as full_name,\n    'email' as platform,\n    '{{ $json.language }}' as language\nWHERE NOT EXISTS (SELECT 1 FROM existing_conversation);",
+        "options": {}
+      },
+      "id": "a102c354-879c-4d5f-af24-dfa3de5b5a05",
+      "name": "Get History",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        128,
+        240
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "17jog8YLtJJAolGVCLKATWsz6fVJi-aPrGxP3fKtokS4",
+          "mode": "list",
+          "cachedResultName": "CryptomatorBase RU",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/17jog8YLtJJAolGVCLKATWsz6fVJi-aPrGxP3fKtokS4/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Лист1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/17jog8YLtJJAolGVCLKATWsz6fVJi-aPrGxP3fKtokS4/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.6,
+      "position": [
+        560,
+        432
+      ],
+      "id": "873564dd-9b90-4a3a-b0b9-65b74b79eb3d",
+      "name": "Google Sheets ru",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "DvPu60dZpHogNtbY",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Передаем ID сообщения для пометки как прочитанное\n// Берем данные из Send Gmail Reply (ответ Gmail API) и Parse AI Reply\nconst gmailResponse = $items(\"Send Gmail Reply\")[0].json;\nconst parseData = $items(\"Parse AI Reply\")[0].json;\n\nreturn [{\n  json: {\n    messageId: parseData.messageId || gmailResponse.messageId,\n    threadId: parseData.threadId || gmailResponse.threadId,\n    status: 'processed'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        576
+      ],
+      "id": "329db784-e570-4175-8e3b-bfa964ab9613",
+      "name": "Pass Message ID"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные из правильных источников\nconst parseData = $items(\"Parse AI Reply\")[0].json;\nconst markAsReadData = $json; // Данные от предыдущего узла Mark as Read\n\nreturn [{\n  json: {\n    to: parseData.to,\n    senderName: parseData.senderName || parseData.to.split('@')[0],\n    subject: parseData.subject,\n    language: parseData.language || 'ru',\n    urgency: parseData.urgency || 'medium',\n    intent: parseData.intent || 'information',\n    leadScore: parseData.leadScore || 0,\n    internalNote: parseData.internalNote || 'Автоматический ответ отправлен',\n    followUpDays: parseData.followUpDays || 3\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        576
+      ],
+      "id": "df36f789-c57e-4c91-abd1-b46293beeecf",
+      "name": "Prepare Notification Data"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "id": "209472be-7fdf-409e-8ad4-1396f402ed69",
+      "name": "Schedule Check answer",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -656,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -64,
+        240
+      ],
+      "id": "f8a99010-fdc4-4f66-b58e-5c8e36141485",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "73212611-2a14-4a98-8587-14fed2aa3c0f",
+              "leftValue": "={{ $json.emailContent }}",
+              "rightValue": 50,
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        832,
+        240
+      ],
+      "id": "41971428-f0c2-43db-8e35-5fba537bf398",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1008,
+        256
+      ],
+      "id": "ad3de2bb-245d-4f22-b48d-74b7fbe7c7ab",
+      "name": "Wait",
+      "webhookId": "285307e1-14c7-4381-b783-7fd9d73dc07c"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Gemini Model Reply": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gmail Reply Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Reply": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Gmail Reply": {
+      "main": [
+        [
+          {
+            "node": "Pass Message ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark as Read": {
+      "main": [
+        [
+          {
+            "node": "Prepare Notification Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Telegram Notification": {
+      "main": [
+        [
+          {
+            "node": "Notify Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Reply Agent1": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Unread Emails": {
+      "main": [
+        [
+          {
+            "node": "Process Incoming",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Incoming": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get History": {
+      "main": [
+        [
+          {
+            "node": "Gmail Reply Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets ru": {
+      "ai_tool": [
+        [
+          {
+            "node": "Gmail Reply Agent1",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Message ID": {
+      "main": [
+        [
+          {
+            "node": "Mark as Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Notification Data": {
+      "main": [
+        [
+          {
+            "node": "Prepare Telegram Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Check answer": {
+      "main": [
+        [
+          {
+            "node": "Get Unread Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Get History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Telegram": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Send Gmail Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Get Unread Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "baa42e7d-c6d7-4452-9163-8e2afd4fa5a5",
+  "meta": {
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "eRrWmrBQtwGw3orp",
+  "tags": []
+}

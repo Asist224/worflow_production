@@ -1,0 +1,660 @@
+{
+  "name": "Delete Monitoring user",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "delete-session",
+        "responseMode": "responseNode",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, OPTIONS"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "id": "d7b404ce-7b0a-47b5-9d92-76bc5105b8f9",
+      "name": "Webhook Delete Session",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        -944,
+        -240
+      ],
+      "webhookId": "e1ec3156-2578-4572-97c8-70c917b6f4a6"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Удаление всех связанных записей по session_id\nBEGIN;\nWITH session_data AS (\n  SELECT '{{ $input.item.json.body.sessionId }}' as sid,\n         -- Универсальное извлечение chat_id: убираем всё до первого подчеркивания\n         SUBSTRING('{{ $input.item.json.body.sessionId }}' FROM POSITION('_' IN '{{ $input.item.json.body.sessionId }}') + 1) as cid\n),\ndeleted_monitoring AS (\n  DELETE FROM webchat_monitoring \n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_contacts AS (\n  DELETE FROM user_contact_data\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_analysis AS (\n  DELETE FROM dialog_analysis\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_chat_histories_ru AS (\n  DELETE FROM n8n_chat_histories_ru\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_chat_histories_en AS (\n  DELETE FROM n8n_chat_histories_en\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_highlights AS (\n  DELETE FROM conversation_highlights\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_preferences AS (\n  DELETE FROM user_preferences\n  WHERE chat_id = (SELECT cid FROM session_data)\n  RETURNING *\n)\nSELECT \n  (SELECT sid FROM session_data) as deleted_session_id,\n  (SELECT COUNT(*) FROM deleted_monitoring) as monitoring_deleted,\n  (SELECT COUNT(*) FROM deleted_contacts) as contacts_deleted,\n  (SELECT COUNT(*) FROM deleted_analysis) as analysis_deleted,\n  (SELECT COUNT(*) FROM deleted_chat_histories_ru) as chat_histories_ru_deleted,\n  (SELECT COUNT(*) FROM deleted_chat_histories_en) as chat_histories_en_deleted,\n  (SELECT COUNT(*) FROM deleted_highlights) as highlights_deleted,\n  (SELECT COUNT(*) FROM deleted_preferences) as preferences_deleted,\n  (SELECT COUNT(*) FROM deleted_monitoring) + \n  (SELECT COUNT(*) FROM deleted_contacts) + \n  (SELECT COUNT(*) FROM deleted_analysis) +\n  (SELECT COUNT(*) FROM deleted_chat_histories_ru) +\n  (SELECT COUNT(*) FROM deleted_chat_histories_en) +\n  (SELECT COUNT(*) FROM deleted_highlights) +\n  (SELECT COUNT(*) FROM deleted_preferences) as total_deleted,\n  CASE \n    WHEN (SELECT COUNT(*) FROM deleted_monitoring) + \n         (SELECT COUNT(*) FROM deleted_contacts) + \n         (SELECT COUNT(*) FROM deleted_analysis) +\n         (SELECT COUNT(*) FROM deleted_chat_histories_ru) +\n         (SELECT COUNT(*) FROM deleted_chat_histories_en) +\n         (SELECT COUNT(*) FROM deleted_highlights) +\n         (SELECT COUNT(*) FROM deleted_preferences) > 0 \n    THEN 'success'\n    ELSE 'not_found'\n  END as status;\nCOMMIT;",
+        "options": {}
+      },
+      "id": "468ff3f3-9bfc-41af-803e-55ca33ca20c9",
+      "name": "Delete from PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.1,
+      "position": [
+        -448,
+        -272
+      ],
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.deleted }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "id": "32ec5641-9b2a-481a-b84b-1d84e26152ba"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "0bc1f156-a13c-4dd4-9fa3-daa143cd76b0",
+      "name": "Check If Deleted",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        -272
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "a6e03045-1952-459c-b137-9d6fe1373988",
+      "name": "Set Success Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        64,
+        -368
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "99182500-bfaf-4432-8863-7dcee01b1ce9",
+      "name": "Set Not Found Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        64,
+        -176
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "fa94494d-b1ea-4a53-bdb2-88ef290bf4ed",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        272,
+        -272
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "delete-email",
+        "responseMode": "responseNode",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, OPTIONS"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "id": "9f1bcd76-b59d-41f0-8ecf-86adf2e13551",
+      "name": "Webhook Delete Email",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        -960,
+        144
+      ],
+      "webhookId": "29239933-c667-4fe0-b6dd-387f27536feb"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Удаление всех связанных записей по email\nBEGIN;\n\nWITH email_data AS (\n  SELECT '{{ $input.item.json.body.email }}' as email_address\n),\ndeleted_monitoring AS (\n  DELETE FROM email_monitoring \n  WHERE email = (SELECT email_address FROM email_data)\n  RETURNING *\n),\ndeleted_contacts AS (\n  DELETE FROM email_contact_data\n  WHERE email = (SELECT email_address FROM email_data)\n  RETURNING *\n),\ndeleted_analysis AS (\n  DELETE FROM email_dialog_analysis\n  WHERE email = (SELECT email_address FROM email_data)\n  RETURNING *\n),\ndeleted_follow_ups AS (\n  DELETE FROM email_follow_ups\n  WHERE email = (SELECT email_address FROM email_data)\n  RETURNING *\n),\ndeleted_processing_log AS (\n  DELETE FROM email_processing_log\n  WHERE email_from = (SELECT email_address FROM email_data)\n  RETURNING *\n),\ndeleted_session_mapping AS (\n  DELETE FROM email_session_mapping\n  WHERE email = (SELECT email_address FROM email_data)\n  RETURNING *\n),\ndeleted_gmail_conversations AS (\n  DELETE FROM gmail_conversations\n  WHERE email = (SELECT email_address FROM email_data)\n  RETURNING *\n),\ndeleted_email_tracking AS (\n  DELETE FROM email_tracking\n  WHERE email = (SELECT email_address FROM email_data)\n  RETURNING *\n)\nSELECT \n  (SELECT email_address FROM email_data) as deleted_email,\n  (SELECT COUNT(*) FROM deleted_monitoring) as monitoring_deleted,\n  (SELECT COUNT(*) FROM deleted_contacts) as contacts_deleted,\n  (SELECT COUNT(*) FROM deleted_analysis) as analysis_deleted,\n  (SELECT COUNT(*) FROM deleted_follow_ups) as follow_ups_deleted,\n  (SELECT COUNT(*) FROM deleted_processing_log) as processing_log_deleted,\n  (SELECT COUNT(*) FROM deleted_session_mapping) as session_mapping_deleted,\n  (SELECT COUNT(*) FROM deleted_gmail_conversations) as gmail_conversations_deleted,\n  (SELECT COUNT(*) FROM deleted_email_tracking) as email_tracking_deleted,\n  (SELECT COUNT(*) FROM deleted_monitoring) + \n  (SELECT COUNT(*) FROM deleted_contacts) + \n  (SELECT COUNT(*) FROM deleted_analysis) +\n  (SELECT COUNT(*) FROM deleted_follow_ups) +\n  (SELECT COUNT(*) FROM deleted_processing_log) +\n  (SELECT COUNT(*) FROM deleted_session_mapping) +\n  (SELECT COUNT(*) FROM deleted_gmail_conversations) +\n  (SELECT COUNT(*) FROM deleted_email_tracking) as total_deleted,\n  CASE \n    WHEN (SELECT COUNT(*) FROM deleted_monitoring) + \n         (SELECT COUNT(*) FROM deleted_contacts) + \n         (SELECT COUNT(*) FROM deleted_analysis) +\n         (SELECT COUNT(*) FROM deleted_follow_ups) +\n         (SELECT COUNT(*) FROM deleted_processing_log) +\n         (SELECT COUNT(*) FROM deleted_session_mapping) +\n         (SELECT COUNT(*) FROM deleted_gmail_conversations) +\n         (SELECT COUNT(*) FROM deleted_email_tracking) > 0 \n    THEN 'success'\n    ELSE 'not_found'\n  END as status;\n\nCOMMIT;",
+        "options": {}
+      },
+      "id": "5bfa518f-690d-4bfa-ac8b-b6da0d41010a",
+      "name": "Delete Email from PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.1,
+      "position": [
+        -448,
+        128
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.deleted }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "id": "ed536481-98f4-4e31-83f1-f7b52493e11a"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "034ff5d8-ee4c-4ff4-9b39-9d831c174e75",
+      "name": "Check If Email Deleted",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -32,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "646497e6-1a9e-476e-8923-f8239c6104f0",
+      "name": "Set Success Response1",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        176,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "69ec4bb7-a5fd-4460-926a-efe7bf2adead",
+      "name": "Set Not Found Response1",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        176,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "f1aae2e9-e88d-4b83-b3be-8b9103dde37a",
+      "name": "Respond to Webhook1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        384,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные из PostgreSQL\nconst result = $input.item.json;\nconst deletedCount = result.total_deleted || 0;\n\n// Получаем sessionId из webhook\nlet sessionId;\ntry {\n  sessionId = $('Webhook Delete Session').item.json.body.sessionId;\n} catch(e) {\n  // Если не получилось, берем из результата SQL\n  sessionId = result.deleted_session_id || '';\n}\n\nreturn [{\n  json: {\n    session_id: sessionId,\n    deleted: deletedCount > 0,\n    deleted_count: deletedCount,\n    success: deletedCount > 0\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -304,
+        -272
+      ],
+      "id": "7610daa2-3694-4b74-90a4-f23a2e75a17b",
+      "name": "Code delete"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные из PostgreSQL  \nconst result = $input.item.json;\nconst deletedCount = result.total_deleted || 0;\n\n// Получаем email из webhook\nlet email;\ntry {\n  email = $('Webhook Delete Email').item.json.body.email;\n} catch(e) {\n  // Если не получилось, берем из результата SQL\n  email = result.deleted_email || '';\n}\n\nreturn [{\n  json: {\n    email: email,\n    deleted: deletedCount > 0,\n    deleted_count: deletedCount,\n    success: deletedCount > 0\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        128
+      ],
+      "id": "9aafab73-7191-4a2a-bd5d-3fde84ac114a",
+      "name": "Code delete email"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -784,
+        -240
+      ],
+      "id": "25ea7a51-00f3-4ab3-b073-8c584cb89ccd",
+      "name": "Security Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -640,
+        -240
+      ],
+      "id": "c21ce30e-c12c-474f-9b08-6d82c64494a3",
+      "name": "Auth Check"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -448,
+        -112
+      ],
+      "id": "dfc6eadb-b9cf-4b2b-a119-6e93910801ad",
+      "name": "Error Response"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -800,
+        144
+      ],
+      "id": "3203e5df-e98d-48af-b43d-1e55b9c82469",
+      "name": "Security Check1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -656,
+        144
+      ],
+      "id": "0693960c-36b1-4050-b784-58235c6022f5",
+      "name": "Auth Check1"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -448,
+        320
+      ],
+      "id": "abdd2b71-5c95-4d99-8c7b-7c0d31e30532",
+      "name": "Error Response1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Delete Session": {
+      "main": [
+        [
+          {
+            "node": "Security Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete from PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Code delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Deleted": {
+      "main": [
+        [
+          {
+            "node": "Set Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Not Found Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Success Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Not Found Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Delete Email": {
+      "main": [
+        [
+          {
+            "node": "Security Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Email from PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Code delete email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Email Deleted": {
+      "main": [
+        [
+          {
+            "node": "Set Success Response1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Not Found Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Success Response1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Not Found Response1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code delete": {
+      "main": [
+        [
+          {
+            "node": "Check If Deleted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code delete email": {
+      "main": [
+        [
+          {
+            "node": "Check If Email Deleted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check": {
+      "main": [
+        [
+          {
+            "node": "Auth Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check": {
+      "main": [
+        [
+          {
+            "node": "Delete from PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check1": {
+      "main": [
+        [
+          {
+            "node": "Auth Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check1": {
+      "main": [
+        [
+          {
+            "node": "Delete Email from PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "e0d352fe-a4d9-499e-b817-5483003c529b",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "enhtaErMUHAKEMzn",
+  "tags": []
+}

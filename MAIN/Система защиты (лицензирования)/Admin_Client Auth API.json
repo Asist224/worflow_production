@@ -1,0 +1,768 @@
+{
+  "name": "Admin/Client Auth API",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "client/auth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "8aca433f-c7ff-4781-9159-5c01c636bcf3",
+      "name": "Webhook - Client Auth",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1216,
+        -32
+      ],
+      "webhookId": "11e1b785-9fcc-48db-976e-9b7f01644d90"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Извлечение client_id и пароля\nconst body = $input.item.json.body || {};\nconst clientId = body.client_id || '';\nconst password = body.password || '';\n\nif (!clientId || !password) {\n  return [{\n    json: {\n      error: true,\n      message: 'Client ID and password are required'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    client_id: clientId,\n    password: password,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "4deb7e2a-7492-4f69-b3d3-9494799ae202",
+      "name": "Extract Credentials",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -976,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  client_id,\n  name,\n  email,\n  password_hash,\n  license_key,\n  status,\n  allowed_domains,\n  features,\n  expires_at,\n  max_domains\nFROM clients\nWHERE client_id = '{{ $json.client_id }}'\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "5573dfe6-f607-4371-9e2f-3c5032616451",
+      "name": "Check Client in DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -736,
+        -32
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Проверка что клиент найден\nconst clientData = $input.item.json;\nconst requestData = $('Extract Credentials').item.json;\n\n// Если клиент не найден\nif (!clientData.client_id) {\n  return [{\n    json: {\n      success: false,\n      message: 'Invalid credentials',\n      authenticated: false\n    }\n  }];\n}\n\n// Передаем данные для проверки пароля\nreturn [{\n  json: {\n    client_id: clientData.client_id,\n    name: clientData.name,\n    email: clientData.email,\n    license_key: clientData.license_key,\n    password_hash: clientData.password_hash,\n    status: clientData.status,\n    allowed_domains: clientData.allowed_domains,\n    features: clientData.features,\n    expires_at: clientData.expires_at,\n    max_domains: clientData.max_domains,\n    input_password: requestData.password\n  }\n}];"
+      },
+      "id": "4ce0f7af-a513-4a0d-9498-ebdf221865e3",
+      "name": "Prepare Password Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -496,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  CASE \n    WHEN '{{ $json.password_hash }}' = crypt('{{ $json.input_password }}', '{{ $json.password_hash }}')\n    THEN true\n    ELSE false\n  END as password_valid;",
+        "options": {}
+      },
+      "id": "622a0d6a-d339-40b7-b6f9-122646a55dbf",
+      "name": "Verify Password",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -256,
+        -32
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Объединение результатов\nconst passwordCheck = $input.item.json;\nconst clientData = $('Prepare Password Check').item.json;\n\nreturn [{\n  json: {\n    ...clientData,\n    password_valid: passwordCheck.password_valid\n  }\n}];"
+      },
+      "id": "9968a2de-0860-4f05-ad81-cf6737d2551c",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "password-ok",
+              "leftValue": "={{ $json.password_valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1ba5fd6a-9155-452e-8d59-0371864461b3",
+      "name": "IF Auth Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        224,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Подготовка payload для JWT с expires\nconst clientData = $('Merge Results').item.json;\n\n// Expires через 7 дней\nconst expiresAt = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60);\n\nreturn [{\n  json: {\n    client_id: clientData.client_id,\n    name: clientData.name,\n    email: clientData.email,\n    license_key: clientData.license_key,\n    status: clientData.status,\n    allowed_domains: clientData.allowed_domains,\n    features: clientData.features,\n    expires_at: clientData.expires_at,\n    max_domains: clientData.max_domains,\n    exp: expiresAt\n  }\n}];"
+      },
+      "id": "bd626d97-02ce-4887-b05d-bfe4ae039d12",
+      "name": "Prepare JWT Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "claims": {},
+        "options": {
+          "algorithm": "HS256"
+        }
+      },
+      "id": "050bce14-95a6-42a5-9964-8ce88f65786e",
+      "name": "Generate JWT Token",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        704,
+        -112
+      ],
+      "credentials": {
+        "jwtAuth": {
+          "id": "avobCe37AxPkeOXa",
+          "name": "License System JWT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const jwtToken = $input.item.json;\nconst clientData = $('Prepare JWT Payload').item.json;\n\nreturn [{\n  json: {\n    success: true,\n    authenticated: true,\n    token: jwtToken.token,\n    expires_in: '7d',\n    client: {\n      client_id: clientData.client_id,\n      name: clientData.name,\n      email: clientData.email,\n      license_key: clientData.license_key,\n      status: clientData.status,\n      allowed_domains: clientData.allowed_domains,\n      features: clientData.features,\n      expires_at: clientData.expires_at,\n      max_domains: clientData.max_domains\n    }\n  }\n}];"
+      },
+      "id": "61b3118d-1fba-4e96-b304-16d11fb65ff6",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        944,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, OPTIONS, GET"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "id": "6d15f394-73a3-4982-bab7-9cf4336fcaee",
+      "name": "Response - Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1184,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success: false, authenticated: false, message: 'Invalid credentials'}) }}",
+        "options": {
+          "responseCode": 401,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, OPTIONS, GET"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "id": "c17f95aa-e81f-44b1-b2be-6595f8a9b5b4",
+      "name": "Response - Failed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        464,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "admin/auth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "2bacc20d-499e-4ca6-ba43-79408ad12302",
+      "name": "Webhook - Admin Auth",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1216,
+        -400
+      ],
+      "webhookId": "34a2a678-6fa4-42d3-bdc7-e27190d341d8"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  id,\n  username,\n  password_hash,\n  role,\n  is_active,\n  last_login\nFROM admins\nWHERE username = '{{ $json.username }}'\n  AND is_active = true\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "a370ddb4-83b1-4587-91aa-d7f4efc8c150",
+      "name": "Check Admin in DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -736,
+        -400
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE admins \nSET last_login = NOW()\nWHERE id = {{ $json.admin_id }}\nRETURNING id, username, role;",
+        "options": {}
+      },
+      "id": "e54f4a58-bd1f-4292-9bb2-f2aa69eb905d",
+      "name": "Update Last Login",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        464,
+        -480
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Извлечение логина и пароля\nconst body = $input.item.json.body || {};\nconst username = body.username || '';\nconst password = body.password || '';\n\nif (!username || !password) {\n  return [{\n    json: {\n      error: true,\n      message: 'Username and password are required'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    username: username,\n    password: password,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "92691854-733f-4a5f-a605-c9dc68e0fb5f",
+      "name": "Extract Credentials1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -976,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Проверка пароля через PostgreSQL pgcrypto\nconst adminData = $input.item.json;\nconst requestData = $('Extract Credentials1').item.json;\n\n// Если админ не найден\nif (!adminData.username) {\n  return [{\n    json: {\n      success: false,\n      message: 'Invalid credentials',\n      authenticated: false\n    }\n  }];\n}\n\n// Передаем данные для проверки пароля\nreturn [{\n  json: {\n    admin_id: adminData.id,\n    username: adminData.username,\n    password_hash: adminData.password_hash,\n    role: adminData.role,\n    input_password: requestData.password\n  }\n}];"
+      },
+      "id": "d55ee4dd-4e0f-45aa-bff6-f9be5b65ded9",
+      "name": "Prepare Password Check1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -496,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  CASE \n    WHEN '{{ $json.password_hash }}' = crypt('{{ $json.input_password }}', '{{ $json.password_hash }}')\n    THEN true\n    ELSE false\n  END as password_valid;",
+        "options": {}
+      },
+      "id": "d7478520-0a60-4778-83bf-7aec02c1f3e7",
+      "name": "Verify Password1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -256,
+        -400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Объединение результатов\nconst passwordCheck = $input.item.json;\nconst adminData = $('Prepare Password Check1').item.json;\n\nreturn [{\n  json: {\n    ...adminData,\n    password_valid: passwordCheck.password_valid\n  }\n}];"
+      },
+      "id": "6840f786-e0f8-4b63-abe7-6fa9843b557a",
+      "name": "Merge Results1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "password-ok",
+              "leftValue": "={{ $json.password_valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f94d59bb-8adc-4fc7-965c-32edfc0c5a9d",
+      "name": "IF Auth Success1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        224,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, OPTIONS, GET"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "id": "c474e87c-b5f7-46df-be38-34bb618d41ec",
+      "name": "Response - Success1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1168,
+        -480
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success: false, authenticated: false, message: 'Invalid credentials'}) }}",
+        "options": {
+          "responseCode": 401,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, OPTIONS, GET"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "id": "b67a7fc1-ec07-4f2c-a181-48a001004d1a",
+      "name": "Response - Failed1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        464,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const jwtToken = $input.item.json;\n\nreturn [{\n  json: {\n    success: true,\n    authenticated: true,\n    token: jwtToken.token,\n    expires_in: '24h',\n    admin: {\n      username: $('Merge Results1').item.json.username,\n      role: $('Merge Results1').item.json.role\n    }\n  }\n}];"
+      },
+      "id": "1ee8aa5a-7229-44be-b991-d638531dc69b",
+      "name": "Format Response1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        944,
+        -480
+      ]
+    },
+    {
+      "parameters": {
+        "useJson": true,
+        "claimsJson": "={\n  \"admin_id\": \"{{ $('Merge Results1').item.json.admin_id }}\",\n  \"username\": \"{{ $('Merge Results1').item.json.username }}\",\n  \"role\": \"{{ $('Merge Results1').item.json.role }}\"\n}",
+        "options": {
+          "algorithm": "HS256"
+        }
+      },
+      "id": "91da4aa6-000f-4501-b42d-f3442f3401cf",
+      "name": "Generate JWT Token1",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        704,
+        -480
+      ],
+      "credentials": {
+        "jwtAuth": {
+          "id": "avobCe37AxPkeOXa",
+          "name": "License System JWT"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Client Auth": {
+      "main": [
+        [
+          {
+            "node": "Extract Credentials",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Credentials": {
+      "main": [
+        [
+          {
+            "node": "Check Client in DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Client in DB": {
+      "main": [
+        [
+          {
+            "node": "Prepare Password Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Password Check": {
+      "main": [
+        [
+          {
+            "node": "Verify Password",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Password": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Results": {
+      "main": [
+        [
+          {
+            "node": "IF Auth Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Auth Success": {
+      "main": [
+        [
+          {
+            "node": "Prepare JWT Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Response - Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare JWT Payload": {
+      "main": [
+        [
+          {
+            "node": "Generate JWT Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate JWT Token": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Response - Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Admin Auth": {
+      "main": [
+        [
+          {
+            "node": "Extract Credentials1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Admin in DB": {
+      "main": [
+        [
+          {
+            "node": "Prepare Password Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Last Login": {
+      "main": [
+        [
+          {
+            "node": "Generate JWT Token1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Credentials1": {
+      "main": [
+        [
+          {
+            "node": "Check Admin in DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Password Check1": {
+      "main": [
+        [
+          {
+            "node": "Verify Password1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Password1": {
+      "main": [
+        [
+          {
+            "node": "Merge Results1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Results1": {
+      "main": [
+        [
+          {
+            "node": "IF Auth Success1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Auth Success1": {
+      "main": [
+        [
+          {
+            "node": "Update Last Login",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Response - Failed1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response1": {
+      "main": [
+        [
+          {
+            "node": "Response - Success1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate JWT Token1": {
+      "main": [
+        [
+          {
+            "node": "Format Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "b6c5c3b8-9389-40b2-aadc-0d467cb37dae",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "IB1e2aBI7sZE9Rnv",
+  "tags": []
+}

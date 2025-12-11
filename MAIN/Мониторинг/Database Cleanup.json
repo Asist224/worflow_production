@@ -1,0 +1,817 @@
+{
+  "name": "Database Cleanup",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 3 * * *"
+            }
+          ]
+        }
+      },
+      "id": "9570223c-d6a0-4c96-bc7c-cae140da6ecc",
+      "name": "Daily Cleanup at 3 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -848,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Сохраняем статистику перед удалением\nWITH settings AS (\n    SELECT * FROM cleanup_settings LIMIT 1\n),\nsessions_to_delete_ru AS (\n    SELECT session_id\n    FROM n8n_chat_histories_ru \n    GROUP BY session_id \n    HAVING MAX(created_at) < NOW() - ((SELECT COALESCE(dialogs_retention_days, 60) FROM settings) || ' days')::INTERVAL\n),\nsessions_to_delete_en AS (\n    SELECT session_id\n    FROM n8n_chat_histories_en \n    GROUP BY session_id \n    HAVING MAX(created_at) < NOW() - ((SELECT COALESCE(dialogs_retention_days, 60) FROM settings) || ' days')::INTERVAL\n),\nmonitoring_sessions_to_delete AS (\n    SELECT session_id\n    FROM webchat_monitoring \n    GROUP BY session_id \n    HAVING MAX(last_activity_time) < NOW() - ((SELECT COALESCE(monitoring_retention_days, 30) FROM settings) || ' days')::INTERVAL\n)\nSELECT \n    'webchat_monitoring' as table_name,\n    (SELECT COUNT(*) FROM webchat_monitoring) as total_records,\n    (SELECT COUNT(*) FROM monitoring_sessions_to_delete) as records_to_delete\nUNION ALL\nSELECT \n    'dialog_analysis' as table_name,\n    (SELECT COUNT(*) FROM dialog_analysis) as total_records,\n    (SELECT COUNT(*) FROM dialog_analysis WHERE created_at < NOW() - ((SELECT COALESCE(analysis_retention_days, 90) FROM settings) || ' days')::INTERVAL) as records_to_delete\nUNION ALL\nSELECT \n    'n8n_chat_histories_ru' as table_name,\n    (SELECT COUNT(DISTINCT session_id) FROM n8n_chat_histories_ru) as total_records,\n    (SELECT COUNT(*) FROM sessions_to_delete_ru) as records_to_delete\nUNION ALL\nSELECT \n    'n8n_chat_histories_en' as table_name,\n    (SELECT COUNT(DISTINCT session_id) FROM n8n_chat_histories_en) as total_records,\n    (SELECT COUNT(*) FROM sessions_to_delete_en) as records_to_delete\nUNION ALL\nSELECT \n    'user_contact_data' as table_name,\n    (SELECT COUNT(*) FROM user_contact_data) as total_records,\n    (SELECT COUNT(*) FROM user_contact_data WHERE last_updated < NOW() - ((SELECT COALESCE(contacts_retention_days, 180) FROM settings) || ' days')::INTERVAL) as records_to_delete;",
+        "options": {}
+      },
+      "id": "003c3b5e-653e-4276-9983-99bf0bd30e09",
+      "name": "Get Cleanup Statistics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -656,
+        -192
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Логируем статистику очистки\nconst stats = items.map(item => item.json);\n\nconsole.log('=== СТАТИСТИКА ОЧИСТКИ БД ===');\nconsole.log('Время запуска:', new Date().toISOString());\n\nlet totalToDelete = 0;\nstats.forEach(stat => {\n    console.log(`Таблица: ${stat.table_name}`);\n    console.log(`  Всего записей: ${stat.total_records}`);\n    console.log(`  Будет удалено: ${stat.records_to_delete}`);\n    totalToDelete += parseInt(stat.records_to_delete);\n});\n\n// Передаем данные дальше\nreturn [{\n    json: {\n        stats: stats,\n        totalToDelete: totalToDelete,\n        timestamp: new Date().toISOString()\n    }\n}];"
+      },
+      "id": "de817893-d68a-44a7-bc41-b8425f319efc",
+      "name": "Log Statistics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH deleted AS (\n    DELETE FROM webchat_monitoring \n    WHERE session_id IN (\n        SELECT DISTINCT session_id \n        FROM webchat_monitoring \n        GROUP BY session_id \n        HAVING MAX(last_activity_time) < NOW() - INTERVAL '{{ $json.monitoring_retention_days || 30 }} days'\n    )\n    RETURNING *\n)\nSELECT COUNT(*) as deleted_monitoring FROM deleted;",
+        "options": {}
+      },
+      "id": "fcb60b4a-5a14-4b0f-bf5a-23a0ee52a69a",
+      "name": "Cleanup Monitoring Records",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        -544
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH deleted AS (\n    DELETE FROM dialog_analysis \n    WHERE created_at < NOW() - INTERVAL '{{ $json.analysis_retention_days || 90 }} days'\n    RETURNING *\n)\nSELECT COUNT(*) as deleted_analysis FROM deleted;",
+        "options": {}
+      },
+      "id": "ff65562a-c81a-487c-84ef-bfa5ccebdb61",
+      "name": "Cleanup Analysis Records",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        -384
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH deleted AS (\n    DELETE FROM n8n_chat_histories_ru \n    WHERE session_id IN (\n        SELECT DISTINCT session_id \n        FROM n8n_chat_histories_ru \n        GROUP BY session_id \n        HAVING MAX(created_at) < NOW() - INTERVAL '{{ $json.dialogs_retention_days || 60 }} days'\n    )\n    RETURNING *\n)\nSELECT COUNT(*) as deleted_dialogs_ru FROM deleted;",
+        "options": {}
+      },
+      "id": "055c61ba-6f36-460b-99e6-c75f99efe0fd",
+      "name": "Cleanup Russian Dialogs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        -208
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH deleted AS (\n    DELETE FROM n8n_chat_histories_en \n    WHERE session_id IN (\n        SELECT DISTINCT session_id \n        FROM n8n_chat_histories_en \n        GROUP BY session_id \n        HAVING MAX(created_at) < NOW() - INTERVAL '{{ $json.dialogs_retention_days || 60 }} days'\n    )\n    RETURNING *\n)\nSELECT COUNT(*) as deleted_dialogs_en FROM deleted;",
+        "options": {}
+      },
+      "id": "ad59832f-614a-47ab-9c32-501f8c0d095d",
+      "name": "Cleanup English Dialogs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        -48
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH deleted AS (\n    DELETE FROM user_contact_data \n    WHERE last_updated < NOW() - INTERVAL '{{ $json.contacts_retention_days || 180 }} days'\n    RETURNING *\n)\nSELECT COUNT(*) as deleted_contacts FROM deleted;",
+        "options": {}
+      },
+      "id": "ba9bc88e-0911-4d24-b3c2-2830e73de72f",
+      "name": "Cleanup Old Contacts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        96
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Создаем таблицу для логов очистки если её нет\nCREATE TABLE IF NOT EXISTS cleanup_logs (\n    id SERIAL PRIMARY KEY,\n    cleanup_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n    monitoring_deleted INTEGER DEFAULT 0,\n    analysis_deleted INTEGER DEFAULT 0,\n    dialogs_ru_deleted INTEGER DEFAULT 0,\n    dialogs_en_deleted INTEGER DEFAULT 0,\n    contacts_deleted INTEGER DEFAULT 0,\n    total_deleted INTEGER DEFAULT 0,\n    status VARCHAR(50)\n);\n\n-- Вставляем запись о выполненной очистке с нулевыми значениями\n-- (так как мы не можем получить доступ к результатам параллельных узлов)\nINSERT INTO cleanup_logs (status, cleanup_date)\nVALUES ('completed', NOW())\nRETURNING *;",
+        "options": {}
+      },
+      "id": "8a59142a-7862-4b5d-9eb3-eb5f4a17898e",
+      "name": "Save Cleanup Log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        848,
+        -208
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.totalToDelete }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "id": "condition-check"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "63de060c-aa9b-4d31-9a4a-e23366c7024d",
+      "name": "Check if Cleanup Needed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "console.log('Нет данных для очистки. Все записи актуальны.');\n\nreturn [{\n    json: {\n        status: 'skipped',\n        message: 'No records to cleanup',\n        timestamp: new Date().toISOString()\n    }\n}];"
+      },
+      "id": "9084f4af-1ec3-496f-9755-d6d979eb2352",
+      "name": "No Cleanup Needed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "path": "cleanup-settings",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "3c8e81de-721b-4908-b265-be03cbee84c1",
+      "name": "Cleanup Settings Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -864,
+        176
+      ],
+      "webhookId": "cleanup-settings-webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Создаем таблицу настроек если её нет\nCREATE TABLE IF NOT EXISTS cleanup_settings (\n    id SERIAL PRIMARY KEY,\n    monitoring_retention_days INTEGER DEFAULT 30,\n    analysis_retention_days INTEGER DEFAULT 90,\n    dialogs_retention_days INTEGER DEFAULT 60,\n    contacts_retention_days INTEGER DEFAULT 180,\n    enabled BOOLEAN DEFAULT true,\n    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n);\n\n-- Добавляем новые колонки если их нет\nALTER TABLE cleanup_settings \nADD COLUMN IF NOT EXISTS dialogs_retention_days INTEGER DEFAULT 60,\nADD COLUMN IF NOT EXISTS contacts_retention_days INTEGER DEFAULT 180;\n\n-- Вставляем дефолтные настройки если их нет\nINSERT INTO cleanup_settings (monitoring_retention_days, analysis_retention_days, dialogs_retention_days, contacts_retention_days)\nSELECT 30, 90, 60, 180\nWHERE NOT EXISTS (SELECT 1 FROM cleanup_settings);\n\n-- Возвращаем текущие настройки\nSELECT * FROM cleanup_settings LIMIT 1;",
+        "options": {}
+      },
+      "id": "19ffb20d-fd95-4c76-a2ac-f69b418a5b4c",
+      "name": "Get Cleanup Settings",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -320,
+        128
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"status\": \"success\",\n  \"settings\": $json\n} }}",
+        "options": {}
+      },
+      "id": "9e7e6ff6-5fa7-4f0d-a9bc-6e8f7714b0ef",
+      "name": "Respond Settings",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -112,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "update-cleanup-settings",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -864,
+        512
+      ],
+      "id": "a015a5d0-7a15-4156-bb3b-b7c4527187a1",
+      "name": "Update Settings Webhook",
+      "webhookId": "bb5d906f-0618-47dc-bb02-c5cff1bbf303"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = items[0].json.body || items[0].json;\n\nreturn [{\n    json: {\n        monitoring_retention_days: data.monitoringRetention || 30,\n        analysis_retention_days: data.analysisRetention || 90,\n        dialogs_retention_days: data.dialogsRetention || 60,\n        contacts_retention_days: data.contactsRetention || 180\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -288,
+        448
+      ],
+      "id": "0cb2d230-9f17-4b20-9388-c59f2963d9d4",
+      "name": "Process Update Data"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE cleanup_settings \nSET monitoring_retention_days = {{ $json.monitoring_retention_days }},\n    analysis_retention_days = {{ $json.analysis_retention_days }},\n    dialogs_retention_days = {{ $json.dialogs_retention_days }},\n    contacts_retention_days = {{ $json.contacts_retention_days }},\n    updated_at = NOW()\nWHERE id = 1\nRETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -80,
+        448
+      ],
+      "id": "9b6db150-24b5-4d93-b581-9ab5533e2d71",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"status\": \"success\",\n  \"message\": \"Настройки очистки обновлены\",\n  \"data\": $json\n} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        144,
+        448
+      ],
+      "id": "21a175c4-f360-4bb0-9234-817edffb21a7",
+      "name": "Respond Update Success"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Создаем таблицу настроек если её нет\nCREATE TABLE IF NOT EXISTS cleanup_settings (\n    id SERIAL PRIMARY KEY,\n    monitoring_retention_days INTEGER DEFAULT 30,\n    analysis_retention_days INTEGER DEFAULT 90,\n    dialogs_retention_days INTEGER DEFAULT 60,\n    contacts_retention_days INTEGER DEFAULT 180,\n    enabled BOOLEAN DEFAULT true,\n    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n);\n\n-- Добавляем новые колонки если их нет\nALTER TABLE cleanup_settings \nADD COLUMN IF NOT EXISTS dialogs_retention_days INTEGER DEFAULT 60,\nADD COLUMN IF NOT EXISTS contacts_retention_days INTEGER DEFAULT 180;\n\n-- Вставляем дефолтные настройки если их нет\nINSERT INTO cleanup_settings (monitoring_retention_days, analysis_retention_days, dialogs_retention_days, contacts_retention_days)\nSELECT 30, 90, 60, 180\nWHERE NOT EXISTS (SELECT 1 FROM cleanup_settings);\n\n-- Возвращаем текущие настройки\nSELECT * FROM cleanup_settings LIMIT 1;",
+        "options": {}
+      },
+      "id": "e2201555-03f6-4219-9a0f-fc31d08e1b2b",
+      "name": "Get Cleanup Settings1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -80,
+        -208
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Собираем результаты из всех узлов очистки\nconst results = {\n  monitoring_deleted: 0,\n  analysis_deleted: 0,\n  dialogs_ru_deleted: 0,\n  dialogs_en_deleted: 0,\n  contacts_deleted: 0\n};\n\n// Получаем все входящие данные\nconst allInputs = $input.all();\n\n// Проходим по всем входящим данным\nfor (const item of allInputs) {\n  const data = item.json;\n  \n  // Логируем для отладки\n  console.log('Processing item:', data);\n  \n  // Проверяем каждое возможное поле (убираем проверку на undefined)\n  if ('deleted_monitoring' in data) {\n    results.monitoring_deleted = parseInt(data.deleted_monitoring) || 0;\n  }\n  if ('deleted_analysis' in data) {\n    results.analysis_deleted = parseInt(data.deleted_analysis) || 0;\n  }\n  if ('deleted_dialogs_ru' in data) {\n    results.dialogs_ru_deleted = parseInt(data.deleted_dialogs_ru) || 0;\n  }\n  if ('deleted_dialogs_en' in data) {\n    results.dialogs_en_deleted = parseInt(data.deleted_dialogs_en) || 0;\n  }\n  if ('deleted_contacts' in data) {\n    results.contacts_deleted = parseInt(data.deleted_contacts) || 0;\n  }\n}\n\n// Считаем общее количество\nresults.total_deleted = results.monitoring_deleted + \n                       results.analysis_deleted + \n                       results.dialogs_ru_deleted + \n                       results.dialogs_en_deleted + \n                       results.contacts_deleted;\n\nconsole.log('Final results:', results);\n\nreturn [{\n  json: results\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        -208
+      ],
+      "id": "3159ba1b-8ece-413c-b4a1-775c4d78384f",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "numberInputs": 5,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        512,
+        -256
+      ],
+      "id": "d3131d96-b50e-4cef-adbf-e61a955f6181",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        176
+      ],
+      "id": "0c2463da-2e4b-47e3-974a-c5b9135c00c7",
+      "name": "Security Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -544,
+        176
+      ],
+      "id": "d561268a-710f-43d7-95b9-a93a4018b8ae",
+      "name": "Auth Check"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -320,
+        272
+      ],
+      "id": "23ad9c28-b821-4b44-aa34-b3e35f9639ad",
+      "name": "Error Response"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -688,
+        512
+      ],
+      "id": "e3f1e862-aab5-46eb-8c1f-ecc522e8f951",
+      "name": "Security Check1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -528,
+        512
+      ],
+      "id": "9a3ab866-5b09-4c38-93a8-dfbe87f896a9",
+      "name": "Auth Check1"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -288,
+        608
+      ],
+      "id": "09e9577d-5f89-4624-b9ef-7a6346c4093d",
+      "name": "Error Response1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Daily Cleanup at 3 AM": {
+      "main": [
+        [
+          {
+            "node": "Get Cleanup Statistics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Cleanup Statistics": {
+      "main": [
+        [
+          {
+            "node": "Log Statistics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Statistics": {
+      "main": [
+        [
+          {
+            "node": "Check if Cleanup Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Cleanup Needed": {
+      "main": [
+        [
+          {
+            "node": "Get Cleanup Settings1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Cleanup Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleanup Monitoring Records": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleanup Analysis Records": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Cleanup Russian Dialogs": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Cleanup English Dialogs": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Cleanup Old Contacts": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Cleanup Settings Webhook": {
+      "main": [
+        [
+          {
+            "node": "Security Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Cleanup Settings": {
+      "main": [
+        [
+          {
+            "node": "Respond Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Settings Webhook": {
+      "main": [
+        [
+          {
+            "node": "Security Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Update Data": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond Update Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Cleanup Settings1": {
+      "main": [
+        [
+          {
+            "node": "Cleanup Monitoring Records",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Cleanup Analysis Records",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Cleanup Russian Dialogs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Cleanup English Dialogs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Cleanup Old Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Save Cleanup Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check": {
+      "main": [
+        [
+          {
+            "node": "Auth Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check": {
+      "main": [
+        [
+          {
+            "node": "Get Cleanup Settings",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check1": {
+      "main": [
+        [
+          {
+            "node": "Auth Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check1": {
+      "main": [
+        [
+          {
+            "node": "Process Update Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "2dea005e-c535-4e35-a7e4-a5e07d8ef232",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "G8F0DVEYNmQfWNEN",
+  "tags": []
+}

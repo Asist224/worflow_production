@@ -1,0 +1,329 @@
+{
+  "name": "Email Settings Management",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "email-auto-analysis-settings",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "7deab63f-17ed-43e5-8e66-131f18c115d2",
+      "name": "Auto Analysis Settings Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        -80
+      ],
+      "webhookId": "email-auto-analysis-settings-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем текущие настройки автоанализа для email\n// В реальной системе это должно храниться в БД\nconst settings = {\n  autoAnalysis: {\n    enabled: true,\n    frequency: 'hourly', // hourly, daily, weekly\n    triggerOn: {\n      newEmails: true,\n      unreadEmails: true,\n      highPriorityEmails: true,\n      afterMessages: 3 // Анализировать после N сообщений\n    },\n    filters: {\n      minLeadScore: 30,\n      languages: ['ru', 'en'],\n      excludeDomains: ['noreply', 'no-reply', 'donotreply']\n    },\n    schedule: {\n      startTime: '09:00',\n      endTime: '18:00',\n      workDays: [1, 2, 3, 4, 5] // Пн-Пт\n    }\n  },\n  contactExtraction: {\n    enabled: true,\n    autoExtract: true,\n    extractOn: {\n      newEmails: true,\n      afterAnalysis: true\n    }\n  },\n  notifications: {\n    enabled: true,\n    channels: {\n      telegram: true,\n      email: false,\n      webhook: false\n    },\n    notifyOn: {\n      highLeadScore: 80,\n      urgentEmails: true,\n      noReplyTimeout: 24 // часов\n    }\n  }\n};\n\nreturn [{json: settings}];"
+      },
+      "id": "ac3ca0dd-28bc-436b-ac4a-d982e1c5e277",
+      "name": "Get Auto Analysis Settings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "49daa698-a05f-4d66-93be-3e09d48468d2",
+      "name": "Respond Auto Settings",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        256,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "path": "email-cleanup-settings",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "ccebfae3-6892-40ee-b1e7-748da6da788a",
+      "name": "Cleanup Settings Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        128
+      ],
+      "webhookId": "email-cleanup-settings-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем настройки очистки для email\nconst cleanupSettings = {\n  cleanup: {\n    enabled: true,\n    schedule: 'daily', // daily, weekly, monthly\n    time: '03:00',\n    rules: [\n      {\n        id: 'old_emails',\n        name: 'Старые письма',\n        enabled: true,\n        condition: 'age',\n        value: 90, // дней\n        action: 'archive' // archive, delete\n      },\n      {\n        id: 'low_score',\n        name: 'Низкий Lead Score',\n        enabled: true,\n        condition: 'leadScore',\n        value: 20, // меньше этого значения\n        afterDays: 30,\n        action: 'archive'\n      },\n      {\n        id: 'resolved',\n        name: 'Завершенные диалоги',\n        enabled: true,\n        condition: 'status',\n        value: 'resolved',\n        afterDays: 60,\n        action: 'archive'\n      },\n      {\n        id: 'no_activity',\n        name: 'Без активности',\n        enabled: true,\n        condition: 'inactivity',\n        value: 45, // дней без активности\n        action: 'archive'\n      }\n    ],\n    archive: {\n      enabled: true,\n      location: 'archive_table',\n      keepAnalysis: true,\n      keepContacts: true\n    },\n    statistics: {\n      lastCleanup: '2025-09-10T03:00:00Z',\n      deletedCount: 0,\n      archivedCount: 127,\n      nextScheduled: '2025-09-11T03:00:00Z'\n    }\n  }\n};\n\nreturn [{json: cleanupSettings}];"
+      },
+      "id": "e723133c-f564-4167-bfea-bf3643f8b909",
+      "name": "Get Cleanup Settings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "84f164a5-1d77-46d5-898c-c7ebec383a0d",
+      "name": "Respond Cleanup Settings",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        256,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "update-email-cleanup-settings",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "d7fa1f0c-9184-431c-8a9a-11deef04623d",
+      "name": "Update Cleanup Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        320
+      ],
+      "webhookId": "update-email-cleanup-settings-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем новые настройки из запроса\nconst newSettings = items[0].json.body || items[0].json;\n\n// Здесь должна быть логика сохранения в БД\n// Для примера просто возвращаем успех\n\nreturn [{\n  json: {\n    status: 'success',\n    message: 'Настройки очистки email обновлены',\n    settings: newSettings,\n    updatedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "b604d68c-f35d-433b-b4ca-299423c5f233",
+      "name": "Update Cleanup Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "ceda0e62-0569-4f65-ad4f-61447457d1d4",
+      "name": "Respond Update Cleanup",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        256,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "id": "70b5c588-e950-4758-86c9-47c958ab51a3",
+      "name": "Auto Analysis Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -144,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.cryptomator.pro/webhook/analyze-email-dialog",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"type\": \"batch\",\n  \"language\": \"all\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "id": "a0bab675-ee0e-4a74-a48c-db646d07326b",
+      "name": "Trigger Batch Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        64,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 3
+            }
+          ]
+        }
+      },
+      "id": "4c9f3a44-9ca2-4a65-8006-5a51f74ce02d",
+      "name": "Cleanup Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -144,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Архивирование старых email записей\nBEGIN;\n\n-- Архивируем старые записи из email_monitoring\nINSERT INTO email_monitoring_archive \nSELECT * FROM email_monitoring \nWHERE \n  (last_activity_time < NOW() - INTERVAL '90 days')\n  OR (lead_score < 20 AND last_activity_time < NOW() - INTERVAL '30 days')\n  OR (status = 'resolved' AND last_activity_time < NOW() - INTERVAL '60 days');\n\n-- Удаляем архивированные записи\nDELETE FROM email_monitoring \nWHERE \n  (last_activity_time < NOW() - INTERVAL '90 days')\n  OR (lead_score < 20 AND last_activity_time < NOW() - INTERVAL '30 days')\n  OR (status = 'resolved' AND last_activity_time < NOW() - INTERVAL '60 days');\n\n-- Очищаем старые логи\nDELETE FROM email_processing_log \nWHERE processed_at < NOW() - INTERVAL '30 days';\n\nCOMMIT;\n\nSELECT \n  'cleanup_completed' as status,\n  COUNT(*) as archived_count\nFROM email_monitoring_archive\nWHERE created_at >= NOW() - INTERVAL '1 minute';",
+        "options": {}
+      },
+      "id": "8612c9fa-5c5f-4e14-bf10-829ca3eb4154",
+      "name": "Execute Cleanup",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        64,
+        720
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Auto Analysis Settings Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Auto Analysis Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Auto Analysis Settings": {
+      "main": [
+        [
+          {
+            "node": "Respond Auto Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleanup Settings Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Cleanup Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Cleanup Settings": {
+      "main": [
+        [
+          {
+            "node": "Respond Cleanup Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Cleanup Webhook": {
+      "main": [
+        [
+          {
+            "node": "Update Cleanup Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Cleanup Logic": {
+      "main": [
+        [
+          {
+            "node": "Respond Update Cleanup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto Analysis Schedule": {
+      "main": [
+        [
+          {
+            "node": "Trigger Batch Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleanup Schedule": {
+      "main": [
+        [
+          {
+            "node": "Execute Cleanup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "04c9638b-95b5-4ea3-9f92-ebc85f50106c",
+  "meta": {
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "JpyVU7czxPSYH4VL",
+  "tags": []
+}

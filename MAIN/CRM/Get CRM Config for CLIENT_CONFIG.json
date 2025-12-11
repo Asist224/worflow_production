@@ -1,0 +1,829 @@
+{
+  "name": "Get CRM Config for CLIENT_CONFIG",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "b4263716-64b4-42ae-9563-fa23f80d1675",
+      "name": "When clicking 'Test workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -832,
+        -1312
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://{{ $json.subdomain }}.kommo.com/api/v4/users",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "kommoOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f3e9588b-f5f3-4890-b2ca-7e5168c2a2e1",
+      "name": "Get Users",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -432,
+        384
+      ],
+      "credentials": {
+        "kommoOAuth2Api": {
+          "id": "Wxsld8cBJ5iVMxyU",
+          "name": "Kommo account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://{{ $json.subdomain }}.kommo.com/api/v4/leads/pipelines/12289079",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "kommoOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3a6b9403-acea-4c5d-ac08-297d36bd3c59",
+      "name": "Get Pipelines3",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -432,
+        -208
+      ],
+      "credentials": {
+        "kommoOAuth2Api": {
+          "id": "Wxsld8cBJ5iVMxyU",
+          "name": "Kommo account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://{{ $json.subdomain }}.kommo.com/api/v4/contacts/custom_fields",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "kommoOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "17521065-a91a-4888-a05f-8a240cb61a1f",
+      "name": "Get Contact Custom Fields3",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -432,
+        0
+      ],
+      "credentials": {
+        "kommoOAuth2Api": {
+          "id": "Wxsld8cBJ5iVMxyU",
+          "name": "Kommo account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://{{ $json.subdomain }}.kommo.com/api/v4/leads/custom_fields",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "kommoOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f9d7fd8f-baaf-4390-a9c3-1d3b29a8f228",
+      "name": "Get Lead Custom Fields3",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -432,
+        192
+      ],
+      "credentials": {
+        "kommoOAuth2Api": {
+          "id": "Wxsld8cBJ5iVMxyU",
+          "name": "Kommo account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// KOMMO CRM - DIAGNOSTIC REPORT & CONFIG GENERATOR\n// Универсальная версия с ПОЛНЫМ списком полей\n// ============================================\n\nconst allInputs = $input.all();\n\nconsole.log('Получено элементов:', allInputs.length);\n\n// Парсим и находим данные по типам\nlet accountInfo, pipelinesData, contactFields, leadFields, usersData;\n\nfor (const item of allInputs) {\n  let data;\n  \n  // Если данные в поле data как строка - парсим\n  if (item.json.data && typeof item.json.data === 'string') {\n    try {\n      data = JSON.parse(item.json.data);\n    } catch (e) {\n      console.log('Ошибка парсинга JSON:', e.message);\n      continue;\n    }\n  } else {\n    data = item.json;\n  }\n  \n  console.log('Обрабатываем данные, ключи:', Object.keys(data));\n  \n  // Определяем тип данных по структуре\n  if (data.id && data.subdomain && data.name && !data._embedded) {\n    accountInfo = data;\n    console.log('Найдены данные аккаунта');\n  } else if (data._embedded && data._embedded.pipelines) {\n    // Массив воронок (запрос /pipelines)\n    pipelinesData = data;\n    console.log('Найдены данные воронок (массив)');\n  } else if (data.id && data.name && data._embedded && data._embedded.statuses) {\n    // Одна воронка (запрос /pipelines/{id})\n    pipelinesData = {\n      _embedded: {\n        pipelines: [data]  // Оборачиваем в массив для единообразия\n      }\n    };\n    console.log('Найдена одна воронка (по ID)');\n  } else if (data._embedded && data._embedded.users) {\n    usersData = data;\n    console.log('Найдены данные пользователей');\n  } else if (data._embedded && data._embedded.custom_fields) {\n    const selfLink = data._links?.self?.href || '';\n    \n    if (selfLink.includes('/contacts/custom_fields')) {\n      contactFields = data;\n      console.log('Найдены поля контактов');\n    } else if (selfLink.includes('/leads/custom_fields')) {\n      leadFields = data;\n      console.log('Найдены поля лидов');\n    } else {\n      if (!contactFields) {\n        contactFields = data;\n        console.log('Сохранены как поля контактов (по порядку)');\n      } else {\n        leadFields = data;\n        console.log('Сохранены как поля лидов (по порядку)');\n      }\n    }\n  }\n}\n\n// Если нет данных аккаунта - создаем заглушку из данных воронок\nif (!accountInfo && pipelinesData) {\n  const firstPipeline = pipelinesData._embedded?.pipelines?.[0];\n  if (firstPipeline && firstPipeline.account_id) {\n    const pipelineUrl = firstPipeline._links?.self?.href || '';\n    // Поддерживаем оба домена: kommo.com и amocrm.ru\n    const subdomainMatch = pipelineUrl.match(/https:\\/\\/([^.]+)\\.(kommo\\.com|amocrm\\.ru|amocrm\\.com)/);\n    const subdomain = subdomainMatch ? subdomainMatch[1] : 'unknown';\n    const domain = subdomainMatch ? subdomainMatch[2] : 'kommo.com';\n    \n    accountInfo = {\n      id: firstPipeline.account_id,\n      name: \"Kommo CRM Account\",\n      subdomain: subdomain,\n      domain: domain,\n      current_user_id: \"unknown\",\n      timezone: \"UTC\",\n      currency: \"USD\"\n    };\n    console.log('Созданы данные аккаунта из воронок');\n  }\n}\n\n// Определяем домен (по умолчанию kommo.com)\nconst domain = accountInfo?.domain || 'kommo.com';\n\n// Проверяем, что все критические данные получены\nif (!pipelinesData || !contactFields || !leadFields) {\n  const missing = [];\n  if (!pipelinesData) missing.push('pipelinesData');\n  if (!contactFields) missing.push('contactFields');\n  if (!leadFields) missing.push('leadFields');\n  \n  throw new Error(`Не удалось получить данные: ${missing.join(', ')}`);\n}\n\n// Извлекаем данные\nconst pipelines = pipelinesData._embedded?.pipelines || [];\nconst contactFieldsList = contactFields._embedded?.custom_fields || [];\nconst leadFieldsList = leadFields._embedded?.custom_fields || [];\nconst usersList = usersData?._embedded?.users || [];\n\n// Находим основные поля\nconst phoneField = contactFieldsList.find(f => f.code === 'PHONE');\nconst emailField = contactFieldsList.find(f => f.code === 'EMAIL');\nconst positionField = contactFieldsList.find(f => f.code === 'POSITION');\n\n// Находим текущего пользователя и активных менеджеров\nlet currentUser = null;\nconst activeManagers = usersList.filter(u => u.rights?.is_active === true);\n\nif (accountInfo.current_user_id && accountInfo.current_user_id !== 'unknown') {\n  currentUser = usersList.find(u => u.id === accountInfo.current_user_id);\n}\n\n// Если не нашли текущего пользователя, берем первого активного\nif (!currentUser && activeManagers.length > 0) {\n  currentUser = activeManagers[0];\n}\n\n// ========================================\n// ✅ ВЫБИРАЕМ ВОРОНКУ ДЛЯ КОНФИГА\n// ========================================\n\nconst mainPipeline = pipelines.find(p => p.is_main) || pipelines[0];\nconst allStatuses = mainPipeline._embedded?.statuses || [];\n\n// Фильтруем только активные стадии (не SUCCESS/FAIL и не UNSORTED)\nconst regularStatuses = allStatuses.filter(s => \n  s.type !== 1 && // не unsorted\n  s.sort < 10000 && // не финальные\n  !s.name.toLowerCase().includes('успешно') &&\n  !s.name.toLowerCase().includes('won') &&\n  !s.name.toLowerCase().includes('не реализовано') &&\n  !s.name.toLowerCase().includes('lost')\n).sort((a, b) => a.sort - b.sort);\n\n// ========================================\n// ✅ ИСПРАВЛЕННАЯ ЛОГИКА ОПРЕДЕЛЕНИЯ СТАДИЙ\n// ========================================\n\nlet hotStage = null;\nlet warmStage = null;\nlet coldStage = null;\n\nif (regularStatuses.length >= 3) {\n  coldStage = regularStatuses[0];\n  \n  if (regularStatuses.length === 3) {\n    warmStage = regularStatuses[1];\n    hotStage = regularStatuses[2];\n  } else if (regularStatuses.length === 4) {\n    warmStage = regularStatuses[1];\n    hotStage = regularStatuses[3];\n  } else {\n    const warmIdx = Math.floor(regularStatuses.length * 0.35);\n    const hotIdx = Math.floor(regularStatuses.length * 0.70);\n    \n    warmStage = regularStatuses[warmIdx];\n    hotStage = regularStatuses[hotIdx];\n  }\n} else if (regularStatuses.length === 2) {\n  coldStage = regularStatuses[0];\n  warmStage = regularStatuses[0];\n  hotStage = regularStatuses[1];\n} else if (regularStatuses.length === 1) {\n  coldStage = warmStage = hotStage = regularStatuses[0];\n}\n\nconsole.log('Stage mapping:', {\n  cold: coldStage?.id,\n  warm: warmStage?.id,\n  hot: hotStage?.id,\n  totalStages: regularStatuses.length\n});\n\n// ========================================\n// КОМПАКТНОЕ СООБЩЕНИЕ ДЛЯ TELEGRAM\n// ========================================\n\nlet msg = `🔍 <b>KOMMO CRM - CLIENT_CONFIG</b>\\n\\n`;\n\n// Информация об аккаунте\nmsg += `📊 <b>Аккаунт:</b> ${accountInfo.subdomain}.${domain}\\n`;\nmsg += `Воронка: ${mainPipeline.name}\\n`;\nmsg += `Стадий: ${allStatuses.length}\\n`;\nmsg += `━━━━━━━━━━━━━━━━\\n\\n`;\n\n// Информация о воронке\nconst isMain = mainPipeline.is_main ? '⭐️ ' : '';\nmsg += `🎯 <b>Воронка:</b>\\n`;\nmsg += `${isMain}${mainPipeline.name}\\n`;\nmsg += `ID: <code>${mainPipeline.id}</code>\\n`;\nmsg += `\\n━━━━━━━━━━━━━━━━\\n\\n`;\n\n// Стадии - показываем только выбранные\nmsg += `📍 <b>Стадии для маппинга:</b>\\n`;\nif (coldStage) {\n  msg += `❄️ COLD: <code>${coldStage.id}</code> - ${coldStage.name}\\n`;\n}\nif (warmStage) {\n  msg += `🌡️ WARM: <code>${warmStage.id}</code> - ${warmStage.name}\\n`;\n}\nif (hotStage) {\n  msg += `🔥 HOT: <code>${hotStage.id}</code> - ${hotStage.name}\\n`;\n}\nmsg += `\\n━━━━━━━━━━━━━━━━\\n\\n`;\n\n// Пользователи\nif (usersList.length > 0 && currentUser) {\n  msg += `👤 <b>ID Менеджера:</b>\\n`;\n  msg += `${currentUser.name} (ID: <code>${currentUser.id}</code>)\\n`;\n  if (currentUser.email) {\n    msg += `Email: ${currentUser.email}\\n`;\n  }\n  msg += `\\n━━━━━━━━━━━━━━━━\\n\\n`;\n}\n\n// ========================================\n// 📋 ВСЕ КАСТОМНЫЕ ПОЛЯ КОНТАКТОВ\n// ========================================\n\nmsg += `👤 <b>Кастомные поля контактов (${contactFieldsList.length}):</b>\\n\\n`;\n\ncontactFieldsList.forEach((field, idx) => {\n  const isPredefined = field.is_predefined ? '🔒' : '';\n  msg += `${idx + 1}. ${isPredefined}<b>${field.name}</b>\\n`;\n  msg += `   ID: <code>${field.id}</code> | Code: <code>${field.code || 'custom'}</code>\\n`;\n  msg += `   Type: ${field.type}\\n`;\n  \n  // Если есть enums - показываем\n  if (field.enums && field.enums.length > 0) {\n    msg += `   Enums: `;\n    field.enums.forEach((e, eIdx) => {\n      msg += `${e.value}:${e.id}`;\n      if (eIdx < field.enums.length - 1) msg += `, `;\n    });\n    msg += `\\n`;\n  }\n  msg += `\\n`;\n});\n\nmsg += `━━━━━━━━━━━━━━━━\\n\\n`;\n\n// ========================================\n// 📋 ВСЕ КАСТОМНЫЕ ПОЛЯ ЛИДОВ\n// ========================================\n\nmsg += `💼 <b>Кастомные поля лидов (${leadFieldsList.length}):</b>\\n\\n`;\n\nleadFieldsList.forEach((field, idx) => {\n  const isPredefined = field.is_predefined ? '🔒' : '';\n  const isUTM = field.code?.startsWith('UTM_') || ['REFERRER', 'GCLIENTID', 'GCLID', 'FBCLID'].includes(field.code);\n  const marker = isUTM ? '📊 ' : '';\n  \n  msg += `${idx + 1}. ${marker}${isPredefined}<b>${field.name}</b>\\n`;\n  msg += `   ID: <code>${field.id}</code> | Code: <code>${field.code || 'custom'}</code>\\n`;\n  msg += `   Type: ${field.type}\\n`;\n  \n  // Если есть enums - показываем\n  if (field.enums && field.enums.length > 0) {\n    msg += `   Enums: `;\n    field.enums.forEach((e, eIdx) => {\n      msg += `${e.value}:${e.id}`;\n      if (eIdx < field.enums.length - 1) msg += `, `;\n    });\n    msg += `\\n`;\n  }\n  msg += `\\n`;\n});\n\nmsg += `━━━━━━━━━━━━━━━━\\n\\n`;\n\n// ========================================\n// 📋 ГОТОВЫЙ CLIENT_CONFIG - КОМПАКТНЫЙ\n// ========================================\n\nmsg += `📋 <b>ГОТОВЫЙ CLIENT_CONFIG:</b>\\n\\n`;\nmsg += `<pre>const CLIENT_CONFIG = {\\n`;\nmsg += `  // === ОБЯЗАТЕЛЬНЫЕ НАСТРОЙКИ ===\\n`;\nmsg += `  clientName: '${mainPipeline.name}',\\n`;\nmsg += `  subdomain: '${accountInfo.subdomain}',\\n`;\nmsg += `  accountId: ${accountInfo.id},\\n`;\nmsg += `  pipelineId: ${mainPipeline.id},\\n`;\nmsg += `  pipelineName: '${mainPipeline.name}',\\n\\n`;\n\n// === ПОЛНЫЙ МАССИВ STAGES ===\nmsg += `  // === ПОЛНЫЙ СПИСОК СТАДИЙ ===\\n`;\nmsg += `  stages: [\\n`;\nallStatuses.forEach((s, idx) => {\n  const comma = idx < allStatuses.length - 1 ? ',' : '';\n  \n  let extras = '';\n  if (s.type === 1) {\n    extras = ', isUnsorted: true';\n  } else if (s.name.toLowerCase().includes('успешно') || s.name.toLowerCase().includes('won')) {\n    extras = ', isSuccess: true';\n  } else if (s.name.toLowerCase().includes('не реализовано') || s.name.toLowerCase().includes('lost')) {\n    extras = ', isClosed: true';\n  }\n  \n  msg += `    { id: ${s.id}, name: '${s.name}', sort: ${s.sort}, type: ${s.type}, color: '${s.color}'${extras} }${comma}\\n`;\n});\nmsg += `  ],\\n\\n`;\n\n// === МАППИНГ СТАДИЙ ===\nif (hotStage && warmStage && coldStage) {\n  msg += `  // === МАППИНГ СТАДИЙ ПО ТЕМПЕРАТУРЕ ===\\n`;\n  msg += `  stageMapping: {\\n`;\n  msg += `    hot: ${hotStage.id},      // ${hotStage.name}\\n`;\n  msg += `    warm: ${warmStage.id},     // ${warmStage.name}\\n`;\n  msg += `    cold: ${coldStage.id}      // ${coldStage.name}\\n`;\n  msg += `  },\\n\\n`;\n}\n\n// === ID КАСТОМНЫХ ПОЛЕЙ КОНТАКТОВ (ВСЕ) ===\nmsg += `  // === ID КАСТОМНЫХ ПОЛЕЙ КОНТАКТОВ ===\\n`;\nmsg += `  customFields: {\\n`;\n\n// Добавляем ВСЕ поля контактов\ncontactFieldsList.forEach((field, idx) => {\n  const comma = idx < contactFieldsList.length - 1 ? ',' : '';\n  \n  // Создаем имя поля (из code или из name)\n  let fieldName = field.code ? field.code.toLowerCase() : field.name.toLowerCase().replace(/\\s+/g, '_');\n  \n  // Добавляем с комментарием\n  msg += `    ${fieldName}: ${field.id}${comma}      // ${field.name}\\n`;\n});\n\nmsg += `  },\\n\\n`;\n\n// === ENUM ID ДЛЯ ТИПОВ КОНТАКТОВ ===\nif (phoneField?.enums && phoneField.enums.length > 0) {\n  msg += `  // === ENUM ID ДЛЯ ТИПОВ ТЕЛЕФОНОВ ===\\n`;\n  msg += `  phoneEnums: {\\n`;\n  phoneField.enums.forEach((e, idx) => {\n    const comma = idx < phoneField.enums.length - 1 ? ',' : '';\n    msg += `    ${e.value}: ${e.id}${comma}\\n`;\n  });\n  msg += `  },\\n\\n`;\n}\n\nif (emailField?.enums && emailField.enums.length > 0) {\n  msg += `  // === ENUM ID ДЛЯ ТИПОВ EMAIL ===\\n`;\n  msg += `  emailEnums: {\\n`;\n  emailField.enums.forEach((e, idx) => {\n    const comma = idx < emailField.enums.length - 1 ? ',' : '';\n    msg += `    ${e.value}: ${e.id}${comma}\\n`;\n  });\n  msg += `  },\\n\\n`;\n}\n\n// === КАСТОМНЫЕ ПОЛЯ ЛИДОВ (не UTM) ===\nconst customLeadFields = leadFieldsList.filter(f => \n  !f.code?.startsWith('UTM_') && \n  !['REFERRER', 'GCLIENTID', 'GCLID', 'FBCLID'].includes(f.code) &&\n  !f.is_predefined\n);\n\nif (customLeadFields.length > 0) {\n  msg += `  // === ID КАСТОМНЫХ ПОЛЕЙ ЛИДОВ ===\\n`;\n  msg += `  leadCustomFields: {\\n`;\n  \n  customLeadFields.forEach((field, idx) => {\n    const comma = idx < customLeadFields.length - 1 ? ',' : '';\n    const fieldName = field.code ? field.code.toLowerCase() : field.name.toLowerCase().replace(/\\s+/g, '_');\n    msg += `    ${fieldName}: ${field.id}${comma}      // ${field.name}\\n`;\n  });\n  \n  msg += `  },\\n\\n`;\n}\n\n// === БАЗОВЫЕ НАСТРОЙКИ ===\nmsg += `  // === БАЗОВЫЕ НАСТРОЙКИ ===\\n`;\nif (currentUser) {\n  msg += `  defaultManagerId: ${currentUser.id},\\n`;\n} else {\n  msg += `  defaultManagerId: 1,  // ⚠️ Укажите ID\\n`;\n}\nmsg += `  defaultCurrency: '${accountInfo.currency}',\\n`;\nmsg += `  timezone: '${accountInfo.timezone}',\\n`;\nmsg += `  industry: 'fintech',\\n\\n`;\n\n// === УВЕДОМЛЕНИЯ ===\nmsg += `  // === УВЕДОМЛЕНИЯ ===\\n`;\nmsg += `  sendTelegramForHot: true,\\n`;\nmsg += `  telegramChatId: '-1002588885971',\\n\\n`;\n\n// === СРОКИ ЗАКРЫТИЯ СДЕЛОК ===\nmsg += `  // === СРОКИ ЗАКРЫТИЯ СДЕЛОК ===\\n`;\nmsg += `  closeDays: {\\n`;\nmsg += `    hot: 14,\\n`;\nmsg += `    warm: 30,\\n`;\nmsg += `    cold: 60\\n`;\nmsg += `  }\\n`;\nmsg += `};</pre>\\n\\n`;\n\nmsg += `✅ Готово! Скопируйте в узел Set Client Config`;\n\n// ========================================\n// ВОЗВРАЩАЕМ РЕЗУЛЬТАТ\n// ========================================\n\nreturn [{\n  json: {\n    telegramMessage: msg,\n    parse_mode: 'HTML',\n    \n    // Исходные данные для дебага\n    debug: {\n      subdomain: accountInfo?.subdomain,\n      domain: domain,\n      pipelineId: mainPipeline.id,\n      pipelineName: mainPipeline.name,\n      stagesCount: allStatuses.length,\n      regularStagesCount: regularStatuses.length,\n      contactFieldsCount: contactFieldsList.length,\n      leadFieldsCount: leadFieldsList.length,\n      usersCount: usersList.length\n    },\n    \n    // Готовые данные для конфига\n    config: {\n      subdomain: accountInfo?.subdomain,\n      domain: domain,\n      accountId: accountInfo?.id,\n      pipelineId: mainPipeline.id,\n      pipelineName: mainPipeline.name,\n      stages: allStatuses.map(s => ({\n        id: s.id,\n        name: s.name,\n        sort: s.sort,\n        type: s.type,\n        color: s.color\n      })),\n      stageMapping: hotStage && warmStage && coldStage ? {\n        hot: hotStage.id,\n        warm: warmStage.id,\n        cold: coldStage.id\n      } : null,\n      contactFields: contactFieldsList.map(f => ({\n        id: f.id,\n        name: f.name,\n        code: f.code,\n        type: f.type,\n        isPredefined: f.is_predefined,\n        enums: f.enums\n      })),\n      leadFields: leadFieldsList.map(f => ({\n        id: f.id,\n        name: f.name,\n        code: f.code,\n        type: f.type,\n        isPredefined: f.is_predefined,\n        enums: f.enums\n      })),\n      defaultManagerId: currentUser?.id || 1,\n      defaultCurrency: accountInfo?.currency,\n      timezone: accountInfo?.timezone\n    }\n  }\n}];"
+      },
+      "id": "cb2fbde3-053e-4764-9c4a-8f06e045c05e",
+      "name": "Format Diagnostic Report3",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        64
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-kommo.kommo",
+      "typeVersion": 1,
+      "position": [
+        -704,
+        64
+      ],
+      "id": "9e698d28-7159-4fa8-a4ab-6f556789e152",
+      "name": "Get account info2",
+      "credentials": {
+        "kommoOAuth2Api": {
+          "id": "Wxsld8cBJ5iVMxyU",
+          "name": "Kommo account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 4
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -160,
+        32
+      ],
+      "id": "88c87ae4-c41f-4ea4-b059-9a6e692464b2",
+      "name": "Merge3"
+    },
+    {
+      "parameters": {
+        "chatId": "-1002588885971",
+        "text": "={{ $json.telegramMessage }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "={{ $json.parse_mode }}"
+        }
+      },
+      "id": "e7796e43-d105-4cc8-96af-c19927c32718",
+      "name": "Send to Telegram1",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        176,
+        64
+      ],
+      "webhookId": "d87debd8-8b3e-441b-8c1d-ea029d0e6fe4",
+      "credentials": {
+        "telegramApi": {
+          "id": "fn7ywFo6SxQJtPcU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://{{ $json.subdomain }}.amocrm.ru/api/v4/leads/pipelines/10227958",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "amocrmOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2d55debc-5bb4-41c1-bb65-498352d2e89e",
+      "name": "Get Pipelines",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -448,
+        -960
+      ],
+      "credentials": {
+        "amocrmOAuth2Api": {
+          "id": "Z8nVy1bW9GAOSuIJ",
+          "name": "AmoCRM account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://{{ $json.subdomain }}.amocrm.ru/api/v4/contacts/custom_fields",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "amocrmOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ffdbaa41-00a9-4154-b946-d7da5c083eb0",
+      "name": "Get Contact Custom Fields",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -448,
+        -752
+      ],
+      "credentials": {
+        "amocrmOAuth2Api": {
+          "id": "Z8nVy1bW9GAOSuIJ",
+          "name": "AmoCRM account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://{{ $json.subdomain }}.amocrm.ru/api/v4/leads/custom_fields",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "amocrmOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "62046790-8138-42a7-ae26-b0b7578daaed",
+      "name": "Get Lead Custom Fields",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -448,
+        -560
+      ],
+      "credentials": {
+        "amocrmOAuth2Api": {
+          "id": "Z8nVy1bW9GAOSuIJ",
+          "name": "AmoCRM account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// AMOCRM - DIAGNOSTIC REPORT & CONFIG GENERATOR\n// Универсальная версия с ПОЛНЫМ списком полей\n// ============================================\n\nconst allInputs = $input.all();\n\nconsole.log('Получено элементов:', allInputs.length);\n\n// Парсим и находим данные по типам\nlet accountInfo, pipelinesData, contactFields, leadFields, usersData;\n\nfor (const item of allInputs) {\n  let data;\n  \n  // Если данные в поле data как строка - парсим\n  if (item.json.data && typeof item.json.data === 'string') {\n    try {\n      data = JSON.parse(item.json.data);\n    } catch (e) {\n      console.log('Ошибка парсинга JSON:', e.message);\n      continue;\n    }\n  } else {\n    data = item.json;\n  }\n  \n  console.log('Обрабатываем данные, ключи:', Object.keys(data));\n  \n  // Определяем тип данных по структуре\n  if (data.id && data.subdomain && data.name && !data._embedded) {\n    accountInfo = data;\n    console.log('Найдены данные аккаунта');\n  } else if (data._embedded && data._embedded.pipelines) {\n    // Массив воронок (запрос /pipelines)\n    pipelinesData = data;\n    console.log('Найдены данные воронок (массив)');\n  } else if (data.id && data.name && data._embedded && data._embedded.statuses) {\n    // Одна воронка (запрос /pipelines/{id})\n    pipelinesData = {\n      _embedded: {\n        pipelines: [data]  // Оборачиваем в массив для единообразия\n      }\n    };\n    console.log('Найдена одна воронка (по ID)');\n  } else if (data._embedded && data._embedded.users) {\n    usersData = data;\n    console.log('Найдены данные пользователей');\n  } else if (data._embedded && data._embedded.custom_fields) {\n    const selfLink = data._links?.self?.href || '';\n    \n    if (selfLink.includes('/contacts/custom_fields')) {\n      contactFields = data;\n      console.log('Найдены поля контактов');\n    } else if (selfLink.includes('/leads/custom_fields')) {\n      leadFields = data;\n      console.log('Найдены поля лидов');\n    } else {\n      if (!contactFields) {\n        contactFields = data;\n        console.log('Сохранены как поля контактов (по порядку)');\n      } else {\n        leadFields = data;\n        console.log('Сохранены как поля лидов (по порядку)');\n      }\n    }\n  }\n}\n\n// Если нет данных аккаунта - создаем заглушку из данных воронок\nif (!accountInfo && pipelinesData) {\n  const firstPipeline = pipelinesData._embedded?.pipelines?.[0];\n  if (firstPipeline && firstPipeline.account_id) {\n    const pipelineUrl = firstPipeline._links?.self?.href || '';\n    // Поддерживаем оба домена: amocrm.ru и amocrm.com\n    const subdomainMatch = pipelineUrl.match(/https:\\/\\/([^.]+)\\.(amocrm\\.ru|amocrm\\.com)/);\n    const subdomain = subdomainMatch ? subdomainMatch[1] : 'unknown';\n    const domain = subdomainMatch ? subdomainMatch[2] : 'amocrm.ru';\n    \n    accountInfo = {\n      id: firstPipeline.account_id,\n      name: \"amoCRM Account\",\n      subdomain: subdomain,\n      domain: domain,\n      current_user_id: \"unknown\",\n      timezone: \"UTC\",\n      currency: \"RUB\"\n    };\n    console.log('Созданы данные аккаунта из воронок');\n  }\n}\n\n// Определяем домен (по умолчанию amocrm.ru для РФ)\nconst domain = accountInfo?.domain || 'amocrm.ru';\n\n// Проверяем, что все критические данные получены\nif (!pipelinesData || !contactFields || !leadFields) {\n  const missing = [];\n  if (!pipelinesData) missing.push('pipelinesData');\n  if (!contactFields) missing.push('contactFields');\n  if (!leadFields) missing.push('leadFields');\n  \n  throw new Error(`Не удалось получить данные: ${missing.join(', ')}`);\n}\n\n// Извлекаем данные\nconst pipelines = pipelinesData._embedded?.pipelines || [];\nconst contactFieldsList = contactFields._embedded?.custom_fields || [];\nconst leadFieldsList = leadFields._embedded?.custom_fields || [];\nconst usersList = usersData?._embedded?.users || [];\n\n// Находим основные поля\nconst phoneField = contactFieldsList.find(f => f.code === 'PHONE');\nconst emailField = contactFieldsList.find(f => f.code === 'EMAIL');\nconst positionField = contactFieldsList.find(f => f.code === 'POSITION');\n\n// Находим текущего пользователя и активных менеджеров\nlet currentUser = null;\nconst activeManagers = usersList.filter(u => u.rights?.is_active === true);\n\nif (accountInfo.current_user_id && accountInfo.current_user_id !== 'unknown') {\n  currentUser = usersList.find(u => u.id === accountInfo.current_user_id);\n}\n\n// Если не нашли текущего пользователя, берем первого активного\nif (!currentUser && activeManagers.length > 0) {\n  currentUser = activeManagers[0];\n}\n\n// ========================================\n// ✅ ВЫБИРАЕМ ВОРОНКУ ДЛЯ КОНФИГА\n// ========================================\n\nconst mainPipeline = pipelines.find(p => p.is_main) || pipelines[0];\nconst allStatuses = mainPipeline._embedded?.statuses || [];\n\n// Фильтруем только активные стадии (не SUCCESS/FAIL и не UNSORTED)\nconst regularStatuses = allStatuses.filter(s => \n  s.type !== 1 && // не unsorted\n  s.sort < 10000 && // не финальные\n  !s.name.toLowerCase().includes('успешно') &&\n  !s.name.toLowerCase().includes('won') &&\n  !s.name.toLowerCase().includes('не реализовано') &&\n  !s.name.toLowerCase().includes('lost')\n).sort((a, b) => a.sort - b.sort);\n\n// ========================================\n// ✅ ИСПРАВЛЕННАЯ ЛОГИКА ОПРЕДЕЛЕНИЯ СТАДИЙ\n// ========================================\n\nlet hotStage = null;\nlet warmStage = null;\nlet coldStage = null;\n\nif (regularStatuses.length >= 3) {\n  coldStage = regularStatuses[0];\n  \n  if (regularStatuses.length === 3) {\n    warmStage = regularStatuses[1];\n    hotStage = regularStatuses[2];\n  } else if (regularStatuses.length === 4) {\n    warmStage = regularStatuses[1];\n    hotStage = regularStatuses[3];\n  } else {\n    const warmIdx = Math.floor(regularStatuses.length * 0.35);\n    const hotIdx = Math.floor(regularStatuses.length * 0.70);\n    \n    warmStage = regularStatuses[warmIdx];\n    hotStage = regularStatuses[hotIdx];\n  }\n} else if (regularStatuses.length === 2) {\n  coldStage = regularStatuses[0];\n  warmStage = regularStatuses[0];\n  hotStage = regularStatuses[1];\n} else if (regularStatuses.length === 1) {\n  coldStage = warmStage = hotStage = regularStatuses[0];\n}\n\nconsole.log('Stage mapping:', {\n  cold: coldStage?.id,\n  warm: warmStage?.id,\n  hot: hotStage?.id,\n  totalStages: regularStatuses.length\n});\n\n// ========================================\n// КОМПАКТНОЕ СООБЩЕНИЕ ДЛЯ TELEGRAM\n// ========================================\n\nlet msg = `🔍 <b>AMOCRM - CLIENT_CONFIG</b>\\n\\n`;\n\n// Информация об аккаунте\nmsg += `📊 <b>Аккаунт:</b> ${accountInfo.subdomain}.${domain}\\n`;\nmsg += `Воронка: ${mainPipeline.name}\\n`;\nmsg += `Стадий: ${allStatuses.length}\\n`;\nmsg += `━━━━━━━━━━━━━━━━\\n\\n`;\n\n// Информация о воронке\nconst isMain = mainPipeline.is_main ? '⭐️ ' : '';\nmsg += `🎯 <b>Воронка:</b>\\n`;\nmsg += `${isMain}${mainPipeline.name}\\n`;\nmsg += `ID: <code>${mainPipeline.id}</code>\\n`;\nmsg += `\\n━━━━━━━━━━━━━━━━\\n\\n`;\n\n// Стадии - показываем только выбранные\nmsg += `📍 <b>Стадии для маппинга:</b>\\n`;\nif (coldStage) {\n  msg += `❄️ COLD: <code>${coldStage.id}</code> - ${coldStage.name}\\n`;\n}\nif (warmStage) {\n  msg += `🌡️ WARM: <code>${warmStage.id}</code> - ${warmStage.name}\\n`;\n}\nif (hotStage) {\n  msg += `🔥 HOT: <code>${hotStage.id}</code> - ${hotStage.name}\\n`;\n}\nmsg += `\\n━━━━━━━━━━━━━━━━\\n\\n`;\n\n// Пользователи\nif (usersList.length > 0 && currentUser) {\n  msg += `👤 <b>ID Менеджера:</b>\\n`;\n  msg += `${currentUser.name} (ID: <code>${currentUser.id}</code>)\\n`;\n  if (currentUser.email) {\n    msg += `Email: ${currentUser.email}\\n`;\n  }\n  msg += `\\n━━━━━━━━━━━━━━━━\\n\\n`;\n}\n\n// ========================================\n// 📋 ВСЕ КАСТОМНЫЕ ПОЛЯ КОНТАКТОВ\n// ========================================\n\nmsg += `👤 <b>Кастомные поля контактов (${contactFieldsList.length}):</b>\\n\\n`;\n\ncontactFieldsList.forEach((field, idx) => {\n  const isPredefined = field.is_predefined ? '🔒' : '';\n  msg += `${idx + 1}. ${isPredefined}<b>${field.name}</b>\\n`;\n  msg += `   ID: <code>${field.id}</code> | Code: <code>${field.code || 'custom'}</code>\\n`;\n  msg += `   Type: ${field.type}\\n`;\n  \n  // Если есть enums - показываем\n  if (field.enums && field.enums.length > 0) {\n    msg += `   Enums: `;\n    field.enums.forEach((e, eIdx) => {\n      msg += `${e.value}:${e.id}`;\n      if (eIdx < field.enums.length - 1) msg += `, `;\n    });\n    msg += `\\n`;\n  }\n  msg += `\\n`;\n});\n\nmsg += `━━━━━━━━━━━━━━━━\\n\\n`;\n\n// ========================================\n// 📋 ВСЕ КАСТОМНЫЕ ПОЛЯ ЛИДОВ\n// ========================================\n\nmsg += `💼 <b>Кастомные поля лидов (${leadFieldsList.length}):</b>\\n\\n`;\n\nleadFieldsList.forEach((field, idx) => {\n  const isPredefined = field.is_predefined ? '🔒' : '';\n  const isUTM = field.code?.startsWith('UTM_') || ['REFERRER', 'GCLIENTID', 'GCLID', 'FBCLID'].includes(field.code);\n  const marker = isUTM ? '📊 ' : '';\n  \n  msg += `${idx + 1}. ${marker}${isPredefined}<b>${field.name}</b>\\n`;\n  msg += `   ID: <code>${field.id}</code> | Code: <code>${field.code || 'custom'}</code>\\n`;\n  msg += `   Type: ${field.type}\\n`;\n  \n  // Если есть enums - показываем\n  if (field.enums && field.enums.length > 0) {\n    msg += `   Enums: `;\n    field.enums.forEach((e, eIdx) => {\n      msg += `${e.value}:${e.id}`;\n      if (eIdx < field.enums.length - 1) msg += `, `;\n    });\n    msg += `\\n`;\n  }\n  msg += `\\n`;\n});\n\nmsg += `━━━━━━━━━━━━━━━━\\n\\n`;\n\n// ========================================\n// 📋 ГОТОВЫЙ CLIENT_CONFIG - КОМПАКТНЫЙ\n// ========================================\n\nmsg += `📋 <b>ГОТОВЫЙ CLIENT_CONFIG:</b>\\n\\n`;\nmsg += `<pre>const CLIENT_CONFIG = {\\n`;\nmsg += `  // === ОБЯЗАТЕЛЬНЫЕ НАСТРОЙКИ ===\\n`;\nmsg += `  clientName: '${mainPipeline.name}',\\n`;\nmsg += `  subdomain: '${accountInfo.subdomain}',\\n`;\nmsg += `  accountId: ${accountInfo.id},\\n`;\nmsg += `  pipelineId: ${mainPipeline.id},\\n`;\nmsg += `  pipelineName: '${mainPipeline.name}',\\n\\n`;\n\n// === ПОЛНЫЙ МАССИВ STAGES ===\nmsg += `  // === ПОЛНЫЙ СПИСОК СТАДИЙ ===\\n`;\nmsg += `  stages: [\\n`;\nallStatuses.forEach((s, idx) => {\n  const comma = idx < allStatuses.length - 1 ? ',' : '';\n  \n  let extras = '';\n  if (s.type === 1) {\n    extras = ', isUnsorted: true';\n  } else if (s.name.toLowerCase().includes('успешно') || s.name.toLowerCase().includes('won')) {\n    extras = ', isSuccess: true';\n  } else if (s.name.toLowerCase().includes('не реализовано') || s.name.toLowerCase().includes('lost')) {\n    extras = ', isClosed: true';\n  }\n  \n  msg += `    { id: ${s.id}, name: '${s.name}', sort: ${s.sort}, type: ${s.type}, color: '${s.color}'${extras} }${comma}\\n`;\n});\nmsg += `  ],\\n\\n`;\n\n// === МАППИНГ СТАДИЙ ===\nif (hotStage && warmStage && coldStage) {\n  msg += `  // === МАППИНГ СТАДИЙ ПО ТЕМПЕРАТУРЕ ===\\n`;\n  msg += `  stageMapping: {\\n`;\n  msg += `    hot: ${hotStage.id},      // ${hotStage.name}\\n`;\n  msg += `    warm: ${warmStage.id},     // ${warmStage.name}\\n`;\n  msg += `    cold: ${coldStage.id}      // ${coldStage.name}\\n`;\n  msg += `  },\\n\\n`;\n}\n\n// === ID КАСТОМНЫХ ПОЛЕЙ КОНТАКТОВ (ВСЕ) ===\nmsg += `  // === ID КАСТОМНЫХ ПОЛЕЙ КОНТАКТОВ ===\\n`;\nmsg += `  customFields: {\\n`;\n\n// Добавляем ВСЕ поля контактов\ncontactFieldsList.forEach((field, idx) => {\n  const comma = idx < contactFieldsList.length - 1 ? ',' : '';\n  \n  // Создаем имя поля (из code или из name)\n  let fieldName = field.code ? field.code.toLowerCase() : field.name.toLowerCase().replace(/\\s+/g, '_');\n  \n  // Добавляем с комментарием\n  msg += `    ${fieldName}: ${field.id}${comma}      // ${field.name}\\n`;\n});\n\nmsg += `  },\\n\\n`;\n\n// === ENUM ID ДЛЯ ТИПОВ КОНТАКТОВ ===\nif (phoneField?.enums && phoneField.enums.length > 0) {\n  msg += `  // === ENUM ID ДЛЯ ТИПОВ ТЕЛЕФОНОВ ===\\n`;\n  msg += `  phoneEnums: {\\n`;\n  phoneField.enums.forEach((e, idx) => {\n    const comma = idx < phoneField.enums.length - 1 ? ',' : '';\n    msg += `    ${e.value}: ${e.id}${comma}\\n`;\n  });\n  msg += `  },\\n\\n`;\n}\n\nif (emailField?.enums && emailField.enums.length > 0) {\n  msg += `  // === ENUM ID ДЛЯ ТИПОВ EMAIL ===\\n`;\n  msg += `  emailEnums: {\\n`;\n  emailField.enums.forEach((e, idx) => {\n    const comma = idx < emailField.enums.length - 1 ? ',' : '';\n    msg += `    ${e.value}: ${e.id}${comma}\\n`;\n  });\n  msg += `  },\\n\\n`;\n}\n\n// === КАСТОМНЫЕ ПОЛЯ ЛИДОВ (не UTM) ===\nconst customLeadFields = leadFieldsList.filter(f => \n  !f.code?.startsWith('UTM_') && \n  !['REFERRER', 'GCLIENTID', 'GCLID', 'FBCLID'].includes(f.code) &&\n  !f.is_predefined\n);\n\nif (customLeadFields.length > 0) {\n  msg += `  // === ID КАСТОМНЫХ ПОЛЕЙ ЛИДОВ ===\\n`;\n  msg += `  leadCustomFields: {\\n`;\n  \n  customLeadFields.forEach((field, idx) => {\n    const comma = idx < customLeadFields.length - 1 ? ',' : '';\n    const fieldName = field.code ? field.code.toLowerCase() : field.name.toLowerCase().replace(/\\s+/g, '_');\n    msg += `    ${fieldName}: ${field.id}${comma}      // ${field.name}\\n`;\n  });\n  \n  msg += `  },\\n\\n`;\n}\n\n// === БАЗОВЫЕ НАСТРОЙКИ ===\nmsg += `  // === БАЗОВЫЕ НАСТРОЙКИ ===\\n`;\nif (currentUser) {\n  msg += `  defaultManagerId: ${currentUser.id},\\n`;\n} else {\n  msg += `  defaultManagerId: 1,  // ⚠️ Укажите ID\\n`;\n}\nmsg += `  defaultCurrency: '${accountInfo.currency}',\\n`;\nmsg += `  timezone: '${accountInfo.timezone}',\\n`;\nmsg += `  industry: 'fintech',\\n\\n`;\n\n// === УВЕДОМЛЕНИЯ ===\nmsg += `  // === УВЕДОМЛЕНИЯ ===\\n`;\nmsg += `  sendTelegramForHot: true,\\n`;\nmsg += `  telegramChatId: '-1002588885971',\\n\\n`;\n\n// === СРОКИ ЗАКРЫТИЯ СДЕЛОК ===\nmsg += `  // === СРОКИ ЗАКРЫТИЯ СДЕЛОК ===\\n`;\nmsg += `  closeDays: {\\n`;\nmsg += `    hot: 14,\\n`;\nmsg += `    warm: 30,\\n`;\nmsg += `    cold: 60\\n`;\nmsg += `  }\\n`;\nmsg += `};</pre>\\n\\n`;\n\nmsg += `✅ Готово! Скопируйте в узел Set Client Config`;\n\n// ========================================\n// ВОЗВРАЩАЕМ РЕЗУЛЬТАТ\n// ========================================\n\nreturn [{\n  json: {\n    telegramMessage: msg,\n    parse_mode: 'HTML',\n    \n    // Исходные данные для дебага\n    debug: {\n      subdomain: accountInfo?.subdomain,\n      domain: domain,\n      pipelineId: mainPipeline.id,\n      pipelineName: mainPipeline.name,\n      stagesCount: allStatuses.length,\n      regularStagesCount: regularStatuses.length,\n      contactFieldsCount: contactFieldsList.length,\n      leadFieldsCount: leadFieldsList.length,\n      usersCount: usersList.length\n    },\n    \n    // Готовые данные для конфига\n    config: {\n      subdomain: accountInfo?.subdomain,\n      domain: domain,\n      accountId: accountInfo?.id,\n      pipelineId: mainPipeline.id,\n      pipelineName: mainPipeline.name,\n      stages: allStatuses.map(s => ({\n        id: s.id,\n        name: s.name,\n        sort: s.sort,\n        type: s.type,\n        color: s.color\n      })),\n      stageMapping: hotStage && warmStage && coldStage ? {\n        hot: hotStage.id,\n        warm: warmStage.id,\n        cold: coldStage.id\n      } : null,\n      contactFields: contactFieldsList.map(f => ({\n        id: f.id,\n        name: f.name,\n        code: f.code,\n        type: f.type,\n        isPredefined: f.is_predefined,\n        enums: f.enums\n      })),\n      leadFields: leadFieldsList.map(f => ({\n        id: f.id,\n        name: f.name,\n        code: f.code,\n        type: f.type,\n        isPredefined: f.is_predefined,\n        enums: f.enums\n      })),\n      defaultManagerId: currentUser?.id || 1,\n      defaultCurrency: accountInfo?.currency,\n      timezone: accountInfo?.timezone\n    }\n  }\n}];"
+      },
+      "id": "d6231f64-13ab-4762-aeac-fe7cf350a601",
+      "name": "Format Diagnostic Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        -672
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-amocrm.amocrm",
+      "typeVersion": 1,
+      "position": [
+        -800,
+        -688
+      ],
+      "id": "5295423e-bfc0-4f83-9df7-ceaebcf3865b",
+      "name": "Get account info",
+      "credentials": {
+        "amocrmOAuth2Api": {
+          "id": "Z8nVy1bW9GAOSuIJ",
+          "name": "AmoCRM account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 4
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -176,
+        -704
+      ],
+      "id": "6cbcb92d-f9e1-4e0f-88e9-d8745292a01c",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "chatId": "-1002588885971",
+        "text": "={{ $json.telegramMessage }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "={{ $json.parse_mode }}"
+        }
+      },
+      "id": "11d85184-52e5-4f56-88a5-b22d3f4766c9",
+      "name": "Send to Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        208,
+        -672
+      ],
+      "webhookId": "8c03c5fe-88fb-4a4b-a4cc-221aa90ae9a5",
+      "credentials": {
+        "telegramApi": {
+          "id": "fn7ywFo6SxQJtPcU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://{{ $json.subdomain }}.amocrm.ru/api/v4/users",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "amocrmOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "49978e61-f7e1-4326-be4f-b703060179b4",
+      "name": "Get Users1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -448,
+        -368
+      ],
+      "credentials": {
+        "amocrmOAuth2Api": {
+          "id": "Z8nVy1bW9GAOSuIJ",
+          "name": "AmoCRM account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "custom",
+        "apiMethod": "crm.contact.fields",
+        "inputType": "json",
+        "jsonBody": "{}"
+      },
+      "type": "n8n-nodes-bitrix.bitrix",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        -1312
+      ],
+      "id": "af55e5a0-5371-4831-b7d0-0a223d0cb305",
+      "name": "Get Contact Fields",
+      "credentials": {
+        "bitrixOAuth2Api": {
+          "id": "xdwhNDKDNJTB0O4c",
+          "name": "Bitrix account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "custom",
+        "apiMethod": "crm.deal.fields",
+        "inputType": "json",
+        "jsonBody": "{}"
+      },
+      "type": "n8n-nodes-bitrix.bitrix",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        -1136
+      ],
+      "id": "0a0681fc-7b5c-41d6-8a84-b42f8b6f9353",
+      "name": "Get Deal Fields",
+      "credentials": {
+        "bitrixOAuth2Api": {
+          "id": "xdwhNDKDNJTB0O4c",
+          "name": "Bitrix account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "custom",
+        "apiMethod": "crm.dealcategory.stage.list",
+        "inputType": "json",
+        "jsonBody": "={\n  \"id\": {{ $json.result[0].ID }}\n}"
+      },
+      "type": "n8n-nodes-bitrix.bitrix",
+      "typeVersion": 1,
+      "position": [
+        -240,
+        -1472
+      ],
+      "id": "71f2e19a-dde1-4cc2-85d8-5b5e8fa7b543",
+      "name": "Get Stages",
+      "credentials": {
+        "bitrixOAuth2Api": {
+          "id": "xdwhNDKDNJTB0O4c",
+          "name": "Bitrix account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 4
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -64,
+        -1328
+      ],
+      "id": "f322af38-7c52-491c-9f5b-22a333942943",
+      "name": "Merge All Data"
+    },
+    {
+      "parameters": {
+        "resource": "custom",
+        "apiMethod": "crm.dealcategory.list",
+        "inputType": "json",
+        "jsonBody": "{\n  \"filter\": { \"IS_LOCKED\": \"N\", \"ID\": \"14\" }\n}"
+      },
+      "type": "n8n-nodes-bitrix.bitrix",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        -1472
+      ],
+      "id": "81fac07c-d143-4884-99d4-ee003d9a4673",
+      "name": "Get Pipelines1",
+      "credentials": {
+        "bitrixOAuth2Api": {
+          "id": "xdwhNDKDNJTB0O4c",
+          "name": "Bitrix account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// BITRIX24 - DIAGNOSTIC REPORT & CONFIG GENERATOR\n// Компактная версия без лишних полей\n// ============================================\n\nconst allInputs = $input.all();\n\nconsole.log('Получено элементов:', allInputs.length);\n\n// Инициализируем переменные\nlet pipelinesData = null;\nlet stagesData = null;\nlet contactFields = null;\nlet dealFields = null;\n\n// Проходим по всем входным данным\nfor (const item of allInputs) {\n  const data = item.json;\n  \n  console.log('Обработка элемента, ключи:', Object.keys(data));\n  \n  // Bitrix24 всегда возвращает структуру: { result: ..., time: ..., total: ... }\n  if (data.result) {\n    \n    // Если result - это массив\n    if (Array.isArray(data.result)) {\n      const first = data.result[0];\n      \n      if (first && first.STATUS_ID && first.NAME && first.SORT) {\n        // Это стадии (имеют STATUS_ID)\n        stagesData = data.result;\n        console.log('Найдены стадии:', stagesData.length);\n      } else if (first && first.ID && first.NAME && (first.IS_LOCKED !== undefined || first.SORT !== undefined)) {\n        // Это воронки/categories\n        pipelinesData = data.result;\n        console.log('Найдены воронки:', pipelinesData.length);\n      }\n    } \n    // Если result - это объект с полями\n    else if (typeof data.result === 'object') {\n      const keys = Object.keys(data.result);\n      \n      if (keys.includes('PHONE') || keys.includes('EMAIL') || keys.includes('NAME')) {\n        // Поля контактов\n        contactFields = data.result;\n        console.log('Найдены поля контактов:', keys.length);\n      } else if (keys.includes('TITLE') || keys.includes('OPPORTUNITY') || keys.includes('STAGE_ID')) {\n        // Поля сделок\n        dealFields = data.result;\n        console.log('Найдены поля сделок:', keys.length);\n      }\n    }\n  }\n}\n\n// Проверяем что получили критические данные\nconst missing = [];\nif (!pipelinesData) missing.push('pipelines');\nif (!stagesData) missing.push('stages');\nif (!contactFields) missing.push('contactFields');\nif (!dealFields) missing.push('dealFields');\n\nif (missing.length > 0) {\n  throw new Error(`Не удалось получить данные: ${missing.join(', ')}`);\n}\n\n// ========================================\n// ИЗВЛЕКАЕМ ДОМЕН BITRIX24\n// ========================================\n\n// ВАЖНО: Замените на ваш реальный домен!\nlet bitrixDomain = 'b24-dl6obh.bitrix24.com';\n\nconsole.log('Используется домен:', bitrixDomain);\n\n// ========================================\n// ✅ ВЫБИРАЕМ ВОРОНКУ ДЛЯ КОНФИГА\n// ========================================\n\nconst mainPipeline = pipelinesData[0]; // Берем первую (или единственную если фильтровали)\n\n// ========================================\n// ✅ ПРАВИЛЬНАЯ ЛОГИКА ОПРЕДЕЛЕНИЯ СТАДИЙ\n// (30% и 45% для Bitrix24)\n// ========================================\n\n// Фильтруем только активные стадии (не SUCCESS/FAIL)\nconst regularStages = stagesData.filter(s => \n  !s.NAME.toLowerCase().includes('успешно') && \n  !s.NAME.toLowerCase().includes('проиграно') &&\n  !s.NAME.toLowerCase().includes('won') &&\n  !s.NAME.toLowerCase().includes('lost') &&\n  s.SORT < 10000\n).sort((a, b) => a.SORT - b.SORT);\n\n// Определяем стадии для маппинга\nlet hotStage = null;\nlet warmStage = null;\nlet coldStage = null;\n\nif (regularStages.length >= 3) {\n  // ✅ ПРАВИЛЬНЫЕ ПРОЦЕНТЫ для Bitrix24!\n  const hotIdx = Math.min(\n    Math.floor(regularStages.length * 0.45),  // 45%\n    regularStages.length - 1\n  );\n  \n  const warmIdx = Math.min(\n    Math.floor(regularStages.length * 0.3),   // 30%\n    regularStages.length - 1\n  );\n  \n  coldStage = regularStages[0];               // 0% - первая стадия\n  warmStage = regularStages[warmIdx];\n  hotStage = regularStages[hotIdx];\n} else if (regularStages.length === 2) {\n  coldStage = regularStages[0];\n  warmStage = regularStages[0];\n  hotStage = regularStages[1];\n} else if (regularStages.length === 1) {\n  coldStage = warmStage = hotStage = regularStages[0];\n}\n\nconsole.log('Stage mapping:', {\n  cold: coldStage?.STATUS_ID,\n  warm: warmStage?.STATUS_ID,\n  hot: hotStage?.STATUS_ID,\n  totalStages: regularStages.length\n});\n\n// ========================================\n// КОМПАКТНОЕ СООБЩЕНИЕ ДЛЯ TELEGRAM\n// ========================================\n\nlet msg = `🔍 <b>BITRIX24 - CLIENT_CONFIG</b>\\n\\n`;\n\n// Информация об аккаунте\nmsg += `📊 <b>Аккаунт:</b> ${bitrixDomain}\\n`;\nmsg += `Воронка: ${mainPipeline.NAME}\\n`;\nmsg += `Стадий: ${stagesData.length}\\n`;\nmsg += `━━━━━━━━━━━━━━━━\\n\\n`;\n\n// Информация о воронке\nconst isLocked = mainPipeline.IS_LOCKED === 'Y' ? '🔒 ' : '';\nmsg += `🎯 <b>Воронка:</b>\\n`;\nmsg += `${isLocked}${mainPipeline.NAME}\\n`;\nmsg += `ID: <code>${mainPipeline.ID}</code>\\n`;\nmsg += `\\n━━━━━━━━━━━━━━━━\\n\\n`;\n\n// Стадии - показываем только выбранные\nmsg += `📍 <b>Стадии для маппинга:</b>\\n`;\nif (coldStage) {\n  msg += `❄️ COLD: <code>${coldStage.STATUS_ID}</code> - ${coldStage.NAME}\\n`;\n}\nif (warmStage) {\n  msg += `🌡️ WARM: <code>${warmStage.STATUS_ID}</code> - ${warmStage.NAME}\\n`;\n}\nif (hotStage) {\n  msg += `🔥 HOT: <code>${hotStage.STATUS_ID}</code> - ${hotStage.NAME}\\n`;\n}\nmsg += `\\n━━━━━━━━━━━━━━━━\\n\\n`;\n\n// Поля контактов - компактно\nmsg += `👤 <b>Поля контактов:</b>\\n`;\nmsg += `PHONE | EMAIL | NAME | POST\\n`;\nmsg += `\\n━━━━━━━━━━━━━━━━\\n\\n`;\n\n// Поля сделок - компактно\nmsg += `💼 <b>Поля сделок:</b>\\n`;\nmsg += `TITLE | OPPORTUNITY | CLOSEDATE | COMMENTS\\n`;\nmsg += `\\n━━━━━━━━━━━━━━━━\\n\\n`;\n\n// ID менеджера\nmsg += `👤 <b>ID Менеджера:</b>\\n`;\nmsg += `Найдите в Bitrix24 → Компания → Сотрудники\\n`;\nmsg += `ID в URL: /company/personal/user/<b>[ID]</b>/\\n`;\nmsg += `\\n━━━━━━━━━━━━━━━━\\n\\n`;\n\n// ========================================\n// 📋 ГОТОВЫЙ CLIENT_CONFIG\n// ========================================\n\nmsg += `📋 <b>ГОТОВЫЙ CLIENT_CONFIG:</b>\\n\\n`;\nmsg += `<pre>const CLIENT_CONFIG = {\\n`;\nmsg += `  // === ОБЯЗАТЕЛЬНЫЕ НАСТРОЙКИ ===\\n`;\nmsg += `  clientName: '${mainPipeline.NAME}',\\n`;\nmsg += `  bitrixDomain: '${bitrixDomain}',\\n`;\nmsg += `  pipelineId: '${mainPipeline.ID}',\\n`;\nmsg += `  pipelineName: '${mainPipeline.NAME}',\\n\\n`;\n\n// === ПОЛНЫЙ МАССИВ STAGES ===\nmsg += `  // === ПОЛНЫЙ СПИСОК СТАДИЙ ===\\n`;\nmsg += `  stages: [\\n`;\nregularStages.forEach((s, idx) => {\n  const comma = idx < regularStages.length - 1 ? ',' : '';\n  msg += `    { id: '${s.STATUS_ID}', name: '${s.NAME}', sort: ${s.SORT} }${comma}\\n`;\n});\nmsg += `  ],\\n\\n`;\n\n// === МАППИНГ СТАДИЙ ===\nif (hotStage && warmStage && coldStage) {\n  msg += `  // === МАППИНГ СТАДИЙ ПО ТЕМПЕРАТУРЕ ===\\n`;\n  msg += `  stageMapping: {\\n`;\n  msg += `    hot: '${hotStage.STATUS_ID}',      // ${hotStage.NAME}\\n`;\n  msg += `    warm: '${warmStage.STATUS_ID}',     // ${warmStage.NAME}\\n`;\n  msg += `    cold: '${coldStage.STATUS_ID}'      // ${coldStage.NAME}\\n`;\n  msg += `  },\\n\\n`;\n}\n\n// === БАЗОВЫЕ НАСТРОЙКИ ===\nmsg += `  // === БАЗОВЫЕ НАСТРОЙКИ ===\\n`;\nmsg += `  defaultManagerId: 1,  // ⚠️ Укажите ID менеджера\\n`;\nmsg += `  defaultCurrency: 'USD',\\n`;\nmsg += `  timezone: '+03:00',\\n`;\nmsg += `  industry: 'fintech',\\n\\n`;\n\n// === УВЕДОМЛЕНИЯ ===\nmsg += `  // === УВЕДОМЛЕНИЯ ===\\n`;\nmsg += `  sendTelegramForHot: true,\\n`;\nmsg += `  telegramChatId: '-1002588885971',\\n\\n`;\n\n// === СРОКИ ЗАКРЫТИЯ СДЕЛОК ===\nmsg += `  // === СРОКИ ЗАКРЫТИЯ СДЕЛОК ===\\n`;\nmsg += `  closeDays: {\\n`;\nmsg += `    hot: 14,\\n`;\nmsg += `    warm: 30,\\n`;\nmsg += `    cold: 60\\n`;\nmsg += `  }\\n`;\nmsg += `};</pre>\\n\\n`;\n\nmsg += `✅ Готово! Скопируйте в узел Set Client Config`;\n\n// ========================================\n// ВОЗВРАЩАЕМ РЕЗУЛЬТАТ\n// ========================================\n\nreturn [{\n  json: {\n    telegramMessage: msg,\n    parse_mode: 'HTML',\n    \n    // Исходные данные для дебага\n    debug: {\n      bitrixDomain: bitrixDomain,\n      pipelineId: mainPipeline.ID,\n      pipelineName: mainPipeline.NAME,\n      stagesCount: stagesData.length,\n      regularStagesCount: regularStages.length,\n      contactFieldsCount: Object.keys(contactFields).length,\n      dealFieldsCount: Object.keys(dealFields).length\n    },\n    \n    // Готовые данные для конфига\n    config: {\n      bitrixDomain: bitrixDomain,\n      pipelineId: mainPipeline.ID,\n      pipelineName: mainPipeline.NAME,\n      stages: regularStages.map(s => ({\n        id: s.STATUS_ID,\n        name: s.NAME,\n        sort: s.SORT\n      })),\n      stageMapping: hotStage && warmStage && coldStage ? {\n        hot: hotStage.STATUS_ID,\n        warm: warmStage.STATUS_ID,\n        cold: coldStage.STATUS_ID\n      } : null\n    }\n  }\n}];"
+      },
+      "id": "c984ef5e-5173-44d9-9c04-19db5b63998b",
+      "name": "Format Diagnostic Report1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        112,
+        -1312
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "-1002588885971",
+        "text": "={{ $json.telegramMessage }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "={{ $json.parse_mode }}"
+        }
+      },
+      "id": "97ad5b93-0be3-4fe4-9d2d-425ddb598dc8",
+      "name": "Send to Telegram2",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        288,
+        -1312
+      ],
+      "webhookId": "bitrix24-config-report",
+      "credentials": {
+        "telegramApi": {
+          "id": "fn7ywFo6SxQJtPcU",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking 'Test workflow'": {
+      "main": [
+        [
+          {
+            "node": "Get Pipelines1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Contact Fields",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Deal Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Users": {
+      "main": [
+        [
+          {
+            "node": "Merge3",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Get Pipelines3": {
+      "main": [
+        [
+          {
+            "node": "Merge3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Contact Custom Fields3": {
+      "main": [
+        [
+          {
+            "node": "Merge3",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Get Lead Custom Fields3": {
+      "main": [
+        [
+          {
+            "node": "Merge3",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Format Diagnostic Report3": {
+      "main": [
+        [
+          {
+            "node": "Send to Telegram1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get account info2": {
+      "main": [
+        [
+          {
+            "node": "Get Pipelines3",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Contact Custom Fields3",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Lead Custom Fields3",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Users",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge3": {
+      "main": [
+        [
+          {
+            "node": "Format Diagnostic Report3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Pipelines": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Contact Custom Fields": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Get Lead Custom Fields": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Format Diagnostic Report": {
+      "main": [
+        [
+          {
+            "node": "Send to Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get account info": {
+      "main": [
+        [
+          {
+            "node": "Get Pipelines",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Contact Custom Fields",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Lead Custom Fields",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Users1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Format Diagnostic Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Users1": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Get Stages": {
+      "main": [
+        [
+          {
+            "node": "Merge All Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Contact Fields": {
+      "main": [
+        [
+          {
+            "node": "Merge All Data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge All Data": {
+      "main": [
+        [
+          {
+            "node": "Format Diagnostic Report1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Pipelines1": {
+      "main": [
+        [
+          {
+            "node": "Get Stages",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge All Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Format Diagnostic Report1": {
+      "main": [
+        [
+          {
+            "node": "Send to Telegram2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Deal Fields": {
+      "main": [
+        [
+          {
+            "node": "Merge All Data",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "2291c497-963e-4b9a-9de0-1831ac4d3235",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "qL3i70xIvUHzBN1G",
+  "tags": []
+}

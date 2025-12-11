@@ -1,0 +1,505 @@
+{
+  "name": "Twitter Direct Messages Adapter",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "twitter-webhook",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -688,
+        -32
+      ],
+      "id": "39338689-8ab3-499d-86b5-8a6f5b454bbe",
+      "name": "Twitter Webhook",
+      "webhookId": "twitter-direct-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Twitter webhook data\nconst body = items[0].json.body;\nlet parsedData;\n\ntry {\n  parsedData = typeof body === 'string' ? JSON.parse(body) : body;\n} catch (error) {\n  console.error('Failed to parse webhook data:', error);\n  return [{json: {error: 'Invalid webhook data', skip: true}}];\n}\n\nconsole.log('Twitter webhook received:', JSON.stringify(parsedData, null, 2));\n\n// Twitter отправляет разные типы событий\n// Проверяем наличие direct_message_events\nif (!parsedData.direct_message_events || parsedData.direct_message_events.length === 0) {\n  console.log('No DM events found');\n  return [{json: {skip: true, reason: 'no_dm_events'}}];\n}\n\nconst event = parsedData.direct_message_events[0];\nconst messageCreate = event.message_create;\n\n// Пропускаем сообщения от самого бота\nconst botUserId = parsedData.for_user_id;\nif (messageCreate.sender_id === botUserId) {\n  console.log('Message from bot itself, skipping');\n  return [{json: {skip: true, reason: 'bot_message'}}];\n}\n\n// Получаем данные пользователя из объекта users\nconst userData = parsedData.users?.[messageCreate.sender_id] || {};\n\n// Format Twitter data to common structure\nconst formattedData = {\n  message: {\n    id: event.id,\n    from: {\n      id: messageCreate.sender_id,\n      screen_name: userData.screen_name || null,\n      name: userData.name || null\n    },\n    chat: {\n      id: messageCreate.sender_id,\n      type: 'private'\n    },\n    text: messageCreate.message_data?.text || '',\n    timestamp: parseInt(event.created_timestamp)\n  },\n  platform: 'twitter',\n  twitter_account_id: botUserId,\n  user_data: userData,\n  raw: parsedData\n};\n\n// Handle media attachments\nif (messageCreate.message_data?.attachment) {\n  const media = messageCreate.message_data.attachment.media;\n  if (media) {\n    formattedData.message.media_type = media.type;\n    formattedData.message.media_url = media.media_url_https || media.media_url;\n  }\n}\n\nreturn [{json: formattedData}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        -32
+      ],
+      "id": "2a63392c-6783-472d-83f3-cd3bf74d8d41",
+      "name": "Parse Twitter Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check Manager Mode for Twitter\nconst input = $input.all();\nconst data = input[0].json;\n\n// Пропускаем обработку если это не DM событие\nif (data.skip) {\n  return [{\n    json: {\n      ...data,\n      skip: true\n    }\n  }];\n}\n\nconst userId = data.message?.from?.id || '';\nconst messageText = data.message?.text || '';\n\n// Check manager commands\nif (messageText && messageText.toLowerCase() === '/bot off') {\n  return [{\n    json: {\n      ...data,\n      manager_takeover: true,\n      notification: 'Bot disabled. Manager has taken control.'\n    }\n  }];\n}\n\nif (messageText && messageText.toLowerCase() === '/bot on') {\n  return [{\n    json: {\n      ...data,\n      manager_release: true,\n      notification: 'Bot enabled. AI is now responding.'\n    }\n  }];\n}\n\n// Regular user message\nreturn [{\n  json: {\n    ...data,\n    skip: false\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -192,
+        -32
+      ],
+      "id": "569492ca-2f3d-448b-9f23-c7204c99dbc8",
+      "name": "Check Manager Mode"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Check manager status for Twitter\nSELECT manager_mode \nFROM chat_status \nWHERE session_id = 'twitter_{{ $json.message.from.id }}'\nLIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        16,
+        -32
+      ],
+      "id": "e83736dc-a402-4c03-9d79-4a80287babea",
+      "name": "Check Manager Status",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Manager Commands and Status\nconst managerCheck = $('Check Manager Mode').item.json;\nconst dbResult = $input.all()[0]?.json;\n\n// Если есть команда менеджера - обновляем статус\nif (managerCheck.manager_takeover || managerCheck.manager_release) {\n  return [{\n    json: {\n      ...managerCheck,\n      should_update_status: true,\n      new_status: managerCheck.manager_takeover ? true : false,\n      skip_response: true\n    }\n  }];\n}\n\n// Проверяем активен ли режим менеджера\nconst managerMode = dbResult?.manager_mode;\nif (managerMode === true || managerMode === 'true' || managerMode === 't') {\n  return [{\n    json: {\n      ...managerCheck,\n      skip_response: true,\n      reason: 'Manager mode is active'\n    }\n  }];\n}\n\n// Обычное сообщение, бот отвечает\nreturn [{\n  json: {\n    ...managerCheck,\n    skip_response: false\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        -32
+      ],
+      "id": "6d443b70-4c8a-452b-b696-73c82f37b9f0",
+      "name": "Process Manager Status"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.should_update_status }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        432,
+        -32
+      ],
+      "id": "cecab09b-0902-46e1-8709-963ec7fd9ff8",
+      "name": "If Update Status"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Update manager status\nINSERT INTO chat_status (session_id, manager_mode, activated_at, last_manager_message)\nVALUES (\n  'twitter_{{ $json.message.from.id }}',\n  {{ $json.new_status }},\n  CURRENT_TIMESTAMP,\n  CURRENT_TIMESTAMP\n)\nON CONFLICT (session_id) \nDO UPDATE SET \n  manager_mode = {{ $json.new_status }},\n  last_manager_message = CURRENT_TIMESTAMP\nRETURNING manager_mode;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        640,
+        -128
+      ],
+      "id": "6436ab16-73a6-457a-a9cb-ebab9cb03153",
+      "name": "Update Manager Status",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.skip_response }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        640,
+        64
+      ],
+      "id": "4412085a-54f7-4eac-b4c9-73baee79a732",
+      "name": "If Process Message"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare contact data and detect language\nconst data = items[0].json;\nconst userData = data.user_data || {};\nconst messageText = data.message?.text || '';\nconst userId = data.message?.from?.id || '';\n\nconsole.log('=== TWITTER CONTACT DATA ===');\nconsole.log('User data:', userData);\n\n// Language detection\nfunction detectLanguageFromText(text) {\n  if (!text || typeof text !== 'string' || text.length < 2) {\n    return 'en';\n  }\n  \n  const lowerText = text.toLowerCase().trim();\n  const russianChars = /[а-яё]/g;\n  const russianMatches = lowerText.match(russianChars);\n  \n  if (russianMatches && russianMatches.length > 2) {\n    return 'ru';\n  }\n  \n  return 'en';\n}\n\nconst detectedLanguage = detectLanguageFromText(messageText);\n\n// Parse name\nlet firstName = null;\nlet lastName = null;\nif (userData.name) {\n  const nameParts = userData.name.split(' ');\n  firstName = nameParts[0] || null;\n  lastName = nameParts.slice(1).join(' ') || null;\n}\n\n// Format Twitter handle\nconst twitterHandle = userData.screen_name ? `@${userData.screen_name}` : null;\n\n// Prepare contact data for database\nconst contactData = {\n  session_id: `twitter_${userId}`,\n  platform: 'twitter',\n  platform_user_id: userId,\n  platform_username: userData.screen_name || null,\n  platform_first_name: firstName,\n  platform_last_name: lastName,\n  platform_full_name: userData.name || null,\n  full_name: userData.name || null,\n  twitter: twitterHandle,\n  platform_metadata: {\n    profile_image_url: userData.profile_image_url || userData.profile_image_url_https,\n    description: userData.description,\n    location: userData.location,\n    verified: userData.verified || false,\n    followers_count: userData.followers_count,\n    friends_count: userData.friends_count,\n    twitter_handle: twitterHandle\n  },\n  extracted_from: 'twitter_webhook',\n  confidence_score: 75\n};\n\nreturn [{\n  json: {\n    ...data,\n    contact_data: contactData,\n    detected_language: detectedLanguage,\n    text: messageText\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        64
+      ],
+      "id": "b17b81b5-8ab4-4ce9-9f2a-27d791894786",
+      "name": "Prepare Contact Data"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO user_contact_data (\n    session_id,\n    platform,\n    platform_user_id,\n    platform_username,\n    platform_first_name,\n    platform_last_name,\n    full_name,\n    twitter,\n    platform_metadata,\n    extracted_from,\n    confidence_score,\n    last_updated,\n    created_at\n) VALUES (\n    '{{ $json.contact_data.session_id }}',\n    '{{ $json.contact_data.platform }}',\n    '{{ $json.contact_data.platform_user_id }}',\n    {{ $json.contact_data.platform_username ? \"'\" + $json.contact_data.platform_username + \"'\" : 'NULL' }},\n    {{ $json.contact_data.platform_first_name ? \"'\" + $json.contact_data.platform_first_name.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.contact_data.platform_last_name ? \"'\" + $json.contact_data.platform_last_name.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.contact_data.full_name ? \"'\" + $json.contact_data.full_name.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.contact_data.twitter ? \"'\" + $json.contact_data.twitter + \"'\" : 'NULL' }},\n    {{ $json.contact_data.platform_metadata ? \"'\" + JSON.stringify($json.contact_data.platform_metadata).replace(/'/g, \"''\") + \"'::jsonb\" : 'NULL' }},\n    '{{ $json.contact_data.extracted_from }}',\n    {{ $json.contact_data.confidence_score }},\n    CURRENT_TIMESTAMP,\n    CURRENT_TIMESTAMP\n)\nON CONFLICT (session_id)\nDO UPDATE SET\n    platform_username = COALESCE(EXCLUDED.platform_username, user_contact_data.platform_username),\n    platform_metadata = EXCLUDED.platform_metadata,\n    \n    twitter = CASE\n        WHEN user_contact_data.twitter IS NULL OR user_contact_data.twitter = '' \n        THEN EXCLUDED.twitter\n        WHEN EXCLUDED.confidence_score >= user_contact_data.confidence_score \n        THEN COALESCE(EXCLUDED.twitter, user_contact_data.twitter)\n        ELSE user_contact_data.twitter\n    END,\n    \n    platform_first_name = CASE\n        WHEN user_contact_data.platform_first_name IS NULL \n        THEN EXCLUDED.platform_first_name\n        WHEN EXCLUDED.confidence_score >= user_contact_data.confidence_score \n        THEN COALESCE(EXCLUDED.platform_first_name, user_contact_data.platform_first_name)\n        ELSE user_contact_data.platform_first_name\n    END,\n    \n    platform_last_name = CASE\n        WHEN user_contact_data.platform_last_name IS NULL \n        THEN EXCLUDED.platform_last_name\n        WHEN EXCLUDED.confidence_score >= user_contact_data.confidence_score \n        THEN COALESCE(EXCLUDED.platform_last_name, user_contact_data.platform_last_name)\n        ELSE user_contact_data.platform_last_name\n    END,\n    \n    full_name = CASE\n        WHEN user_contact_data.full_name IS NULL \n        THEN EXCLUDED.full_name\n        WHEN EXCLUDED.confidence_score >= user_contact_data.confidence_score \n        THEN COALESCE(EXCLUDED.full_name, user_contact_data.full_name)\n        ELSE user_contact_data.full_name\n    END,\n    \n    confidence_score = GREATEST(user_contact_data.confidence_score, EXCLUDED.confidence_score),\n    last_updated = CURRENT_TIMESTAMP\nRETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1088,
+        64
+      ],
+      "id": "816ef2b3-1802-417d-98ef-97be1e3fe9f6",
+      "name": "Save Twitter Profile",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.cryptomator.pro/webhook/ai-core-api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"platform\": \"twitter\",\n  \"message_text\": {{ JSON.stringify($json.text) }},\n  \"user_id\": {{ JSON.stringify($json.message.from.id) }},\n  \"user_name\": {{ JSON.stringify($json.message.from.name || $json.message.from.screen_name || 'Twitter User') }},\n  \"chat_id\": {{ JSON.stringify($json.contact_data.session_id) }},\n  \"language\": {{ JSON.stringify($json.detected_language) }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1296,
+        64
+      ],
+      "id": "881f4e5a-c8e9-42cd-9b38-ddc35d90b5b6",
+      "name": "Send to AI Core"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Response Handler for Twitter\nconst coreResponse = items[0].json;\nconst contactData = $('Prepare Contact Data').item.json.contact_data;\nconst recipientId = contactData.platform_user_id;\n\nlet responseText = coreResponse.response_text || \n                   coreResponse.response || \n                   coreResponse.text || \n                   'Error: No response';\n\n// Clean up formatting\nresponseText = responseText\n  .replace(/<b>/g, '')\n  .replace(/<\\/b>/g, '')\n  .replace(/<br>/g, '\\n')\n  .replace(/<[^>]*>/g, '')\n  .replace(/\\[Name\\],?\\s*/g, '')\n  .replace(/\\[Имя\\],?\\s*/g, '')\n  .replace(/\\n\\n+/g, '\\n')\n  .trim();\n\n// Twitter DM limit is 10,000 characters\nif (responseText.length > 9950) {\n  responseText = responseText.substring(0, 9947) + '...';\n}\n\nreturn [{\n  json: {\n    recipient_id: recipientId,\n    response_text: responseText\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        64
+      ],
+      "id": "36e42c33-dfdd-4f57-a335-1533162d91f2",
+      "name": "Response Handler"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Send Twitter DM using API v1.1 format\nconst recipientId = items[0].json.recipient_id;\nconst text = items[0].json.response_text;\n\n// Twitter API v1.1 DM format\nconst dmData = {\n  event: {\n    type: \"message_create\",\n    message_create: {\n      target: {\n        recipient_id: recipientId\n      },\n      message_data: {\n        text: text\n      }\n    }\n  }\n};\n\nreturn [{json: dmData}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1712,
+        64
+      ],
+      "id": "6a8e52a5-0164-4b5a-80b1-fc6f804900e4",
+      "name": "Format DM Request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.twitter.com/1.1/direct_messages/events/new.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth1Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        64
+      ],
+      "id": "66ec729b-0622-4cee-86d6-8e988093df15",
+      "name": "Send Twitter DM",
+      "credentials": {
+        "oAuth1Api": {
+          "id": "HElWUw4Sye9dxlq1",
+          "name": "Twitter OAuth1"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Monitoring data for Twitter\nconst twitterData = items[0].json;\nconst from = twitterData.message?.from || {};\n\nif (twitterData.skip === true) {\n  console.log('Skipping monitoring');\n  return [{json: {skip_monitoring: true}}];\n}\n\nconst monitoringData = {\n  sessionId: `twitter_${from.id}`,\n  userId: from.id,\n  userName: from.name || from.screen_name || 'Twitter User',\n  configName: 'defaultConfig',\n  platform: 'twitter',\n  sessionDuration: 0,\n  eventType: 'message',\n  messageCount: 1,\n  messageType: twitterData.message?.media_type ? 'media' : 'text',\n  currentLanguage: 'en',\n  isMinimized: false,\n  userAgent: 'Twitter DM API',\n  screenResolution: '',\n  language: 'unknown',\n  timezone: '',\n  referrer: '',\n  currentUrl: '',\n  domain: 'twitter.com',\n  geo: {\n    ip: 'Twitter',\n    country: twitterData.user_data?.location || 'Unknown',\n    city: 'Unknown',\n    region: 'Unknown',\n    latitude: null,\n    longitude: null\n  }\n};\n\nreturn [{json: monitoringData}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -192,
+        -224
+      ],
+      "id": "1b3ccd33-f3bb-4b5f-ab91-b905c2803004",
+      "name": "Monitoring Data"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.cryptomator.pro/webhook/chat-monitoring",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        16,
+        -224
+      ],
+      "id": "647f24c2-6478-4b63-bf57-ea7cc2bf3672",
+      "name": "Send Monitoring",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "OK",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2128,
+        64
+      ],
+      "id": "661f549b-dad7-42e9-bbe1-c493c6e5cbaf",
+      "name": "Webhook Response"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Twitter Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Twitter Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Twitter Data": {
+      "main": [
+        [
+          {
+            "node": "Check Manager Mode",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Monitoring Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Manager Mode": {
+      "main": [
+        [
+          {
+            "node": "Check Manager Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Manager Status": {
+      "main": [
+        [
+          {
+            "node": "Process Manager Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Manager Status": {
+      "main": [
+        [
+          {
+            "node": "If Update Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Update Status": {
+      "main": [
+        [
+          {
+            "node": "Update Manager Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If Process Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Process Message": {
+      "main": [
+        [
+          {
+            "node": "Prepare Contact Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Contact Data": {
+      "main": [
+        [
+          {
+            "node": "Save Twitter Profile",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send to AI Core",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to AI Core": {
+      "main": [
+        [
+          {
+            "node": "Response Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Handler": {
+      "main": [
+        [
+          {
+            "node": "Format DM Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format DM Request": {
+      "main": [
+        [
+          {
+            "node": "Send Twitter DM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Twitter DM": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monitoring Data": {
+      "main": [
+        [
+          {
+            "node": "Send Monitoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "7e72b646-41e6-45d9-9158-8263439062ed",
+  "meta": {
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "bBG9WLsHPCViWoLS",
+  "tags": []
+}

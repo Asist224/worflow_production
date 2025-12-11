@@ -1,0 +1,1269 @@
+{
+  "name": "Telegram Adapter",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message",
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1056,
+        608
+      ],
+      "id": "1ea6ee42-d91f-425d-a214-9fcf5fde40b8",
+      "name": "Telegram Trigger",
+      "webhookId": "4f602141-347f-47c8-a733-7134cc2e275e",
+      "credentials": {
+        "telegramApi": {
+          "id": "fn7ywFo6SxQJtPcU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message.voice.file_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "id": "e5787700-e39b-44b1-8b1a-8046b09cd6a6"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Voice"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message.photo }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "id": "photo-check-001"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Photo"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message.document }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "id": "document-check-001"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Document"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "8c844924-b2ed-48b0-935c-c66a8fd0c778",
+                    "leftValue": "={{ $json.callback_query }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Callback"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "79b984cf-6291-44f6-9721-e0d764da71f6",
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": "true",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "exists",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Text"
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "c6dfe7af-e53e-4f5f-ae54-9cae9d677544",
+      "name": "Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -560,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.message.voice.file_id }}",
+        "additionalFields": {}
+      },
+      "id": "04dd9523-673d-4002-8851-70bfaba809f3",
+      "name": "Download Voice",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -336,
+        416
+      ],
+      "webhookId": "511e08d8-085c-4c31-9b1a-32c04b886155",
+      "credentials": {
+        "telegramApi": {
+          "id": "fn7ywFo6SxQJtPcU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.message.photo[$json.message.photo.length - 1].file_id }}",
+        "additionalFields": {}
+      },
+      "id": "e4ad8a37-2fd3-4941-8654-176ac8fd53ec",
+      "name": "Download Photo",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -192,
+        512
+      ],
+      "webhookId": "d21cc75d-b362-433b-be8f-0e68c7213e22",
+      "credentials": {
+        "telegramApi": {
+          "id": "fn7ywFo6SxQJtPcU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.message.document.file_id }}",
+        "additionalFields": {}
+      },
+      "id": "e3490c03-78d5-4312-ad35-1e5595bdc7e7",
+      "name": "Download Document",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -192,
+        672
+      ],
+      "webhookId": "66cfe897-83b7-4fe2-8997-224e22fc866e",
+      "credentials": {
+        "telegramApi": {
+          "id": "fn7ywFo6SxQJtPcU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// FILE DETECTOR FOR TELEGRAM - ПОЛУЧАЕМ ДАННЫЕ ИЗ ДВУХ ИСТОЧНИКОВ\nconst inputs = $input.all();\n\n// Ищем данные из Download (binary + result)\nconst downloadData = inputs.find(item => item.json?.result && item.binary);\n\n// Ищем данные из Switch (message с user/chat info)\nconst switchData = $('Switch').item.json;\n\nif (!downloadData) {\n  throw new Error('Download data not found');\n}\n\nconst telegramData = downloadData.json;\nlet fileCategory = 'unknown';\nlet fileName = 'unknown_file';\nlet fileType = 'application/octet-stream';\nlet fileSize = 0;\nlet caption = '';\nlet hasFile = false;\n\n// ОПРЕДЕЛЯЕМ ТИП ФАЙЛА\nif (telegramData.result && telegramData.result.file_path) {\n  hasFile = true;\n  \n  const filePath = telegramData.result.file_path;\n  fileSize = telegramData.result.file_size || 0;\n  \n  if (filePath.includes('photos/')) {\n    fileCategory = 'image';\n    fileType = 'image/jpeg';\n    fileName = 'telegram_photo.jpg';\n  } else if (filePath.includes('documents/')) {\n    fileCategory = 'document';\n    if (filePath.endsWith('.pdf')) {\n      fileType = 'application/pdf';\n      fileName = 'telegram_document.pdf';\n    } else if (filePath.match(/\\.(doc|docx)$/)) {\n      fileType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';\n      fileName = 'telegram_document.docx';\n    } else if (filePath.match(/\\.(xls|xlsx)$/)) {\n      fileType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';\n      fileName = 'telegram_document.xlsx';\n    } else if (filePath.endsWith('.txt')) {\n      fileType = 'text/plain';\n      fileName = 'telegram_document.txt';\n    } else {\n      fileType = 'application/octet-stream';\n      fileName = 'telegram_document';\n    }\n  } else if (filePath.includes('voice/')) {\n    fileCategory = 'voice';\n    fileType = 'audio/ogg';\n    fileName = 'telegram_voice.ogg';\n  }\n}\n\n// ИЗВЛЕКАЕМ ДАННЫЕ ИЗ SWITCH\nconst message = switchData.message || {};\ncaption = message.caption || '';\nconst userId = message.from?.id || 'unknown';\nconst userName = message.from?.first_name || 'Telegram User';\nconst chatId = message.chat?.id || 'unknown';\n\n// ПРОВЕРЯЕМ BINARY DATA\nif (!downloadData.binary || !downloadData.binary.data) {\n  return [{\n    json: {\n      ...telegramData,\n      file_category: 'no_file',\n      skip_file_processing: true,\n      message_text: caption || '',\n      user_id: String(userId),\n      user_name: userName,\n      chat_id: String(chatId),\n      platform: 'telegram',\n      message: message\n    }\n  }];\n}\n\n// ФОРМИРУЕМ ВЫХОДНЫЕ ДАННЫЕ\nconst outputData = {\n  json: {\n    file_category: fileCategory,\n    file_name: fileName,\n    file_type: fileType,\n    file_size: fileSize,\n    has_file: hasFile,\n    \n    message_text: caption || '[Файл без описания]',\n    original_message_text: caption,\n    caption: caption,\n    \n    user_id: String(userId),\n    user_name: userName,\n    chat_id: String(chatId),\n    \n    platform: 'telegram',\n    file_processed: true,\n    requires_ai_processing: true,\n    \n    telegram_file_info: {\n      file_path: telegramData.result?.file_path,\n      file_id: telegramData.result?.file_id,\n      file_unique_id: telegramData.result?.file_unique_id\n    },\n    \n    message: message\n  },\n  binary: {\n    data: downloadData.binary.data\n  }\n};\n\nreturn [outputData];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        576
+      ],
+      "id": "044984b1-b613-4888-b44e-68419ba44f5b",
+      "name": "Telegram File Detector"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "telegram-file-check-001",
+              "leftValue": "={{ $json.file_category }}",
+              "rightValue": "image",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            },
+            {
+              "id": "telegram-file-check-002",
+              "leftValue": "={{ $json.file_category }}",
+              "rightValue": "document",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        160,
+        576
+      ],
+      "id": "d7c8aca2-5347-450c-b4c7-cec69ccd2c41",
+      "name": "If File Needs Processing"
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.file_category === 'image' ? 0 : 1 }}"
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        352,
+        512
+      ],
+      "id": "1c1c9fe1-66f9-4d5e-a458-f0814d746ad9",
+      "name": "Telegram File Category Router"
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "inputType": "binary",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        560,
+        416
+      ],
+      "id": "a7a25b24-ce44-464d-92a7-1d71509b4439",
+      "name": "Telegram Image Analyzer",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "abo0BDHSJPM0pgRU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "document",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "inputType": "binary",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        560,
+        576
+      ],
+      "id": "32de2ba9-f254-437e-b471-c17884e090cc",
+      "name": "Telegram Document Analyzer",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "abo0BDHSJPM0pgRU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// MERGE FILE ANALYSIS для Telegram - БЕЗ ДУБЛИРОВАНИЯ\nconst input = $input.first();\n\nconst geminiResponse = input.json;\n\n// Извлекаем анализ файла из Gemini\nlet fileAnalysis = '';\nif (geminiResponse.content?.parts) {\n  fileAnalysis = geminiResponse.content.parts[0].text || '';\n} else if (geminiResponse.text) {\n  fileAnalysis = geminiResponse.text;\n} else {\n  fileAnalysis = '[Анализ недоступен]';\n}\n\n// Получаем ИСХОДНЫЕ данные из Telegram File Detector\nconst originalFileData = $('Telegram File Detector').first().json;\n\n// КРИТИЧЕСКИ ВАЖНО: Получаем ОРИГИНАЛЬНЫЕ данные из Switch\nconst originalSwitchData = $('Switch').first()?.json || null;\n\nconst originalCaption = originalFileData.caption || originalFileData.message_text || '';\nconst fileName = originalFileData.file_name || 'файл';\n\n// Формируем обогащенный текст ОДИН РАЗ\nconst enrichedText = originalCaption \n  ? `${originalCaption}\\n\\n📎 **Анализ файла \"${fileName}\":**\\n${fileAnalysis}`\n  : `📎 **Анализ файла \"${fileName}\":**\\n${fileAnalysis}`;\n\n// ВАЖНО: Возвращаем ТОЛЬКО message_text (без дублей!)\nreturn [{\n  json: {\n    // ТОЛЬКО ОДИН раз - обогащенный текст\n    message_text: enrichedText,\n    \n    // Метаинформация (НЕ дублируем анализ!)\n    file_was_processed: true,\n    processed_file_name: fileName,\n    \n    // Сохраняем ПОЛНУЮ структуру message из Switch\n    message: originalSwitchData && originalSwitchData.message \n      ? originalSwitchData.message \n      : originalFileData.message,\n    \n    // Данные пользователя\n    user_id: originalFileData.user_id,\n    user_name: originalFileData.user_name,\n    chat_id: originalFileData.chat_id,\n    platform: 'telegram'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        768,
+        512
+      ],
+      "id": "c9d91f5e-23d5-4d28-8717-a634e4036db6",
+      "name": "Telegram Merge File Analysis"
+    },
+    {
+      "parameters": {
+        "jsCode": "// PASS THROUGH TEXT для Telegram - передаем ТОЛЬКО текстовую часть без binary\nconst input = $input.first();\nconsole.log('=== TELEGRAM PASS THROUGH TEXT ===');\n\nconst data = input.json;\n\n// Формируем \"чистый\" объект только с текстовыми данными\nconst textOnlyData = {\n  platform: 'telegram',\n  message_text: data.message_text || data.caption || '',\n  text: data.message_text || data.caption || '',\n  original_text: data.message_text || data.caption || '',\n  \n  user_id: data.user_id,\n  user_name: data.user_name,\n  chat_id: data.chat_id,\n  \n  // Флаги для отслеживания\n  file_was_sent: data.has_file || false,\n  file_name_original: data.file_name || null,\n  text_only_path: true,\n  \n  // Структура message для Language Detection\n  message: data.message || {\n    text: data.message_text || data.caption || '',\n    caption: data.caption,\n    chat: {\n      id: data.chat_id\n    },\n    from: {\n      id: data.user_id,\n      first_name: data.user_name\n    }\n  },\n  \n  debug_info: {\n    path: 'telegram_text_only_without_file_processing'\n  }\n};\n\nconsole.log('✅ Текстовые данные подготовлены (Telegram)');\nconsole.log('📝 Текст:', textOnlyData.message_text);\nconsole.log('👤 User:', textOnlyData.user_id);\n\n// ВАЖНО: возвращаем ТОЛЬКО json, БЕЗ binary!\nreturn [{\n  json: textOnlyData\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        736
+      ],
+      "id": "945d6d91-44f3-4e7b-85f5-97d324918977",
+      "name": "Telegram Pass Through Text"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        976,
+        672
+      ],
+      "id": "9db457dd-8595-4c81-acf0-da64cb6f292c",
+      "name": "Telegram File Paths Merger"
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-pro",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-pro"
+        },
+        "inputType": "binary",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        -32,
+        304
+      ],
+      "id": "6c359de0-2b6d-452d-a095-78e28a7bdc0e",
+      "name": "Transcribe Voice",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "abo0BDHSJPM0pgRU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Telegram Voice - подготовка данных для Language Detection\n\n// Извлекаем текст из ответа Gemini\nlet transcriptionText = $json.content?.parts?.[0]?.text || $json.text || '';\n\n// УБИРАЕМ ВРЕМЕННЫЕ МЕТКИ\ntranscriptionText = transcriptionText.replace(/\\[\\s*\\d+m\\d+s\\d+ms\\s*-\\s*\\d+m\\d+s\\d+ms\\s*\\]/g, '').trim();\ntranscriptionText = transcriptionText.replace(/\\s+/g, ' ').trim();\n\nconsole.log('🎤 Очищенный текст:', transcriptionText);\n\n// Получаем данные из Switch узла\nlet telegramData = {};\ntry {\n  const switchData = $('Switch').first();\n  if (switchData && switchData.json) {\n    telegramData = switchData.json;\n  }\n} catch (e) {\n  console.log('⚠️ Не удалось получить данные из Switch');\n}\n\n// Извлекаем нужные поля\nconst userId = telegramData.message?.from?.id || '';\nconst userName = telegramData.message?.from?.username || telegramData.message?.from?.first_name || 'User';\nconst chatId = telegramData.message?.chat?.id || '';\nconst messageId = telegramData.message?.message_id || '';\n\n// Определяем язык\nfunction detectLanguage(text) {\n  if (!text) return 'ru';\n  if (/[а-яё]/i.test(text)) return 'ru';\n  const onlyLatin = /^[a-z0-9\\s\\.,!?'\"]+$/i;\n  if (onlyLatin.test(text)) return 'en';\n  return 'ru';\n}\n\nconst detectedLanguage = detectLanguage(transcriptionText);\n\n// Формируем структуру для Language Detection\nconst outputData = {\n  text: transcriptionText,\n  original_text: transcriptionText,\n  message_text: transcriptionText,\n  \n  user_id: String(userId),\n  user_name: userName,\n  chat_id: String(chatId),\n  message_id: String(messageId),\n  \n  message_type: 'voice',\n  original_voice: true,\n  transcribed: true,\n  \n  language: detectedLanguage,\n  detected_language: detectedLanguage,\n  \n  platform: 'telegram',\n  \n  message: {\n    text: transcriptionText,\n    chat: {\n      id: chatId,\n      type: telegramData.message?.chat?.type || 'private'\n    },\n    from: {\n      id: userId,\n      username: userName,\n      first_name: telegramData.message?.from?.first_name || userName,\n      last_name: telegramData.message?.from?.last_name || ''\n    },\n    message_id: messageId,\n    date: telegramData.message?.date || Math.floor(Date.now() / 1000)\n  },\n  \n  transcription_info: {\n    provider: 'gemini',\n    model: 'gemini-2.5-pro',\n    original_length: transcriptionText.length,\n    cleaned: true,\n    timestamps_removed: true\n  }\n};\n\nreturn [{ json: outputData }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        304
+      ],
+      "id": "20767bca-8e59-41ed-94aa-6a786e7f7e0d",
+      "name": "Process Voice Result"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Объединенный Language Detection - обрабатывает сообщения и callback'и - С УМНЫМ ОБЪЕДИНЕНИЕМ\nconst input = $input.all();\nlet isCallbackQuery = false;\nlet callbackData = '';\n\n// ========================================================================\n// УМНОЕ ОБЪЕДИНЕНИЕ ДАННЫХ (КАК В WEBCHAT)\n// ========================================================================\nlet messageData;\n\nif (input.length > 1) {\n  const itemWithUserData = input.find(i => \n    i.json.user_id && \n    i.json.chat_id && \n    i.json.user_id !== 'unknown' &&\n    i.json.chat_id !== 'unknown'\n  );\n  \n  const itemWithFileAnalysis = input.find(i => i.json.file_analysis);\n  \n  if (itemWithUserData) {\n    messageData = itemWithUserData.json;\n    \n    if (itemWithFileAnalysis && itemWithFileAnalysis.json.file_analysis) {\n      const fileAnalysis = itemWithFileAnalysis.json.file_analysis;\n      const fileName = itemWithFileAnalysis.json.processed_file_name || 'файл';\n      \n      const originalText = messageData.message_text || messageData.text || messageData.caption || '';\n      \n      messageData.message_text = originalText \n        ? `${originalText}\\n\\n📎 **Анализ файла \"${fileName}\":**\\n${fileAnalysis}`\n        : `📎 **Анализ файла \"${fileName}\":**\\n${fileAnalysis}`;\n      \n      messageData.text = messageData.message_text;\n      messageData.file_was_processed = true;\n      messageData.processed_file_name = fileName;\n      messageData.file_analysis = fileAnalysis;\n    }\n  } else {\n    messageData = input[0].json;\n  }\n} else {\n  messageData = input[0].json;\n}\n// ========================================================================\n\n// КРИТИЧЕСКИ ВАЖНО: Получаем ОРИГИНАЛЬНЫЕ данные из Switch (если они есть)\nconst originalSwitchData = $('Switch').first()?.json || null;\n\n// Извлекаем messageText ИЗ УЖЕ ОБРАБОТАННОГО messageData\nlet messageText = messageData.message_text || messageData.text || '';\n\n// Получаем данные в зависимости от типа события\nif (messageData.callback_query) {\n  isCallbackQuery = true;\n  callbackData = messageData.callback_query.data;\n  \n  if (callbackData === 'lang_ru') {\n    messageText = 'Русский';\n  } else if (callbackData === 'lang_en') {\n    messageText = 'English';\n  } else {\n    messageText = callbackData;\n  }\n} else if (messageData.message && messageData.message.text && !messageData.file_was_processed) {\n  messageText = messageData.message.text;\n}\n\n// ФУНКЦИЯ: Определение языка пользователя из Telegram\nfunction getUserLanguageFromTelegram(inputData) {\n  try {\n    if (inputData.callback_query && inputData.callback_query.from && inputData.callback_query.from.language_code) {\n      const langCode = inputData.callback_query.from.language_code.toLowerCase();\n      \n      if (langCode.startsWith('ru') || langCode === 'be' || langCode === 'kk' || langCode === 'uk') {\n        return 'ru';\n      } else {\n        return 'en';\n      }\n    }\n    \n    if (inputData.message && inputData.message.from && inputData.message.from.language_code) {\n      const langCode = inputData.message.from.language_code.toLowerCase();\n      \n      if (langCode.startsWith('ru') || langCode === 'be' || langCode === 'kk' || langCode === 'uk') {\n        return 'ru';\n      } else {\n        return 'en';\n      }\n    }\n  } catch (error) {\n    // ignore\n  }\n  \n  return null;\n}\n\n// ФУНКЦИЯ: Проверка на команды бота\nfunction isBotCommand(text) {\n  if (!text || text.trim().length === 0) {\n    return false;\n  }\n  \n  const cleanText = text.toLowerCase().trim();\n  const botCommands = ['/start', '/help', '/menu', '/settings', '/stop', '/restart', '/info', '/about', '/support', '/cancel', '/reset', '/status', '/lang', '/language'];\n  \n  return botCommands.some(command => cleanText.startsWith(command) || cleanText === command);\n}\n\n// УЛУЧШЕННАЯ ФУНКЦИЯ ОПРЕДЕЛЕНИЯ ЯЗЫКА\nfunction detectLanguageFromText(text) {\n  if (!text || typeof text !== 'string') {\n    return 'en';\n  }\n  \n  if (text.length < 2) {\n    return 'en';\n  }\n  \n  const lowerText = text.toLowerCase().trim();\n  \n  let scores = { 'en': 0, 'ru': 0 };\n  \n  const languageChoices = {\n    'русский': 'ru',\n    'russian': 'ru', \n    'ru': 'ru',\n    'рус': 'ru',\n    'english': 'en',\n    'английский': 'en',\n    'en': 'en',\n    'eng': 'en'\n  };\n  \n  if (languageChoices[lowerText]) {\n    return languageChoices[lowerText];\n  }\n  \n  const russianChars = /[а-яё]/g;\n  const russianMatches = lowerText.match(russianChars);\n  if (russianMatches) {\n    scores.ru += russianMatches.length * 3;\n  }\n  \n  const onlyLatin = /^[a-z\\s\\.,!?'\"\\/]+$/;\n  if (onlyLatin.test(lowerText)) {\n    scores.en += 5;\n  }\n  \n  const commonEnglishWords = [\n    'hello', 'hi', 'hey', 'yes', 'no', 'ok', 'okay', 'thanks', 'thank', 'you', 'please',\n    'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',\n    'this', 'that', 'these', 'those', 'my', 'your', 'his', 'her', 'our', 'their',\n    'i', 'me', 'we', 'us', 'he', 'she', 'it', 'they', 'them',\n    'what', 'where', 'when', 'why', 'how', 'who', 'which',\n    'good', 'bad', 'nice', 'great', 'awesome', 'cool', 'fine', 'well',\n    'can', 'could', 'will', 'would', 'should', 'must', 'may', 'might',\n    'do', 'does', 'did', 'done', 'make', 'made', 'get', 'got', 'have', 'has', 'had',\n    'go', 'went', 'come', 'came', 'see', 'saw', 'look', 'watch', 'listen', 'hear',\n    'help', 'support', 'trading', 'strategy', 'bot', 'manager', 'crypto', 'currency',\n    'english', 'start', 'menu', 'settings', 'stop'\n  ];\n  \n  const commonRussianWords = [\n    'привет', 'пока', 'да', 'нет', 'хорошо', 'плохо', 'спасибо', 'пожалуйста',\n    'что', 'где', 'когда', 'как', 'почему', 'зачем', 'кто', 'который',\n    'это', 'то', 'я', 'ты', 'он', 'она', 'мы', 'вы', 'они',\n    'мой', 'твой', 'его', 'её', 'наш', 'ваш', 'их',\n    'в', 'на', 'за', 'под', 'над', 'к', 'от', 'из', 'с', 'по', 'для',\n    'и', 'или', 'но', 'а', 'если', 'чтобы', 'что', 'как',\n    'помощь', 'помочь', 'бот', 'торговля', 'трейдинг', 'криптомator', 'стратегия',\n    'русский', 'старт', 'меню', 'настройки', 'стоп', 'менеджер', 'поддержка',\n    'privet', 'spasibo', 'pomosh', 'kak dela'\n  ];\n  \n  const words = lowerText.split(/\\s+/).filter(word => word.length > 0);\n  \n  for (let word of words) {\n    const cleanWord = word.replace(/[.,!?'\"\\/]/g, '');\n    \n    if (commonEnglishWords.includes(cleanWord)) {\n      scores.en += 10;\n    }\n    \n    if (commonRussianWords.includes(cleanWord)) {\n      scores.ru += 10;\n    }\n  }\n  \n  const englishEndings = ['ing', 'ed', 'er', 'est', 'ly', 'tion', 'sion', 'ness', 'ment', 'able', 'ible'];\n  for (let word of words) {\n    const cleanWord = word.replace(/[.,!?'\"\\/]/g, '');\n    for (let ending of englishEndings) {\n      if (cleanWord.endsWith(ending) && cleanWord.length > ending.length + 2) {\n        scores.en += 3;\n      }\n    }\n  }\n  \n  if (scores.en > scores.ru) {\n    return 'en';\n  } else if (scores.ru > scores.en) {\n    return 'ru';\n  } else {\n    if (onlyLatin.test(lowerText) && lowerText.length >= 3) {\n      return 'en';\n    } else {\n      return 'en';\n    }\n  }\n}\n\n// ФУНКЦИЯ: Преобразование команд в естественные сообщения\nfunction convertCommandToNaturalMessage(commandText, detectedLanguage, telegramLanguage) {\n  const cleanCommand = commandText.toLowerCase().trim();\n  \n  // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: для /start ВСЕГДА нужен выбор языка!\n  if (cleanCommand === '/start') {\n    return { text: '', needsLanguageSelection: true };\n  }\n  \n  if (detectedLanguage === 'ru' || telegramLanguage === 'ru') {\n    switch (cleanCommand) {\n      case '/help':\n        return { text: 'Помогите мне разобраться, как с вами работать.', needsLanguageSelection: false };\n      case '/menu':\n        return { text: 'Покажите, что вы умеете делать.', needsLanguageSelection: false };\n      case '/support':\n        return { text: 'Расскажите о ваших услугах и возможностях.', needsLanguageSelection: false };\n      default:\n        return { text: 'Привет, как дела?', needsLanguageSelection: false };\n    }\n  } else {\n    switch (cleanCommand) {\n      case '/help':\n        return { text: 'Help me understand how to work with you.', needsLanguageSelection: false };\n      case '/menu':\n        return { text: 'Show me what you can do.', needsLanguageSelection: false };\n      case '/support':\n        return { text: 'Tell me about your services and capabilities.', needsLanguageSelection: false };\n      default:\n        return { text: 'Hello, how are you?', needsLanguageSelection: false };\n    }\n  }\n}\n\n// ОСНОВНАЯ ЛОГИКА\nlet finalText = messageText;\nlet detectedLanguage = 'en';\nlet wasCommand = false;\nlet originalCommand = '';\nlet needsLanguageSelection = false;\nlet wasCallbackQuery = isCallbackQuery;\n\nconst telegramLanguage = getUserLanguageFromTelegram(messageData);\n\nif (isCallbackQuery) {\n  if (callbackData === 'lang_ru') {\n    detectedLanguage = 'ru';\n    finalText = 'Отлично! Вы выбрали русский язык. Привет! Начинаем знакомство.';\n  } else if (callbackData === 'lang_en') {\n    detectedLanguage = 'en';\n    finalText = 'Great! You selected English. Hello! Let\\'s get started.';\n  } else {\n    detectedLanguage = 'en';\n    finalText = 'Hello! Let\\'s get started.';\n  }\n  \n  wasCommand = true;\n  originalCommand = '/start';\n  \n} else {\n  detectedLanguage = detectLanguageFromText(messageText);\n  \n  if (isBotCommand(messageText)) {\n    originalCommand = messageText;\n    wasCommand = true;\n    \n    const commandResult = convertCommandToNaturalMessage(messageText, detectedLanguage, telegramLanguage);\n    finalText = commandResult.text;\n    needsLanguageSelection = commandResult.needsLanguageSelection;\n    \n    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: для /start ВСЕГДА ставим language_selection\n    if (needsLanguageSelection) {\n      detectedLanguage = 'language_selection';\n    } else if (telegramLanguage) {\n      detectedLanguage = telegramLanguage;\n    } else {\n      detectedLanguage = detectLanguageFromText(finalText);\n    }\n  }\n}\n\n// КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Сохраняем message БЕЗ text (он дублирует message_text)\nlet finalMessage;\nif (originalSwitchData && originalSwitchData.message) {\n  const { text, ...messageWithoutText } = originalSwitchData.message;\n  finalMessage = messageWithoutText;\n} else if (messageData.message) {\n  const { text, ...messageWithoutText } = messageData.message;\n  finalMessage = messageWithoutText;\n} else if (messageData.callback_query) {\n  const { text, ...messageWithoutText } = messageData.callback_query.message;\n  finalMessage = messageWithoutText;\n} else {\n  finalMessage = {};\n}\n\n// КРИТИЧЕСКИ ВАЖНО: Удаляем ВСЕ дубли\nconst { file_analysis, text, original_text, ...cleanMessageData } = messageData;\n\n// ВОЗВРАЩАЕМ ТОЛЬКО message_text (БЕЗ ДУБЛЕЙ!)\nreturn [{\n  json: {\n    ...cleanMessageData,\n    \n    detected_language: detectedLanguage,\n    \n    message: finalMessage,  // <- БЕЗ text!\n    \n    was_command: wasCommand,\n    original_command: originalCommand,\n    needs_language_selection: needsLanguageSelection,\n    telegram_language: telegramLanguage,\n    was_callback_query: wasCallbackQuery,\n    callback_data: callbackData,\n    detection_timestamp: new Date().toISOString(),\n    \n    skip_ai_processing: needsLanguageSelection,\n    is_bot_command: false,\n    \n    needs_callback_answer: wasCallbackQuery,\n    callback_query_id: messageData.callback_query ? messageData.callback_query.id : null,\n    \n    language_detection_algorithm: 'improved_v2.0_telegram_with_smart_merge'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1152,
+        608
+      ],
+      "id": "ef38cf21-349b-41da-9a95-dd4e5f82c399",
+      "name": "Language Detection"
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 3,
+        "output": "={{ $json.detected_language === 'language_selection' ? 2 : ($json.detected_language === 'ru' ? 0 : 1) }}"
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1344,
+        608
+      ],
+      "id": "3f530c48-c16e-4066-ab83-b59f53c92f63",
+      "name": "Language Router"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Language Selector - статичный двуязычный ответ с кнопками\nconst input = $input.all();\n\nconst bilingualMessage = `🌐 Welcome to Cryptonus Bot!\nДобро пожаловать в Cryptonus Bot!\n\nPlease choose your language:\nПожалуйста, выберите ваш язык:`;\n\nconst inlineKeyboard = {\n  inline_keyboard: [\n    [\n      { text: \"🇬🇧 English\", callback_data: \"lang_en\" },\n      { text: \"🇷🇺 Русский\", callback_data: \"lang_ru\" }\n    ]\n  ]\n};\n\nconst results = input.map(item => ({\n  json: {\n    ...item.json,\n    response_text: bilingualMessage,\n    response_type: 'language_selection',\n    inline_keyboard: inlineKeyboard,\n    static_response: true,\n    timestamp: new Date().toISOString()\n  }\n}));\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1536,
+        736
+      ],
+      "id": "f601f4bd-f217-4829-a657-095cbec04a34",
+      "name": "Language Selector"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $json.response_text }}",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "🇬🇧 English",
+                    "additionalFields": {
+                      "callback_data": "lang_en"
+                    }
+                  },
+                  {
+                    "text": "🇷🇺 Русский",
+                    "additionalFields": {
+                      "callback_data": "lang_ru"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1728,
+        736
+      ],
+      "id": "4a1d2c45-681b-4ea0-9dc3-60cf4986ebd3",
+      "name": "Send Language Selection",
+      "webhookId": "2fc69fe6-1293-48fa-afd5-4f7b1e1cd219",
+      "credentials": {
+        "telegramApi": {
+          "id": "fn7ywFo6SxQJtPcU",
+          "name": "Telegram account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/ai-core-api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "apiKey",
+              "value": "24fs-$r4d-defd-77ds-7eds"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"platform\": \"telegram\",\n  \"message_text\": {{ JSON.stringify($input.first().json.text || $input.first().json.message_text || 'test message') }},\n  \"user_id\": {{ JSON.stringify($input.first().json.user_id || 'unknown') }},\n  \"user_name\": {{ JSON.stringify($input.first().json.user_name || 'Telegram User') }},\n  \"chat_id\": {{ JSON.stringify($input.first().json.chat_id || 'unknown') }},\n  \"language\": {{ JSON.stringify($input.first().json.detected_language || $input.first().json.language || 'ru') }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1584,
+        560
+      ],
+      "id": "3624eaee-aa98-433d-aa33-d301f9b7d1dc",
+      "name": "Send to AI Core",
+      "retryOnFail": true,
+      "waitBetweenTries": 1000,
+      "maxTries": 2,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Response Handler - ПОДДЕРЖКА VIDEO NOTE, ВИДЕО, АУДИО И ТЕКСТА\nconst input = $input.all();\n\nif (!input || input.length === 0) {\n  throw new Error('No response from AI Core');\n}\n\n// Ищем AI Core response и chat_id\nlet coreResponse = null;\nlet chatId = '';\nlet detectedLanguage = 'ru';\n\nfor (let i = 0; i < input.length; i++) {\n  const item = input[i].json;\n  \n  if (item.response_text || item.response || item.message || item.original_response || input[i].binary) {\n    if (!coreResponse) {\n      coreResponse = input[i];\n    }\n  }\n  \n  if (item.chat_id && item.chat_id !== '' && item.chat_id !== 'unknown') {\n    chatId = item.chat_id;\n    detectedLanguage = item.detected_language || item.language || 'ru';\n  }\n}\n\nif (!coreResponse) {\n  throw new Error('AI Core response not found');\n}\n\nif (!chatId || chatId === '') {\n  try {\n    const allLD = $('Language Detection').all();\n    for (let i = 0; i < allLD.length; i++) {\n      if (allLD[i].json.chat_id && allLD[i].json.chat_id !== 'unknown') {\n        chatId = allLD[i].json.chat_id;\n        detectedLanguage = allLD[i].json.detected_language || 'ru';\n        break;\n      }\n    }\n  } catch (e) {\n    // ignore\n  }\n}\n\nif (!chatId) {\n  throw new Error('chat_id not found anywhere');\n}\n\n// ФУНКЦИИ ОЧИСТКИ\nfunction cleanupCommands(text) {\n  if (!text || typeof text !== 'string') {\n    return { cleanedText: text, commandsFound: false };\n  }\n  \n  let cleanedText = text;\n  let commandsFound = false;\n  \n  const commandPatterns = [\n    { pattern: /[Оо]твечай голосом\\. /g },\n    { pattern: /[Оо]твечай текстом\\. /g },\n    { pattern: /[Ss]witch to voice\\. /g },\n    { pattern: /[Ss]witch to text\\. /g },\n    { pattern: /[Оо]твет голосом\\. /g },\n    { pattern: /[Оо]твет текстом\\. /g },\n    { pattern: /[Пп]ереключись на голос\\. /g },\n    { pattern: /[Пп]ереключись на текст\\. /g },\n    { pattern: /[Гг]олосовой ответ\\. /g },\n    { pattern: /[Тт]екстовый ответ\\. /g },\n    { pattern: /[Vv]oice mode\\. /g },\n    { pattern: /[Tt]ext mode\\. /g },\n    { pattern: /[Rr]espond with voice\\. /g },\n    { pattern: /[Rr]espond with text\\. /g },\n    { pattern: /[Оо]твечай голосом\\.$/gm },\n    { pattern: /[Оо]твечай текстом\\.$/gm },\n    { pattern: /[Ss]witch to voice\\.$/gm },\n    { pattern: /[Ss]witch to text\\.$/gm },\n    { pattern: /\\. [Оо]твечай голосом\\. /g },\n    { pattern: /\\. [Оо]твечай текстом\\. /g },\n    { pattern: /\\. [Ss]witch to voice\\. /g },\n    { pattern: /\\. [Ss]witch to text\\. /g },\n    { pattern: /^[Оо]твечай голосом\\. /gm },\n    { pattern: /^[Оо]твечай текстом\\. /gm },\n    { pattern: /^[Ss]witch to voice\\. /gm },\n    { pattern: /^[Ss]witch to text\\. /gm }\n  ];\n  \n  commandPatterns.forEach(({ pattern }) => {\n    if (pattern.test(cleanedText)) {\n      cleanedText = cleanedText.replace(pattern, '');\n      commandsFound = true;\n    }\n  });\n  \n  if (commandsFound) {\n    cleanedText = cleanedText\n      .replace(/\\.\\s*\\./g, '.')\n      .replace(/\\s+/g, ' ')\n      .replace(/^\\s+|\\s+$/g, '')\n      .replace(/\\.\\s*$/, '.')\n      .replace(/^\\./g, '')\n      .trim();\n  }\n  \n  return { cleanedText, commandsFound };\n}\n\nfunction cleanupSystemMessages(text) {\n  if (!text || typeof text !== 'string') {\n    return { cleanedText: text, systemMessagesFound: false };\n  }\n  \n  let cleanedText = text;\n  let systemMessagesFound = false;\n  \n  const systemPatterns = [\n    /This message was sent automatically with n8n.*$/gm,\n    /This message was sent automatically with.*$/gm,\n    /Message sent via n8n.*$/gm,\n    /Powered by n8n.*$/gm,\n    /Generated by n8n.*$/gm,\n    /This is an automated message.*$/gm,\n    /Sent automatically.*$/gm,\n    /Auto-generated message.*$/gm,\n    /\\[Автоматическое сообщение\\].*$/gm,\n    /\\[Auto message\\].*$/gm,\n    /This message was sent automatically.*$/gm,\n    /Message sent automatically.*$/gm\n  ];\n  \n  systemPatterns.forEach((pattern) => {\n    if (pattern.test(cleanedText)) {\n      systemMessagesFound = true;\n      cleanedText = cleanedText.replace(pattern, '');\n    }\n  });\n  \n  if (systemMessagesFound) {\n    cleanedText = cleanedText\n      .replace(/\\n\\s*\\n\\s*$/g, '')\n      .replace(/\\s+$/g, '')\n      .trim();\n  }\n  \n  return { cleanedText, systemMessagesFound };\n}\n\nfunction cleanupPlaceholders(text) {\n  if (!text || typeof text !== 'string') {\n    return { cleanedText: text, placeholdersFound: false };\n  }\n  \n  let cleanedText = text;\n  let placeholdersFound = false;\n  \n  const placeholderPatterns = [\n    /\\[Имя\\],?\\s*/g,\n    /\\[Name\\],?\\s*/g,\n    /\\[имя\\],?\\s*/g,\n    /\\[name\\],?\\s*/g,\n    /\\[ИМЯ\\],?\\s*/g,\n    /\\[NAME\\],?\\s*/g\n  ];\n  \n  placeholderPatterns.forEach((pattern) => {\n    if (pattern.test(cleanedText)) {\n      placeholdersFound = true;\n      cleanedText = cleanedText.replace(pattern, '');\n    }\n  });\n  \n  if (placeholdersFound) {\n    cleanedText = cleanedText\n      .replace(/,\\s*,/g, ',')\n      .replace(/^\\s*,\\s*/g, '')\n      .replace(/\\s+/g, ' ')\n      .trim();\n  }\n  \n  return { cleanedText, placeholdersFound };\n}\n\nfunction extractVideoJson(text) {\n  if (!text || typeof text !== 'string') return null;\n  \n  const videoPattern = /\\{\\s*\"responseType\"\\s*:\\s*\"video/;\n  const match = videoPattern.exec(text);\n  \n  if (!match) return null;\n  \n  const startIndex = match.index;\n  let braceCount = 0;\n  let inString = false;\n  let escapeNext = false;\n  \n  for (let i = startIndex; i < text.length; i++) {\n    const char = text[i];\n    \n    if (escapeNext) {\n      escapeNext = false;\n      continue;\n    }\n    \n    if (char === '\\\\') {\n      escapeNext = true;\n      continue;\n    }\n    \n    if (char === '\"') {\n      inString = !inString;\n      continue;\n    }\n    \n    if (!inString) {\n      if (char === '{') {\n        braceCount++;\n      } else if (char === '}') {\n        braceCount--;\n        \n        if (braceCount === 0) {\n          const jsonStr = text.substring(startIndex, i + 1);\n          try {\n            return JSON.parse(jsonStr);\n          } catch (parseError) {\n            return null;\n          }\n        }\n      }\n    }\n  }\n  \n  return null;\n}\n\n// ПРОВЕРКА НА VIDEO NOTE (ПЕРВЫЙ ПРИОРИТЕТ)\nconst possibleVideoSources = [\n  coreResponse.json?.original_response,\n  coreResponse.json?.response_text,\n  coreResponse.json?.text,\n  JSON.stringify(coreResponse.json || {})\n];\n\nfor (const source of possibleVideoSources) {\n  if (!source || typeof source !== 'string') continue;\n  \n  const parsedVideo = extractVideoJson(source);\n  \n  if (parsedVideo && parsedVideo.responseType === 'video_note' && parsedVideo.content?.video) {\n    return [{\n      json: {\n        chat_id: chatId,\n        language: detectedLanguage,\n        is_video_note: true,\n        video_file_id: parsedVideo.content.video.file_id,\n        video_duration: parsedVideo.content.video.duration || 0\n      }\n    }];\n  }\n  \n  if (parsedVideo && parsedVideo.responseType === 'video' && parsedVideo.content?.video) {\n    return [{\n      json: {\n        chat_id: chatId,\n        language: detectedLanguage,\n        is_video: true,\n        video_url: parsedVideo.content.video.url,\n        video_caption: parsedVideo.content.text || '',\n        video_thumbnail: parsedVideo.content.video.thumbnail,\n        video_duration: parsedVideo.content.video.duration,\n        parse_mode: \"HTML\"\n      }\n    }];\n  }\n}\n\n// ГОЛОСОВОЙ ИЛИ ТЕКСТОВЫЙ ОТВЕТ\nlet responseData = {};\n\nif (coreResponse.binary && coreResponse.binary.data) {\n  responseData = {\n    json: {\n      chat_id: chatId,\n      language: detectedLanguage,\n      is_voice: true,\n      file_name: coreResponse.json?.fileName || 'voice_response.oga',\n      mime_type: coreResponse.json?.mimeType || 'audio/ogg',\n      duration: coreResponse.json?.duration || 0\n    },\n    binary: {\n      data: coreResponse.binary.data\n    }\n  };\n  \n} else if (coreResponse.json) {\n  let responseText = coreResponse.json.response_text || \n                     coreResponse.json.response || \n                     coreResponse.json.text || \n                     coreResponse.json.message || \n                     coreResponse.json.output || \n                     coreResponse.json.result ||\n                     'НЕ НАЙДЕН ОТВЕТ - смотрите логи';\n  \n  const commandCleanup = cleanupCommands(responseText);\n  const placeholderCleanup = cleanupPlaceholders(commandCleanup.cleanedText);\n  const systemCleanup = cleanupSystemMessages(placeholderCleanup.cleanedText);\n  \n  const finalCleanText = systemCleanup.cleanedText;\n  \n  responseData = {\n    json: {\n      chat_id: chatId,\n      response_text: finalCleanText,\n      language: detectedLanguage,\n      parse_mode: \"HTML\",\n      disable_web_page_preview: true,\n      is_voice: false\n    }\n  };\n}\n\nreturn [responseData];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1776,
+        560
+      ],
+      "id": "854bef0c-8ed9-476e-8dc7-e64bd026c1db",
+      "name": "Response Handler"
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.callback_query ? 0 : 1 }}"
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -784,
+        448
+      ],
+      "id": "c9643a2a-90a0-4794-a2c1-1b04655d77c5",
+      "name": "Check Callback"
+    },
+    {
+      "parameters": {
+        "amount": 1
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -560,
+        368
+      ],
+      "id": "8dbca22c-3738-40e9-83c2-ca06d05bbc98",
+      "name": "Wait Before Delete",
+      "webhookId": "1cadda59-3401-4670-b648-894e1bf0404b"
+    },
+    {
+      "parameters": {
+        "operation": "deleteMessage",
+        "chatId": "={{ $('Telegram Trigger').item.json.callback_query.message.chat.id }}",
+        "messageId": "={{ $('Telegram Trigger').item.json.callback_query.message.message_id }}"
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -352,
+        208
+      ],
+      "id": "ddfda564-c0ae-4c08-b652-e3b5b530e6fd",
+      "name": "Delete Callback Message",
+      "webhookId": "7ffdb88c-8628-4892-8c49-d1932d94b728",
+      "credentials": {
+        "telegramApi": {
+          "id": "fn7ywFo6SxQJtPcU",
+          "name": "Telegram account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "sendChatAction",
+        "chatId": "={{ $json.message.chat.id }}"
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -768,
+        288
+      ],
+      "id": "205bc7d2-74fb-451f-a159-3fb40721baef",
+      "name": "Send Typing Indicator",
+      "webhookId": "af86f02c-0de8-42ad-b1b9-b6f531b049e9",
+      "alwaysOutputData": true,
+      "credentials": {
+        "telegramApi": {
+          "id": "fn7ywFo6SxQJtPcU",
+          "name": "Telegram account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Monitoring Data Preparation\nconst telegramData = items[0].json;\n\nlet messageType = 'unknown';\nlet messageCount = 0;\n\nif (telegramData.message) {\n  messageCount = 1;\n  \n  if (telegramData.message.text) messageType = 'text';\n  else if (telegramData.message.voice) messageType = 'voice';\n  else if (telegramData.message.photo) messageType = 'photo';\n  else if (telegramData.message.video) messageType = 'video';\n  else if (telegramData.message.document) messageType = 'document';\n} else if (telegramData.callback_query) {\n  messageType = 'callback';\n  messageCount = 1;\n}\n\nconst chat = telegramData.message?.chat || telegramData.callback_query?.message?.chat || {};\nconst from = telegramData.message?.from || telegramData.callback_query?.from || {};\n\nconst monitoringData = {\n  sessionId: `telegram_${chat.id || 'unknown'}`,\n  userId: from.id ? from.id.toString() : 'unknown',\n  userName: from.first_name || from.username || 'Telegram User',\n  configName: 'defaultConfig',\n  platform: 'telegram',\n  sessionDuration: 0,\n  eventType: 'message',\n  messageCount: messageCount,\n  messageType: messageType,\n  currentLanguage: from.language_code || 'ru',\n  isMinimized: false,\n  userAgent: 'Telegram Bot API',\n  screenResolution: '',\n  language: from.language_code || 'unknown',\n  timezone: '',\n  referrer: '',\n  currentUrl: '',\n  domain: 'telegram.org',\n  geo: {\n    ip: 'Telegram',\n    country: 'Unknown',\n    city: 'Unknown',\n    region: 'Unknown',\n    latitude: null,\n    longitude: null\n  }\n};\n\nreturn [{json: monitoringData}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -768,
+        128
+      ],
+      "id": "cb396e97-437d-4a34-8650-833aca897c7d",
+      "name": "Prepare Monitoring Data"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.cryptomator.pro/webhook/chat-monitoring",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -560,
+        128
+      ],
+      "id": "f09dc87d-ef0f-45b8-a4ed-114b520cd912",
+      "name": "Send to Monitoring"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract Telegram Profile - ПОЛНОСТЬЮ НЕЗАВИСИМАЯ ВЕРСИЯ\nconst input = $input.first();\n\nconsole.log('=== EXTRACT TELEGRAM PROFILE (INDEPENDENT) ===');\nconsole.log('Input data:', JSON.stringify(input.json, null, 2));\n\n// Все данные берем из входящего потока (Language Detection уже передал всё нужное)\nconst messageData = input.json.message || {};\nconst userData = messageData.from || {};\nconst chatData = messageData.chat || {};\n\n// Проверяем наличие данных профиля\nconst hasProfileData = !!(userData.username || userData.first_name || userData.last_name);\n\nif (!hasProfileData) {\n  console.log('⚠️ No profile data available');\n  return [];\n}\n\nconst sessionId = `telegram_${chatData.id || userData.id}`;\n\nconst profileData = {\n  session_id: sessionId,\n  platform: 'telegram',\n  platform_user_id: userData.id ? userData.id.toString() : null,\n  platform_username: userData.username || null,\n  platform_first_name: userData.first_name || null,\n  platform_last_name: userData.last_name || null,\n  platform_full_name: [userData.first_name, userData.last_name].filter(Boolean).join(' ') || null,\n  telegram_username: userData.username ? `@${userData.username}` : null,\n  detected_language: input.json.detected_language || input.json.language || userData.language_code || 'ru',\n  is_premium: userData.is_premium || false,\n  language_code: userData.language_code || null\n};\n\nconsole.log('✅ Profile data extracted:', profileData);\n\nreturn [{json: profileData}];"
+      },
+      "id": "d50195b7-b3cf-4bda-b537-73d41cf2b8b0",
+      "name": "Extract Profile Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO user_contact_data (\n  session_id, platform, platform_user_id, platform_username,\n  platform_first_name, platform_last_name, platform_metadata,\n  full_name, first_name, last_name, telegram,\n  extracted_from, confidence_score, last_updated\n) VALUES (\n  {{ $json.session_id ? \"'\" + $json.session_id + \"'\" : 'NULL' }},\n  'telegram',\n  {{ $json.platform_user_id ? \"'\" + $json.platform_user_id + \"'\" : 'NULL' }},\n  {{ $json.platform_username ? \"'\" + $json.platform_username + \"'\" : 'NULL' }},\n  {{ $json.platform_first_name ? \"'\" + $json.platform_first_name.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n  {{ $json.platform_last_name ? \"'\" + $json.platform_last_name.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n  '{{ JSON.stringify({user_id: $json.platform_user_id, username: $json.platform_username, is_premium: $json.is_premium, language: $json.language_code}) }}'::jsonb,\n  {{ $json.platform_full_name ? \"'\" + $json.platform_full_name.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n  {{ $json.platform_first_name ? \"'\" + $json.platform_first_name.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n  {{ $json.platform_last_name ? \"'\" + $json.platform_last_name.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n  {{ $json.telegram_username ? \"'\" + $json.telegram_username + \"'\" : 'NULL' }},\n  'telegram_profile',\n  60,\n  CURRENT_TIMESTAMP\n)\nON CONFLICT (session_id)\nDO UPDATE SET\n  platform = EXCLUDED.platform,\n  platform_user_id = COALESCE(EXCLUDED.platform_user_id, user_contact_data.platform_user_id),\n  platform_username = COALESCE(EXCLUDED.platform_username, user_contact_data.platform_username),\n  platform_metadata = COALESCE(EXCLUDED.platform_metadata, user_contact_data.platform_metadata),\n  confidence_score = GREATEST(user_contact_data.confidence_score, EXCLUDED.confidence_score),\n  last_updated = CURRENT_TIMESTAMP\nRETURNING *;",
+        "options": {}
+      },
+      "id": "b7bde9bc-6714-419b-ab1e-65e3ac4fd213",
+      "name": "Save Profile to DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1520,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare Text Message - СОХРАНЯЕМ ВСЕ ДАННЫЕ ИЗ SWITCH\nconst input = $input.first();\n\nconst telegramData = input.json;\n\n// КРИТИЧЕСКИ ВАЖНО: Получаем ОРИГИНАЛЬНЫЕ данные из Switch\nconst originalSwitchData = $('Switch').first()?.json || telegramData;\n\n// Извлекаем текст сообщения\nconst messageText = telegramData.message?.text || telegramData.text || '';\n\n// Извлекаем данные пользователя из ОРИГИНАЛЬНЫХ данных Switch\nconst userId = originalSwitchData.message?.from?.id || 'unknown';\nconst userName = originalSwitchData.message?.from?.first_name || 'Telegram User';\nconst chatId = originalSwitchData.message?.chat?.id || 'unknown';\n\n// Формируем выходные данные с СОХРАНЕНИЕМ всех полей из Switch\nreturn [{\n  json: {\n    platform: 'telegram',\n    message_text: messageText,\n    text: messageText,\n    original_text: messageText,\n    \n    user_id: String(userId),\n    user_name: userName,\n    chat_id: String(chatId),\n    \n    // КРИТИЧЕСКИ ВАЖНО: Сохраняем ПОЛНУЮ структуру message из Switch!\n    message: originalSwitchData.message || {\n      text: messageText,\n      chat: { id: chatId },\n      from: { id: userId, first_name: userName }\n    },\n    \n    // Флаги для отслеживания\n    is_text_only: true,\n    no_file: true,\n    \n    debug_info: {\n      path: 'text_only_from_switch',\n      switch_data_preserved: !!(originalSwitchData && originalSwitchData.message)\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -192,
+        864
+      ],
+      "id": "b5850cce-f93f-41af-b917-fb3eea1d5d9d",
+      "name": "Prepare Text Message"
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "output": "={{ $json.is_video_note === true ? 0 : ($json.is_video === true ? 1 : ($json.is_voice === true ? 2 : 3)) }}"
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1952,
+        528
+      ],
+      "id": "28183ed9-45fd-440b-a61b-03ea11a04b86",
+      "name": "Response Type Switch"
+    },
+    {
+      "parameters": {
+        "operation": "sendVideo",
+        "chatId": "={{ $json.chat_id }}",
+        "file": "={{ $json.video_url }}",
+        "additionalFields": {
+          "caption": "={{ $json.video_caption }}",
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2160,
+        432
+      ],
+      "id": "b3094aa9-60a7-4d2a-a874-08512ee49ddb",
+      "name": "Send Video Response",
+      "retryOnFail": true,
+      "waitBetweenTries": 2000,
+      "webhookId": "48ffdec1-074d-44cb-98f1-9b3a10337e90",
+      "credentials": {
+        "telegramApi": {
+          "id": "fn7ywFo6SxQJtPcU",
+          "name": "Telegram account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.response_text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2160,
+        736
+      ],
+      "id": "4a2575bb-9c33-4d3f-8117-487c32aa0f32",
+      "name": "Send Text Response",
+      "webhookId": "b8007157-579d-4217-8aeb-4618857c95ce",
+      "credentials": {
+        "telegramApi": {
+          "id": "fn7ywFo6SxQJtPcU",
+          "name": "Telegram account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "sendAudio",
+        "chatId": "={{ $('Telegram Trigger').item.json.message?.chat?.id || $('Telegram Trigger').item.json.callback_query?.message?.chat?.id }}",
+        "binaryData": true,
+        "additionalFields": {
+          "caption": "",
+          "duration": "=5",
+          "fileName": "voice_response.oga"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2160,
+        576
+      ],
+      "id": "be8bcb4a-ef49-4154-bd68-5f704a7d41e2",
+      "name": "Send Voice Response",
+      "webhookId": "6502f4e6-5d74-42db-be8b-e1060e2e168b",
+      "retryOnFail": true,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "telegramApi": {
+          "id": "fn7ywFo6SxQJtPcU",
+          "name": "Telegram account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get Video Note ID\nconst input = $input.first();\n\nif (input.json.message && input.json.message.video_note) {\n  const videoNote = input.json.message.video_note;\n  \n  return [{\n    json: {\n      SUCCESS: true,\n      file_id: videoNote.file_id,\n      file_unique_id: videoNote.file_unique_id,\n      duration: videoNote.duration,\n      length: videoNote.length,\n      file_size: videoNote.file_size,\n      MESSAGE: `✅ FILE_ID ПОЛУЧЕН! Скопируй его: ${videoNote.file_id}`\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    SUCCESS: false,\n    MESSAGE: '❌ Это НЕ круглое видео! Отправь video message (кружок)'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -784,
+        -32
+      ],
+      "id": "e61c8060-1e89-4342-9a20-42f9991671a5",
+      "name": "Video Note ID"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot7844060548:AAGsAc4wgDK7JID-aAAoIJDmOzXkX8VlVKo/sendVideoNote",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": \"{{ $json.chat_id }}\",\n  \"video_note\": \"{{ $json.video_file_id }}\",\n  \"duration\": {{ $json.video_duration || 0 }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        256
+      ],
+      "id": "c8b4cdd5-da3e-4678-87b8-84f9a6b9b259",
+      "name": "Send Video Note",
+      "retryOnFail": true,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Send Typing Indicator",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare Monitoring Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Callback",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Download Voice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Download Photo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Download Document",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Language Detection",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Text Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Voice": {
+      "main": [
+        [
+          {
+            "node": "Transcribe Voice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Photo": {
+      "main": [
+        [
+          {
+            "node": "Telegram File Detector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Document": {
+      "main": [
+        [
+          {
+            "node": "Telegram File Detector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram File Detector": {
+      "main": [
+        [
+          {
+            "node": "If File Needs Processing",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Telegram Pass Through Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If File Needs Processing": {
+      "main": [
+        [
+          {
+            "node": "Telegram File Category Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram File Category Router": {
+      "main": [
+        [
+          {
+            "node": "Telegram Image Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram Document Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Image Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Telegram Merge File Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Document Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Telegram Merge File Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Merge File Analysis": {
+      "main": [
+        [
+          {
+            "node": "Telegram File Paths Merger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Pass Through Text": {
+      "main": [
+        [
+          {
+            "node": "Telegram File Paths Merger",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Telegram File Paths Merger": {
+      "main": [
+        [
+          {
+            "node": "Language Detection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe Voice": {
+      "main": [
+        [
+          {
+            "node": "Process Voice Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Voice Result": {
+      "main": [
+        [
+          {
+            "node": "Language Detection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Language Detection": {
+      "main": [
+        [
+          {
+            "node": "Language Router",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Profile Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Language Router": {
+      "main": [
+        [
+          {
+            "node": "Send to AI Core",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send to AI Core",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Language Selector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Language Selector": {
+      "main": [
+        [
+          {
+            "node": "Send Language Selection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to AI Core": {
+      "main": [
+        [
+          {
+            "node": "Response Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Handler": {
+      "main": [
+        [
+          {
+            "node": "Response Type Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Callback": {
+      "main": [
+        [
+          {
+            "node": "Wait Before Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Before Delete": {
+      "main": [
+        [
+          {
+            "node": "Delete Callback Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Monitoring Data": {
+      "main": [
+        [
+          {
+            "node": "Send to Monitoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Profile Data": {
+      "main": [
+        [
+          {
+            "node": "Save Profile to DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Text Message": {
+      "main": [
+        [
+          {
+            "node": "Language Detection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Type Switch": {
+      "main": [
+        [
+          {
+            "node": "Send Video Note",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Video Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Voice Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Text Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "ba7512a8-8fca-4405-b836-287e671136ad",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "vZA1soRNfPeSFAC9",
+  "tags": []
+}

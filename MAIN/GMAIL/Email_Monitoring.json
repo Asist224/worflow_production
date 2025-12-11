@@ -1,0 +1,537 @@
+{
+  "name": "Email_Monitoring",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "email-monitoring",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -736,
+        -368
+      ],
+      "id": "9066a0cf-c33f-4c9b-8485-38264e4a5fa9",
+      "name": "Email Monitoring Webhook",
+      "webhookId": "email-monitoring-webhook-id"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем входные данные для email мониторинга\nconst webhook = items[0].json;\nconst inputData = webhook.body || webhook;\n\n// Генерируем временные метки\nconst currentTime = new Date();\nconst currentTimeISO = currentTime.toISOString();\n\n// Создаем объект для БД\nconst monitoringData = {\n    // Основные идентификаторы для email\n    recordId: `email_${inputData.email}_${Date.now()}`,\n    recordTimestamp: currentTimeISO,\n    email: inputData.email,\n    thread_id: inputData.threadId,\n    user_name: inputData.userName || inputData.senderName,\n    \n    // Временные метки\n    timestamp: currentTimeISO,\n    first_contact_time: inputData.firstContactTime || currentTimeISO,\n    last_activity_time: currentTimeISO,\n    \n    // Данные о событии\n    event_type: inputData.eventType || 'email_activity',\n    message_count: inputData.messageCount || 0,\n    \n    // Данные о клиенте\n    subject: inputData.subject || '',\n    language: inputData.language || 'ru',\n    lead_score: inputData.leadScore || 0,\n    intent: inputData.intent || 'information',\n    urgency: inputData.urgency || 'medium',\n    \n    // Статус переписки\n    status: inputData.status || 'active',\n    last_reply_from: inputData.lastReplyFrom || 'client',\n    follow_up_date: inputData.followUpDate || null\n};\n\nconsole.log(`[Email] Activity recorded at:`, currentTimeISO);\n\nreturn [{json: monitoringData}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -512,
+        -368
+      ],
+      "id": "c5065276-0e4b-42b1-9744-2abebda53731",
+      "name": "Process Email Data"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Сохраняем данные email мониторинга\nINSERT INTO email_monitoring (\n    record_id, \n    record_timestamp, \n    email, \n    thread_id, \n    user_name,\n    timestamp, \n    first_contact_time, \n    last_activity_time,\n    event_type, \n    message_count, \n    subject, \n    language,\n    lead_score, \n    intent, \n    urgency, \n    status, \n    last_reply_from, \n    follow_up_date\n)\nVALUES (\n    '{{ $json.recordId }}',\n    '{{ $json.recordTimestamp }}',\n    '{{ $json.email }}',\n    '{{ $json.thread_id }}',\n    '{{ $json.user_name }}',\n    '{{ $json.timestamp }}',\n    '{{ $json.first_contact_time }}',\n    '{{ $json.last_activity_time }}',\n    '{{ $json.event_type }}',\n    {{ $json.message_count }},\n    '{{ $json.subject.replace(/'/g, \"''\") }}',\n    '{{ $json.language }}',\n    {{ $json.lead_score }},\n    '{{ $json.intent }}',\n    '{{ $json.urgency }}',\n    '{{ $json.status }}',\n    '{{ $json.last_reply_from }}',\n    {{ $json.follow_up_date ? \"'\" + $json.follow_up_date + \"'\" : 'NULL' }}\n)\nON CONFLICT (email) \nDO UPDATE SET\n    thread_id = EXCLUDED.thread_id,\n    user_name = EXCLUDED.user_name,\n    last_activity_time = EXCLUDED.last_activity_time,\n    message_count = EXCLUDED.message_count,\n    subject = EXCLUDED.subject,\n    language = EXCLUDED.language,\n    lead_score = GREATEST(email_monitoring.lead_score, EXCLUDED.lead_score),\n    intent = EXCLUDED.intent,\n    urgency = EXCLUDED.urgency,\n    status = EXCLUDED.status,\n    last_reply_from = EXCLUDED.last_reply_from,\n    follow_up_date = EXCLUDED.follow_up_date,\n    updated_at = NOW()\nRETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -288,
+        -368
+      ],
+      "id": "087faa8f-ca79-4ff0-a3c7-e3a52e3f38bf",
+      "name": "Save Email Monitoring",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"status\": \"success\",\n  \"message\": \"Email monitoring data saved\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -64,
+        -368
+      ],
+      "id": "150ea984-d748-4c41-bfc3-db12d86dacbe",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "path": "email-monitoring-data",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -736,
+        -96
+      ],
+      "id": "9c12dfb7-fa69-496f-9f39-09a10389e2e5",
+      "name": "Get Email Monitoring",
+      "webhookId": "get-email-monitoring-webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH email_stats AS (\n    SELECT \n        em.email,\n        em.user_name,\n        MIN(em.first_contact_time) as first_contact,\n        MAX(em.last_activity_time) as last_activity,\n        MAX(em.message_count) as messages,\n        -- Получаем lead_score из таблицы анализа\n        COALESCE(\n            (SELECT (lead_scoring->>'score')::integer \n             FROM email_dialog_analysis eda\n             WHERE eda.email = em.email \n             ORDER BY eda.created_at DESC \n             LIMIT 1), \n            0\n        ) as lead_score,\n        -- ДОБАВЛЯЕМ satisfaction_percentage\n        COALESCE(\n            (SELECT satisfaction_percentage\n             FROM email_dialog_analysis eda\n             WHERE eda.email = em.email \n             ORDER BY eda.created_at DESC \n             LIMIT 1), \n            0\n        ) as satisfaction_percentage,\n        -- Также получаем температуру лида\n        COALESCE(\n            (SELECT lead_scoring->>'temperature'\n             FROM email_dialog_analysis eda\n             WHERE eda.email = em.email \n             ORDER BY eda.created_at DESC \n             LIMIT 1), \n            'cold'\n        ) as lead_temperature,\n        FIRST_VALUE(em.subject) OVER (PARTITION BY em.email ORDER BY em.timestamp DESC) as subject,\n        FIRST_VALUE(em.language) OVER (PARTITION BY em.email ORDER BY em.timestamp DESC) as language,\n        FIRST_VALUE(em.intent) OVER (PARTITION BY em.email ORDER BY em.timestamp DESC) as intent,\n        FIRST_VALUE(em.urgency) OVER (PARTITION BY em.email ORDER BY em.timestamp DESC) as urgency,\n        FIRST_VALUE(em.status) OVER (PARTITION BY em.email ORDER BY em.timestamp DESC) as status,\n        FIRST_VALUE(em.thread_id) OVER (PARTITION BY em.email ORDER BY em.timestamp DESC) as thread_id\n    FROM email_monitoring em\n    WHERE em.last_activity_time >= NOW() - INTERVAL '30 days'\n        AND em.email IS NOT NULL \n        AND em.email != ''\n    GROUP BY em.email, em.user_name, em.timestamp, em.subject, \n             em.language, em.intent, em.urgency, em.status, em.thread_id\n)\nSELECT DISTINCT ON (email) \n    *,\n    CASE \n        WHEN last_activity > NOW() - INTERVAL '24 hours' THEN 'active'\n        WHEN last_activity > NOW() - INTERVAL '7 days' THEN 'pending'\n        ELSE 'inactive'\n    END as activity_status\nFROM email_stats\nORDER BY email, last_activity DESC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -224,
+        -160
+      ],
+      "id": "10ed660f-869c-464f-81c2-b2e69f0271ae",
+      "name": "Get Email Data",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Форматируем данные для дашборда с правильными статусами для email\n\n// Функция определения статуса email переписки\nfunction getEmailConversationStatus(data) {\n  // Проверяем базовые статусы из БД\n  const dbStatus = data.status;\n  const messageCount = parseInt(data.messages) || parseInt(data.message_count) || 0;\n  \n  // Определяем активность по времени\n  const lastActivityDate = new Date(data.last_activity);\n  const daysSinceActivity = (Date.now() - lastActivityDate) / (1000 * 60 * 60 * 24);\n  \n  // Логика определения статуса\n  if (dbStatus === 'unread') {\n    return {\n      status: 'unread',\n      statusText: 'Непрочитанное',\n      statusIcon: '🔵',\n      statusColor: '#3b82f6',\n      daysSince: daysSinceActivity\n    };\n  }\n  \n  if (messageCount === 0) {\n    return {\n      status: 'new',\n      statusText: 'Новое',\n      statusIcon: '📥',\n      statusColor: '#22c55e',\n      daysSince: daysSinceActivity\n    };\n  }\n  \n  if (messageCount === 1) {\n    return {\n      status: 'awaiting_reply',\n      statusText: 'Ожидает ответа',\n      statusIcon: '⏳',\n      statusColor: '#f59e0b',\n      daysSince: daysSinceActivity\n    };\n  }\n  \n  if (messageCount > 3) {\n    if (daysSinceActivity > 7) {\n      return {\n        status: 'inactive',\n        statusText: 'Неактивная',\n        statusIcon: '💤',\n        statusColor: '#6b7280',\n        daysSince: daysSinceActivity\n      };\n    }\n    return {\n      status: 'conversation',\n      statusText: 'Переписка',\n      statusIcon: '💬',\n      statusColor: '#8b5cf6',\n      daysSince: daysSinceActivity\n    };\n  }\n  \n  if (daysSinceActivity < 1) {\n    return {\n      status: 'active',\n      statusText: 'Активная',\n      statusIcon: '📧',\n      statusColor: '#059669',\n      daysSince: daysSinceActivity\n    };\n  }\n  \n  if (daysSinceActivity > 3) {\n    return {\n      status: 'pending',\n      statusText: 'В ожидании',\n      statusIcon: '⏸️',\n      statusColor: '#f59e0b',\n      daysSince: daysSinceActivity\n    };\n  }\n  \n  return {\n    status: 'active',\n    statusText: 'Активная',\n    statusIcon: '📧',\n    statusColor: '#059669',\n    daysSince: daysSinceActivity\n  };\n}\n\n// Функция определения приоритета на основе Lead Score и urgency\nfunction getEmailPriority(leadScore, urgency) {\n  const score = parseInt(leadScore) || 0;\n  \n  if (score >= 80 || urgency === 'high') {\n    return {\n      priority: 'high',\n      priorityText: 'Высокий',\n      priorityIcon: '🔥',\n      priorityColor: '#dc2626'\n    };\n  }\n  \n  if (score >= 50 || urgency === 'medium') {\n    return {\n      priority: 'medium',\n      priorityText: 'Средний',\n      priorityIcon: '⚡',\n      priorityColor: '#f59e0b'\n    };\n  }\n  \n  return {\n    priority: 'low',\n    priorityText: 'Низкий',\n    priorityIcon: '❄️',\n    priorityColor: '#3b82f6'\n  };\n}\n\n// Основная логика форматирования\nconst formattedData = items.map(item => {\n    const data = item.json;\n    \n    // Получаем статус переписки (теперь со свойством daysSince)\n    const conversationStatus = getEmailConversationStatus(data);\n    \n    // Получаем приоритет\n    const priority = getEmailPriority(data.lead_score, data.urgency);\n    \n    // Определяем температуру лида\n    const leadScore = parseInt(data.lead_score) || 0;\n    const leadTemperature = leadScore >= 80 ? 'hot' : \n                           leadScore >= 50 ? 'warm' : 'cold';\n    \n    // Используем daysSince из conversationStatus\n    const daysSinceActivity = conversationStatus.daysSince || 0;\n    \n    return {\n        // Основные данные\n        email: data.email,\n        threadId: data.thread_id,\n        userName: data.user_name || 'Unknown',\n        subject: data.subject || 'No subject',\n        \n        // Временные метки\n        firstContact: data.first_contact,\n        lastActivity: data.last_activity,\n        \n        // Метрики\nmessageCount: parseInt(data.messages) || parseInt(data.message_count) || 0,\nleadScore: leadScore,\nsatisfactionPercentage: parseInt(data.satisfaction_percentage) || 0,\n        \n        // Статус переписки (основной)\n        conversationStatus: conversationStatus.status,\n        conversationStatusText: conversationStatus.statusText,\n        conversationStatusIcon: conversationStatus.statusIcon,\n        conversationStatusColor: conversationStatus.statusColor,\n        \n        // Приоритет\n        priority: priority.priority,\n        priorityText: priority.priorityText,\n        priorityIcon: priority.priorityIcon,\n        priorityColor: priority.priorityColor,\n        \n        // Дополнительная информация\n        language: data.language || 'ru',\n        intent: data.intent || 'information',\n        urgency: data.urgency || 'medium',\n        leadTemperature: leadTemperature,\n        \n        // Для обратной совместимости\n        status: conversationStatus.status,\n        activityStatus: data.activity_status || conversationStatus.status,\n        followUpDate: data.follow_up_date,\n        \n        // Флаги для дашборда\n        needsAttention: conversationStatus.status === 'awaiting_reply' || \n                        priority.priority === 'high',\n        isHotLead: leadTemperature === 'hot',\n        isInactive: daysSinceActivity > 7\n    };\n});\n\nreturn [{\n    json: {\n        data: formattedData,\n        totalCount: formattedData.length,\n        timestamp: new Date().toISOString()\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        -160
+      ],
+      "id": "5aa08342-1d76-4502-be27-09725a156922",
+      "name": "Format Email Data"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        224,
+        -160
+      ],
+      "id": "63f7ae3a-2374-4ca1-bcf3-96e352a79c10",
+      "name": "Respond Email Data"
+    },
+    {
+      "parameters": {
+        "path": "email-dialogs",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        208
+      ],
+      "id": "16a98d5a-723a-4a4d-a3a8-95118b55aa68",
+      "name": "Get Email Dialog",
+      "webhookId": "get-email-dialog-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем email из query параметров\nconst webhookData = items[0].json;\nconst email = webhookData.query?.email;\nconst threadId = webhookData.query?.thread_id;\n\nif (!email && !threadId) {\n    throw new Error('email or thread_id parameter is required');\n}\n\nreturn [{\n    json: {\n        email: email,\n        thread_id: threadId\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        144
+      ],
+      "id": "07f8e81f-7456-42e3-8801-5a8897784eef",
+      "name": "Process Dialog Request"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Получаем переписку из gmail_conversations\nSELECT \n    email,\n    thread_id,\n    subject,\n    messages,\n    status,\n    lead_score,\n    language,\n    message_count,\n    created_at,\n    updated_at\nFROM gmail_conversations\nWHERE \n    {{ $json.email ? \"email = '\" + $json.email + \"'\" : \"1=1\" }}\n    {{ $json.thread_id ? \"AND thread_id = '\" + $json.thread_id + \"'\" : \"\" }}\nORDER BY updated_at DESC\nLIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        48,
+        144
+      ],
+      "id": "768cb3d3-e7d1-4f10-a8b0-650a8066b7dc",
+      "name": "Get Gmail Conversation",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Проверяем, есть ли данные\nif (!items || items.length === 0 || !items[0].json) {\n    return [{\n        json: {\n            dialogs: [],\n            message: \"Нет сообщений для этого email\"\n        }\n    }];\n}\n\nconst conversation = items[0].json;\n\n// Парсим JSON с сообщениями\nlet messages = [];\ntry {\n    messages = typeof conversation.messages === 'string' \n        ? JSON.parse(conversation.messages) \n        : conversation.messages;\n} catch (e) {\n    console.error('Error parsing messages:', e);\n    messages = [];\n}\n\n// Форматируем диалоги для дашборда\nconst formattedDialogs = messages.map((msg, index) => {\n    return {\n        id: `${conversation.thread_id}_${index}`,\n        email: conversation.email,\n        thread_id: conversation.thread_id,\n        message_type: msg.type === 'incoming' ? 'user' : 'bot',\n        message_text: msg.content || '',\n        timestamp: msg.date || conversation.created_at,\n        language: conversation.language || 'unknown',\n        language_flag: conversation.language === 'ru' ? '🇷🇺' : '🇬🇧',\n        subject: conversation.subject\n    };\n});\n\nreturn [{json: {dialogs: formattedDialogs}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        144
+      ],
+      "id": "f03888a0-8e76-4ede-8146-663a609e7197",
+      "name": "Format Email Dialog"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        512,
+        144
+      ],
+      "id": "cc457f1b-6ad2-46ca-ac5c-5ca79462420b",
+      "name": "Respond Email Dialog"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -576,
+        -96
+      ],
+      "id": "dec057b9-fac0-4cb0-b0e3-3a05d90b8dba",
+      "name": "Security Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -416,
+        -96
+      ],
+      "id": "c8331e7b-d2cc-4acd-bdbb-fd3e5bdb471c",
+      "name": "Auth Check"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -224,
+        0
+      ],
+      "id": "c197d549-75f1-4d34-a36b-0e3a552197df",
+      "name": "Error Response"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        208
+      ],
+      "id": "196229fe-e8d5-4566-a558-2a15f35e4259",
+      "name": "Security Check1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -384,
+        208
+      ],
+      "id": "48e6ff5d-1d38-4b13-8f72-f96a26f72257",
+      "name": "Auth Check1"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -160,
+        320
+      ],
+      "id": "285e6c11-8e53-42f1-a1c1-4e1c34aa3756",
+      "name": "Error Response1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Email Monitoring Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Email Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Email Data": {
+      "main": [
+        [
+          {
+            "node": "Save Email Monitoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Email Monitoring": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Email Monitoring": {
+      "main": [
+        [
+          {
+            "node": "Security Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Email Data": {
+      "main": [
+        [
+          {
+            "node": "Format Email Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Email Data": {
+      "main": [
+        [
+          {
+            "node": "Respond Email Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Email Dialog": {
+      "main": [
+        [
+          {
+            "node": "Security Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Dialog Request": {
+      "main": [
+        [
+          {
+            "node": "Get Gmail Conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Gmail Conversation": {
+      "main": [
+        [
+          {
+            "node": "Format Email Dialog",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Email Dialog": {
+      "main": [
+        [
+          {
+            "node": "Respond Email Dialog",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check": {
+      "main": [
+        [
+          {
+            "node": "Auth Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check": {
+      "main": [
+        [
+          {
+            "node": "Get Email Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check1": {
+      "main": [
+        [
+          {
+            "node": "Auth Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check1": {
+      "main": [
+        [
+          {
+            "node": "Process Dialog Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "3c264a40-6f0e-48e2-b94a-310c9580ed3d",
+  "meta": {
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "ynAa3EHHuMgR6ArD",
+  "tags": []
+}

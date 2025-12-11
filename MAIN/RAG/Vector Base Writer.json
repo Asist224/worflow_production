@@ -1,0 +1,3010 @@
+{
+  "name": "Vector Base Writer",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "write-vector-base",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "e5711bae-640b-4d29-a762-37ed9fd3569f",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1824,
+        944
+      ],
+      "webhookId": "23185d3e-8d97-4d02-a46c-6fbfb27ee70e"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.mode }}",
+                    "rightValue": "replace",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "a8fc5f12-73e3-4e7f-8b4a-e9595fc1855a"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "replace"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.mode }}",
+                    "rightValue": "append",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "7c3dc21c-edcd-40a1-90eb-d4b4100ea390"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "append"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.mode }}",
+                    "rightValue": "edit",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "b3fc5f12-73e3-4e7f-8b4a-e9595fc1855b"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "edit"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "8f3d74c6-3700-48f2-8e84-7ae36d86f983",
+                    "leftValue": "={{ $json.body.mode }}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "delete"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cd91b7dd-7a69-4def-b9c3-fb0200ce1c78",
+      "name": "Switch Mode",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -1120,
+        896
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Сначала получаем все file_id из таблицы\nWITH file_ids AS (\n  SELECT DISTINCT metadata->>'file_id' as file_id \n  FROM {{ $json.body.table }}\n  WHERE metadata->>'file_id' IS NOT NULL\n),\n-- Удаляем строки таблиц\nrows_delete AS (\n  DELETE FROM document_rows \n  WHERE dataset_id IN (SELECT file_id FROM file_ids)\n  RETURNING 1\n),\n-- Удаляем метаданные таблиц\nmetadata_delete AS (\n  DELETE FROM document_metadata \n  WHERE id IN (SELECT file_id FROM file_ids)\n  RETURNING 1\n)\n-- Теперь удаляем все записи из основной таблицы\nDELETE FROM {{ $json.body.table }}\nRETURNING 'Table cleared successfully' as status",
+        "options": {}
+      },
+      "id": "a21941b1-7400-4c16-bd6e-2fbdfee98649",
+      "name": "Clear Table",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -976,
+        656
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "2cacefc4-f169-405d-8be4-5bb1905671a9",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -592,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Сначала проверяем, есть ли связанные табличные данные\nWITH table_check AS (\n  SELECT metadata->>'file_id' as file_id \n  FROM {{ $json.body.table }}\n  WHERE id = {{ $json.body.editId }}\n  LIMIT 1\n),\n-- Удаляем из document_rows если есть file_id\nrows_delete AS (\n  DELETE FROM document_rows \n  WHERE dataset_id IN (SELECT file_id FROM table_check WHERE file_id IS NOT NULL)\n  RETURNING dataset_id\n),\n-- Удаляем из document_metadata\nmetadata_delete AS (\n  DELETE FROM document_metadata \n  WHERE id IN (SELECT file_id FROM table_check WHERE file_id IS NOT NULL)\n  RETURNING id\n)\n-- Удаляем основную запись\nDELETE FROM {{ $json.body.table }}\nWHERE id = {{ $json.body.editId }}\nRETURNING id, \n  CASE \n    WHEN EXISTS (SELECT 1 FROM rows_delete) \n    THEN 'Deleted with table data' \n    ELSE 'Deleted single record' \n  END as deletion_type",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        96,
+        576
+      ],
+      "id": "6e7f1574-6998-40b5-8d15-5afd858a7809",
+      "name": "Delete Record",
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Обрабатываем данные после Switch Mode\nconst inputData = $input.first().json;\nconst body = inputData.body || inputData;\n\nif (!body) {\n  return [{\n    json: {\n      error: \"No data received\",\n      body: {},\n      content: \"\",\n      hasFiles: \"false\",\n      hasUrls: \"false\",\n      filesCount: 0,\n      keepFull: \"false\"\n    }\n  }];\n}\n\n// Проверяем наличие файлов\nconst hasFilesRaw = body.hasFiles === true || \n                    body.hasFiles === 'true' || \n                    (body.files && body.files.length > 0) || \n                    (body.combinedFiles && body.combinedFiles.length > 0) || \n                    false;\n\n// Объединяем все файлы в один массив\nconst files = [...(body.files || []), ...(body.combinedFiles || [])];\n\n// Извлекаем контент\nlet content = body.content || body.textContent || \"\";\n\n// 🆕 НОВОЕ: Обнаружение команды [FULL]\nconst fullBlockPattern = /\\[FULL\\]/gi;\nconst hasFullCommand = fullBlockPattern.test(content);\n\n// Удаляем команду из контента (она не должна попасть в базу)\nif (hasFullCommand) {\n  content = content.replace(fullBlockPattern, '').trim();\n}\n\n// Обработка URL из контента\nconst urlPattern = /https?:\\/\\/(www\\.)?[-a-zA-Z0-9@:%._\\+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\\b([-a-zA-Z0-9()@:%_\\+.~#?&//=]*)/gi;\nconst urls = content.match(urlPattern) || [];\n\n// Проверяем есть ли URL в контенте\nconst hasUrlsRaw = urls.length > 0 && (\n  content.trim().startsWith('http') || \n  content.trim().startsWith('ССЫЛКИ ДЛЯ АНАЛИЗА') ||\n  content.trim().startsWith('URL') ||\n  (urls.length > 0 && content.trim().replace(urlPattern, '').trim().length < 50)\n);\n\nconst isUrlOnlyMode = hasUrlsRaw;\n\n// Преобразуем все boolean в строки\nconst hasFiles = String(hasFilesRaw);\nconst hasUrls = String(hasUrlsRaw);\nconst keepFull = String(hasFullCommand);  // 🆕 НОВЫЙ ФЛАГ\n\nreturn [{\n  json: {\n    body: {\n      ...body,\n      hasFiles: hasFiles,\n      hasUrls: hasUrls,\n      urls: urls,\n      files: files,\n      filesCount: files.length,\n      content: content,  // Контент уже без команды [FULL]\n      textContent: content,\n      isUrlOnlyMode: String(isUrlOnlyMode),\n      keepFull: keepFull  // 🆕 ФЛАГ для AI Agent\n    },\n    table: body.table || 'knowledge_base',\n    mode: body.mode || 'append',\n    editId: body.editId || null,\n    content: content,\n    hasFiles: hasFiles,\n    hasUrls: hasUrls,\n    urls: urls,\n    filesCount: files.length,\n    keepFull: keepFull,  // 🆕 Передаем дальше\n    dataSource: inputData.body ? 'webhook' : 'processed'\n  }\n}];"
+      },
+      "id": "762934f2-bcdd-48f1-b239-43edbf7da543",
+      "name": "Prepare Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.body.hasFiles === \"true\" || $json.body.hasUrls === \"true\" }}",
+              "rightValue": "=true",
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              },
+              "id": "d3b3de1f-16de-4195-9353-a323859877f9"
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {
+          "looseTypeValidation": true
+        }
+      },
+      "id": "e8401816-2a7f-43ec-9985-3c87ba35f2da",
+      "name": "Has Files?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "body.files",
+        "options": {}
+      },
+      "id": "f0965d1c-a180-4b2f-be50-a9aaba307d9a",
+      "name": "Split Files",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        512,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const files = $input.all(); // Берем ВСЕ файлы\nconst processedFiles = [];\n\n// Сохраняем исходные данные\nconst originalBody = $node[\"Webhook\"]?.item?.json?.body || {};\n\nfiles.forEach((fileItem, index) => {\n  const file = fileItem.json;\n  \n  // Проверяем наличие данных\n  if (!file || (!file.name && !file.fileName)) {\n    console.log(`Файл ${index} не содержит имени, пропускаем`);\n    return;\n  }\n  \n  // Получаем имя и тип файла\n  const fileName = file.name || file.fileName || `document_${index}`;\n  const fileType = file.fileType || fileName.split('.').pop().toLowerCase();\n  const fileContent = file.content || '';\n  \n  // Проверка наличия бинарных данных (для файлов загруженных через URL)\n  if (fileItem.binary && fileItem.binary.data) {\n    // Файл уже в бинарном формате (пришел из Convert Downloaded to File Format)\n    const binaryData = fileItem.binary.data;\n    processedFiles.push({\n      json: {\n        fileName: fileName,\n        fileType: fileType,\n        detectedEncoding: 'binary',\n        metadata: {\n          fileName: fileName,\n          fileType: fileType,\n          fileSize: file.size || 0,\n          encoding: 'binary',\n          processedAt: new Date().toISOString(),\n          source: file.metadata?.source || 'upload'\n        },\n        originalTable: originalBody.table || file.originalTable,\n        originalMode: originalBody.mode || file.originalMode\n      },\n      binary: {\n        data: binaryData\n      }\n    });\n  } else {\n    // Обработка base64 контента (для файлов загруженных напрямую)\n    let binaryDataBuffer;\n    let encoding = 'utf8'; // Объявляем переменную encoding\n    \n    if (fileContent && fileContent.startsWith('data:')) {\n      const base64Data = fileContent.split(',')[1];\n      binaryDataBuffer = Buffer.from(base64Data || '', 'base64');\n      encoding = 'base64';\n    } else if (fileContent) {\n      // Если контент не base64, обрабатываем как текст\n      binaryDataBuffer = Buffer.from(fileContent, 'utf8');\n      encoding = 'utf8';\n    } else {\n      console.log(`Файл ${index} не содержит контента, пропускаем`);\n      return;\n    }\n    \n    // Определяем MIME type\n    let mimeType = 'text/plain';\n    \n    const mimeTypes = {\n      'pdf': 'application/pdf',\n      'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',\n      'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',\n      'txt': 'text/plain',\n      'csv': 'text/csv',\n      'doc': 'application/msword',\n      'xls': 'application/vnd.ms-excel'\n    };\n    \n    mimeType = mimeTypes[fileType] || 'application/octet-stream';\n    \n    // Создаем бинарный элемент для каждого файла\n    processedFiles.push({\n      json: {\n        fileName: fileName,\n        fileType: fileType,\n        detectedEncoding: encoding,\n        metadata: {\n          fileName: fileName,\n          fileType: fileType,\n          fileSize: file.size || binaryDataBuffer.length,\n          encoding: encoding,\n          processedAt: new Date().toISOString(),\n          source: file.metadata?.source || 'upload'\n        },\n        originalTable: originalBody.table || file.originalTable,\n        originalMode: originalBody.mode || file.originalMode\n      },\n      binary: {\n        data: {\n          data: binaryDataBuffer.toString('base64'),\n          mimeType: mimeType,\n          fileName: fileName,\n          fileExtension: fileType\n        }\n      }\n    });\n  }\n});\n\nif (processedFiles.length === 0) {\n  // Если нет файлов, возвращаем заглушку с ошибкой\n  return [{\n    json: {\n      fileName: 'no_files',\n      fileType: 'error',\n      error: 'No files to process',\n      originalTable: originalBody.table || 'knowledge_base',\n      originalMode: originalBody.mode || 'append'\n    }\n  }];\n}\n\nconsole.log(`Обработано файлов: ${processedFiles.length}`);\nreturn processedFiles;"
+      },
+      "id": "3cc5c1e5-f858-4cc2-b64c-17934c72beed",
+      "name": "Process File Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        768
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fileType }}",
+                    "rightValue": "pdf",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "71705598-f385-45e8-8398-4dc6f93eb6a3"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pdf"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fileType }}",
+                    "rightValue": "txt",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "352adff7-f336-43d6-a650-9461490edb35"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "text"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fileType }}",
+                    "rightValue": "docx",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "4bac029a-9960-47ca-b588-c48155ca9a38"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "docx"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "05f6f04b-5048-45c9-8dd4-439b3e42abeb",
+                    "leftValue": "={{ $json.fileType }}",
+                    "rightValue": "xlsx",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "excel"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "8e32e3d7-369c-4ee8-b6c9-c3317d9e2c2c",
+                    "leftValue": "={{ $json.fileType }}",
+                    "rightValue": "csv",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "csv"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "3df3e338-0dff-463e-b2be-80ce0238d364",
+      "name": "Switch File Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        912,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "id": "78245b38-4324-4cbb-aa86-ee0e8601b877",
+      "name": "Extract PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        1152,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "options": {}
+      },
+      "id": "7699ae73-d320-4cb1-b633-56523acce5bc",
+      "name": "Extract Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        1152,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Если файлы не извлекаются стандартными методами\n// возвращаем исходный контент как текст\nconst originalData = $('Process File Content').item.json;\n\nreturn [{\n  json: {\n    data: originalData.content || '[Неподдерживаемый формат файла]',\n    fileName: originalData.fileName,\n    fileType: originalData.fileType,\n    metadata: originalData.metadata\n  }\n}];"
+      },
+      "id": "e25cb1ed-6290-46a9-a5dd-d7a6c40e2882",
+      "name": "Fallback Extraction",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1168,
+        1136
+      ]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "id": "8eda9f90-64c8-47c6-9476-125e43b91da8",
+      "name": "Aggregate Files",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        2032,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.extractedContent || $json.content || $json.body?.content || \"Пустое содержимое\" }}",
+        "options": {
+          "systemMessage": "=Ты - эксперт по подготовке данных для векторных баз знаний AI-агента.\n\nТаблица для загрузки: {{ $json.body?.table || $json.table || \"knowledge_base\" }}\nРежим: {{ $json.body?.mode || $json.mode || \"append\" }}\n{{ $json.body?.editId || $json.editId ? 'ID для редактирования: ' + ($json.body?.editId || $json.editId) : '' }}\n🆕 РЕЖИМ ПОЛНОГО БЛОКА: {{ $json.body?.keepFull === \"true\" || $json.keepFull === \"true\" ? \"ДА - НЕ РАЗБИВАТЬ!\" : \"нет\" }}\n\n🆕 === КРИТИЧЕСКИ ВАЖНО: РЕЖИМ ПОЛНОГО БЛОКА ===\nЕСЛИ флаг \"РЕЖИМ ПОЛНОГО БЛОКА\" = \"ДА - НЕ РАЗБИВАТЬ!\", то:\n1. Создай ТОЛЬКО ОДИН документ со ВСЕМ текстом целиком\n2. НЕ разбивай текст ни на какие части\n3. НЕ применяй правила минимального/максимального размера фрагмента\n4. Весь текст должен быть в одном документе как есть\n5. Добавь метаданные как обычно (category, keywords, topic и т.д.)\n\nЕсли флаг \"РЕЖИМ ПОЛНОГО БЛОКА\" = \"нет\", действуй по обычным правилам ниже.\n===========================================\n\nПРАВИЛА ФОРМАТИРОВАНИЯ (только если НЕ режим полного блока):\n1. Если режим 'edit', создай ТОЛЬКО ОДИН документ для замены существующей записи\n2. Для других режимов - раздели текст на логические фрагменты\n3. Каждый фрагмент должен быть самодостаточным и содержать контекст\n4. Не должно быть разделения по предложениям. Текст должен быть логически завершенным предложением без разрывов! Это важно!\n5. Сохраняй оригинальные эмодзи и форматирование\n6. НЕ добавляй свой текст, объяснения или комментарии\n7. Используй ТОЛЬКО информацию из полученного текста\n\nПРАВИЛА ГРУППИРОВКИ ТЕКСТА (только если НЕ режим полного блока):\n- МИНИМАЛЬНЫЙ размер фрагмента: 200 символов\n- МАКСИМАЛЬНЫЙ размер фрагмента: 500 символов\n- Если текст менее 200 символов - сохрани как ОДИН фрагмент\n- Нумерованные/маркированные списки с общим заголовком - держи вместе как один фрагмент\n- Связанные пункты правил - объединяй в один документ\n- Разделяй только по явным смысловым границам (разные темы, разделы)\n- НЕ разбивай короткие списки на отдельные элементы\n\nПРИМЕРЫ ПРАВИЛЬНОЙ ГРУППИРОВКИ:\n✅ \"Правила работы с клиентами: 1. Отвечать в течение 5 минут 2. Быть вежливым 3. Предлагать решения\" - ОДИН документ\n❌ Три отдельных документа для каждого пункта - НЕПРАВИЛЬНО\n\nПРАВИЛА СОЗДАНИЯ МЕТАДАННЫХ:\n\n1. БАЗОВЫЕ МЕТАДАННЫЕ (для всех документов):\n   - category: автоматически определи из контента (pricing, security, algorithms, rules, instructions, dialogue, policy, technical, general)\n   - keywords: извлеки 3-5 ключевых слов/фраз из самого текста\n   - topic: основная тема фрагмента (краткое описание)\n\n2. ИНТЕЛЛЕКТУАЛЬНЫЙ АНАЛИЗ КОНТЕНТА:\n   Анализируй текст и добавляй только те метаданные, которые реально присутствуют:\n   - Если есть техники/методики → technique: \"название техники\"\n   - Если есть этапы/стадии → stage: \"этап процесса\", order: порядковый номер\n   - Если про возражения → objection: \"тип возражения\"  \n   - Если про клиентов → client_type: \"тип клиента\"\n   - Если есть платформа/канал → platform: \"название платформы\"\n   - Если критически важно (содержит слова: ВАЖНО, КРИТИЧНО, ОБЯЗАТЕЛЬНО) → critical: true\n   - Если есть тип политики → policy_type: \"тип\"\n   - Если есть список → items_count: количество пунктов\n   - Если есть числа/цены → has_numbers: true, price_mentioned: true\n   - Если есть вопросы → has_questions: true\n   - Если есть сроки/дедлайны → has_deadlines: true\n   - Если есть контакты → has_contacts: true\n   - entities: [\"упомянутые имена\", \"продукты\", \"услуги\"] (если есть)\n   - action_required: true/false (если текст требует действий)\n\n3. Для режима 'edit' ОБЯЗАТЕЛЬНО добавь:\n   - updated: текущая дата в ISO формате\n   - edited: true\n\nВАЖНО: \n- НЕ добавляй метаданные \"для галочки\" - только те, что реально есть в контенте\n- Метаданные должны быть извлечены из текста, а не придуманы\n- Минимум метаданных лучше, чем избыточные нерелевантные поля\n\n🔧 КРИТИЧЕСКИ ВАЖНО - ФОРМАТ JSON:\n\n1. ЭКРАНИРОВАНИЕ КАВЫЧЕК (самое важное!):\n   ❌ НЕПРАВИЛЬНО: \"content\": \"Возражение: \"Дорого\" - частое возражение\"\n   ✅ ПРАВИЛЬНО: \"content\": \"Возражение: \\\"Дорого\\\" - частое возражение\"\n   \n   Правило: ВСЕ кавычки внутри строк ОБЯЗАТЕЛЬНО экранируй символом \\\n\n2. ФОРМАТ ОТВЕТА:\n   - Возвращай ТОЛЬКО JSON массив\n   - БЕЗ markdown блоков ```json```\n   - БЕЗ пояснений до или после JSON\n   - Для режима 'edit' - массив с ОДНИМ элементом\n   - Для режима ПОЛНОГО БЛОКА - массив с ОДНИМ элементом со всем текстом\n   \n3. ПРАВИЛА КОНТЕНТА:\n   - НЕ изменяй и не дополняй исходный текст\n   - Короткие связанные тексты ВСЕГДА группируй вместе\n   - Сохраняй все символы, цифры, эмодзи как в оригинале\n\n4. ВАЛИДАЦИЯ ПЕРЕД ОТПРАВКОЙ:\n   - Проверь что все { } и [ ] закрыты\n   - Проверь что после каждого поля есть запятая (кроме последнего)\n   - Проверь что все кавычки экранированы\n\nШАБЛОН КОРРЕКТНОГО ОТВЕТА:\n[\n  {\n    \"content\": \"Текст с \\\"экранированными кавычками\\\" и другими символами\",\n    \"metadata\": {\n      \"category\": \"general\",\n      \"keywords\": [\"ключ1\", \"ключ2\"],\n      \"topic\": \"Описание темы\"\n    }\n  }\n]\n\n⚠️ ТИПИЧНЫЕ ОШИБКИ - НЕ ДЕЛАЙ ТАК:\n❌ \"content\": \"Он сказал: \"Привет\"\"  → кавычки не экранированы\n❌ ```json\\n[{...}]\\n```  → есть markdown блоки\n❌ [{...},]  → лишняя запятая после последнего элемента\n❌ {\"content\": \"text\" \"metadata\": {...}}  → пропущена запятая между полями\n\n✅ ВСЕГДА проверяй свой JSON перед возвратом!"
+        }
+      },
+      "id": "a2f60c98-e17f-4546-8672-1fd0d6d4f114",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        3680,
+        1360
+      ],
+      "retryOnFail": true,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        3664,
+        1584
+      ],
+      "id": "45cab0cf-6a6a-4cdf-86fd-ded0b8e21730",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "abo0BDHSJPM0pgRU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// УЛУЧШЕННЫЙ Parse AI Response с обработкой экранированных символов\nconst items = $input.all();\nconst allProcessedDocuments = [];\n\nconst prepareData = $('Prepare Data').item.json;\nconst prepareBody = prepareData.body || prepareData;\n\n// === ФУНКЦИИ ДЛЯ ОБРАБОТКИ ===\n\n// 1. Очистка markdown блоков\nfunction cleanMarkdown(text) {\n  if (!text) return '';\n  let cleaned = text.trim();\n  cleaned = cleaned.replace(/^```(?:json)?\\s*\\n?/gi, '');\n  cleaned = cleaned.replace(/\\n?```\\s*$/gi, '');\n  return cleaned.trim();\n}\n\n// 2. 🆕 ДЕКОДИРОВАНИЕ ЭКРАНИРОВАННЫХ СИМВОЛОВ\nfunction decodeEscapedChars(jsonString) {\n  // ВАЖНО: Обрабатываем в правильном порядке!\n  \n  // Сначала заменяем двойные слеши на одинарные\n  let decoded = jsonString.replace(/\\\\\\\\/g, '\\\\');\n  \n  // Затем заменяем экранированные переносы строк на реальные\n  decoded = decoded.replace(/\\\\n/g, '\\n');\n  \n  // Заменяем экранированные табы\n  decoded = decoded.replace(/\\\\t/g, '\\t');\n  \n  // НЕ трогаем экранированные кавычки - они должны остаться как \\\"\n  \n  return decoded;\n}\n\n// 3. 🆕 УНИВЕРСАЛЬНЫЙ JSON ПАРСЕР\nfunction parseAIResponse(response) {\n  if (!response || response === \"\") {\n    throw new Error(\"Empty AI response\");\n  }\n\n  console.log('📥 Raw response length:', response.length);\n  console.log('📥 First 200 chars:', response.substring(0, 200));\n\n  // Шаг 1: Очистка markdown\n  let cleaned = cleanMarkdown(response);\n  console.log('🧹 After markdown cleanup:', cleaned.substring(0, 150));\n\n  // Шаг 2: Декодируем экранированные символы\n  let decoded = decodeEscapedChars(cleaned);\n  console.log('🔓 After decoding escapes:', decoded.substring(0, 150));\n\n  // Попытка 1: Прямой парсинг декодированного JSON\n  try {\n    const parsed = JSON.parse(decoded);\n    console.log('✅ Direct parse successful');\n    return Array.isArray(parsed) ? parsed : [parsed];\n  } catch (e1) {\n    console.log('❌ Direct parse failed:', e1.message);\n  }\n\n  // Попытка 2: Извлечение через regex\n  try {\n    const jsonMatch = decoded.match(/\\[\\s*\\{[\\s\\S]*\\}\\s*\\]/);\n    if (jsonMatch) {\n      console.log('🔍 Regex found JSON array');\n      \n      // Очистка управляющих символов\n      const superClean = jsonMatch[0]\n        .replace(/[\\u0000-\\u001F\\u007F-\\u009F]/g, '') // Удаляем управляющие символы\n        .replace(/,\\s*}/g, '}') // Удаляем запятые перед }\n        .replace(/,\\s*\\]/g, ']'); // Удаляем запятые перед ]\n      \n      const parsed = JSON.parse(superClean);\n      console.log('✅ Regex extraction successful');\n      return Array.isArray(parsed) ? parsed : [parsed];\n    }\n  } catch (e2) {\n    console.log('❌ Regex extraction failed:', e2.message);\n  }\n\n  // Попытка 3: Поиск отдельного объекта (если не массив)\n  try {\n    const objectMatch = decoded.match(/\\{[\\s\\S]*\\}/);\n    if (objectMatch) {\n      console.log('🔍 Regex found JSON object');\n      const parsed = JSON.parse(objectMatch[0]);\n      console.log('✅ Object extraction successful');\n      return [parsed]; // Оборачиваем в массив\n    }\n  } catch (e3) {\n    console.log('❌ Object extraction failed:', e3.message);\n  }\n\n  // Fallback: не удалось распарсить\n  throw new Error('All parsing attempts failed');\n}\n\n// 4. Валидация документа\nfunction validateDocument(doc) {\n  if (!doc || typeof doc !== 'object') {\n    console.warn('⚠️ Document is not an object');\n    return false;\n  }\n  \n  if (!doc.content) {\n    console.warn('⚠️ Document has no content field');\n    return false;\n  }\n  \n  if (typeof doc.content !== 'string') {\n    console.warn('⚠️ Document content is not a string');\n    return false;\n  }\n  \n  if (doc.content.trim().length === 0) {\n    console.warn('⚠️ Document content is empty');\n    return false;\n  }\n  \n  return true;\n}\n\n// 5. Очистка контента от экранированных символов\nfunction cleanContent(content) {\n  if (typeof content !== 'string') return content;\n  \n  // Удаляем буквальные \\n, \\t если они остались\n  let cleaned = content\n    .replace(/\\\\n/g, ' ')   // Заменяем \\n на пробелы\n    .replace(/\\\\t/g, ' ')   // Заменяем \\t на пробелы\n    .replace(/\\s+/g, ' ')   // Схлопываем множественные пробелы\n    .trim();\n  \n  return cleaned;\n}\n\n// === ОБРАБОТКА ЭЛЕМЕНТОВ ===\n\nitems.forEach((item, index) => {\n  const aiResponse = item.json.output;\n  \n  const tableName = prepareBody.table || prepareData.table || 'knowledge_base';\n  const mode = prepareBody.mode || prepareData.mode || 'append';\n  const editId = prepareBody.editId || prepareData.editId || null;\n  \n  console.log(`\\n📋 ===== Processing Item ${index} =====`);\n  console.log(`Table: \"${tableName}\", Mode: \"${mode}\"`);\n  \n  try {\n    // Парсим с помощью умного парсера\n    let documents = parseAIResponse(aiResponse);\n    console.log(`📦 Parsed ${documents.length} document(s)`);\n    \n    // Проверка на вложенный JSON (двойной парсинг)\n    if (documents.length === 1 && documents[0].content) {\n      const content = documents[0].content.trim();\n      if ((content.startsWith('[') && content.endsWith(']')) ||\n          (content.startsWith('{') && content.endsWith('}'))) {\n        try {\n          const innerParsed = JSON.parse(content);\n          if (Array.isArray(innerParsed) && innerParsed[0]?.content) {\n            console.log('🔄 Detected nested JSON, unwrapping...');\n            documents = innerParsed;\n          }\n        } catch (e) {\n          console.log('✅ Content looks like JSON but is not - keeping as text');\n        }\n      }\n    }\n    \n    // Валидация\n    const validDocuments = documents.filter(doc => {\n      const isValid = validateDocument(doc);\n      if (!isValid) {\n        console.warn(`⚠️ Document failed validation, skipping:`, \n          JSON.stringify(doc).substring(0, 200));\n      }\n      return isValid;\n    });\n    \n    if (validDocuments.length === 0) {\n      throw new Error('No valid documents after validation');\n    }\n    \n    documents = validDocuments;\n    console.log(`✅ ${documents.length} document(s) passed validation`);\n    \n    // Обработка режима edit\n    if (mode === 'edit') {\n      documents = [documents[0]];\n      console.log('✏️ Edit mode: keeping only first document');\n      \n      if (!documents[0].metadata?.edited) {\n        documents[0].metadata = {\n          ...documents[0].metadata,\n          edited: true,\n          updated: new Date().toISOString(),\n          editId: editId\n        };\n      }\n    }\n    \n    // Очистка и форматирование\n    documents = documents.map((doc, docIndex) => {\n      // Очищаем контент\n      let cleanedContent = cleanContent(doc.content);\n      \n      console.log(`📄 Document ${docIndex}: ${cleanedContent.length} chars`);\n      \n      return {\n        content: cleanedContent,\n        metadata: {\n          category: doc.metadata?.category || \"general\",\n          created_at: new Date().toISOString(),\n          table: tableName,\n          mode: mode,\n          fileIndex: index,\n          ...doc.metadata // Сохраняем остальные метаданные от AI\n        }\n      };\n    });\n    \n    allProcessedDocuments.push(...documents);\n    console.log(`✅ Successfully processed ${documents.length} document(s) from item ${index}`);\n    \n  } catch (error) {\n    // Fallback для полного провала\n    console.error(`❌ CRITICAL ERROR for item ${index}:`, error.message);\n    console.error('Full error:', error);\n    \n    // Пытаемся хотя бы сохранить исходный текст\n    let fallbackContent = aiResponse || \"Processing error\";\n    \n    // Очищаем от экранированных символов\n    fallbackContent = cleanContent(fallbackContent);\n    \n    allProcessedDocuments.push({\n      content: fallbackContent,\n      metadata: {\n        category: mode === 'edit' ? \"edited\" : \"general\",\n        note: \"Fallback processing: \" + error.message,\n        error: true,\n        edited: mode === 'edit',\n        updated: new Date().toISOString(),\n        editId: mode === 'edit' ? editId : undefined,\n        table: tableName,\n        mode: mode,\n        fileIndex: index\n      }\n    });\n    \n    console.log('⚠️ Used fallback processing for item', index);\n  }\n});\n\n// === ФИНАЛЬНЫЙ РЕЗУЛЬТАТ ===\n\nconst finalTable = prepareBody.table || prepareData.table || 'knowledge_base';\nconst finalMode = prepareBody.mode || prepareData.mode || 'append';\nconst finalEditId = prepareBody.editId || prepareData.editId || null;\n\nconsole.log(`\\n✅ ===== FINAL RESULT =====`);\nconsole.log(`Table: \"${finalTable}\"`);\nconsole.log(`Mode: \"${finalMode}\"`);\nconsole.log(`Documents: ${allProcessedDocuments.length}`);\nconsole.log(`Files processed: ${items.length}`);\n\nreturn [{\n  json: {\n    table: finalTable,\n    documents: allProcessedDocuments,\n    mode: finalMode,\n    editId: finalEditId,\n    documentsCount: allProcessedDocuments.length,\n    filesProcessed: items.length\n  }\n}];"
+      },
+      "id": "b5de16b1-bd55-4d69-9fda-06573b65ddb0",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4048,
+        1168
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.mode }}",
+              "rightValue": "edit",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "id": "35230005-5e67-4eff-a2b1-2bff7f0e4d81"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "dc281cd6-0d60-400b-8816-dadfe36449be",
+      "name": "Check Edit Mode",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        4208,
+        1168
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const table = $json.table;\nconst content = $json.documents[0].content;\nconst metadata = JSON.stringify($json.documents[0].metadata);\nconst editId = parseInt($json.editId);\n\nconst query = `UPDATE ${table}\nSET \n  content = $1,\n  metadata = $2::jsonb\nWHERE id = $3\nRETURNING id, content, metadata, created_at`;\n\nreturn [{\n  json: {\n    query: query,\n    values: [content, metadata, editId]\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4448,
+        1024
+      ],
+      "id": "cfddae5f-fb63-469b-8ea3-ef8f6e8e1f35",
+      "name": "Prepare SQL for Update"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.query }}",
+        "options": {
+          "queryReplacement": "={{ $json.values }}"
+        }
+      },
+      "id": "2e488bff-6a38-4a35-8736-6c44532a5073",
+      "name": "Update Record",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        4720,
+        1024
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "documents",
+        "options": {}
+      },
+      "id": "e74cbac1-a43b-4cec-ac8f-40eb9621c14b",
+      "name": "Split Documents",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        4464,
+        1264
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "tableName": {
+          "__rl": true,
+          "value": "={{ $json.metadata.table }}",
+          "mode": ""
+        },
+        "embeddingBatchSize": 400,
+        "options": {}
+      },
+      "id": "2441ce9e-2bcc-4538-ac1e-bec7ddb40c48",
+      "name": "Insert to Supabase",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        4688,
+        1360
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "7ldcSWe5TTPVh3zH",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "d65f03d5-27ef-4582-8212-5ed35d8fc898",
+      "name": "Google Gemini Embeddings",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        4656,
+        1552
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "abo0BDHSJPM0pgRU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.content }}",
+        "textSplittingMode": "custom",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "table",
+                "value": "={{ $json.metadata.table }}"
+              },
+              {
+                "name": "category",
+                "value": "={{ $json.metadata.category || 'general' }}"
+              },
+              {
+                "name": "keywords",
+                "value": "={{ $json.metadata.keywords || [] }}"
+              },
+              {
+                "name": "topic",
+                "value": "={{ $json.metadata.topic || '' }}"
+              },
+              {
+                "name": "created_at",
+                "value": "={{ $json.metadata.created_at || new Date().toISOString() }}"
+              },
+              {
+                "name": "technique",
+                "value": "={{ $json.metadata.technique || null }}"
+              },
+              {
+                "name": "stage",
+                "value": "={{ $json.metadata.stage || null }}"
+              },
+              {
+                "name": "has_questions",
+                "value": "={{ $json.metadata.has_questions || false }}"
+              },
+              {
+                "name": "items_count",
+                "value": "={{ $json.metadata.items_count || 0 }}"
+              },
+              {
+                "name": "entities",
+                "value": "={{ $json.metadata.entities || [] }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "b362db17-c3ba-481e-9b4c-f69d6a40c668",
+      "name": "Default Data Loader",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        4768,
+        1552
+      ]
+    },
+    {
+      "parameters": {
+        "numberInputs": 4
+      },
+      "id": "2d273151-3872-4c07-be14-b0628a52dd40",
+      "name": "Merge After Edit",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        5136,
+        1136
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Формируем ответ с учетом всех типов файлов (документы и таблицы)\nconst items = $input.all();\nlet documentsCount = 0;\nlet tablesCount = 0;\nlet editCount = 0;\nlet deleteCount = 0;\nconst processedFiles = [];\n\n// Получаем исходные данные из webhook\nconst webhookData = $node[\"Webhook\"]?.json?.body || {};\nconst originalMode = webhookData.mode || \"unknown\";\nconst originalTable = webhookData.table || \"knowledge_base\";\nconst originalEditId = webhookData.editId || null;\n\n// Обрабатываем все входящие элементы\nitems.forEach(item => {\n  const data = item.json;\n  \n  // Обработка таблиц\n  if (data.type === 'table') {\n    tablesCount++;\n    processedFiles.push({\n      type: 'table',\n      name: data.fileName,\n      rows: data.totalRows,\n      columns: data.totalColumns\n    });\n  }\n  // Обработка режима редактирования\n  else if (data.mode === 'edit' || originalMode === 'edit') {\n    editCount++;\n    if (data.editId || originalEditId) {\n      processedFiles.push({\n        type: 'edit',\n        id: data.editId || originalEditId\n      });\n    }\n  }\n  // Обработка режима удаления\n  else if (data.mode === 'delete' || originalMode === 'delete') {\n    deleteCount++;\n    if (data.editId || originalEditId) {\n      processedFiles.push({\n        type: 'delete',\n        id: data.editId || originalEditId\n      });\n    }\n  }\n  // Обработка обычных документов\n  else {\n    const count = data.documentsCount || \n                  data.documents_processed || \n                  data.documentCount || 0;\n    if (count > 0) {\n      documentsCount += count;\n    }\n  }\n});\n\n// Если ничего не обработано но есть данные, считаем как 1 документ\nif (documentsCount === 0 && tablesCount === 0 && editCount === 0 && deleteCount === 0 && items.length > 0) {\n  documentsCount = 1;\n}\n\n// Формируем детальное сообщение\nlet message = '';\nconst messages = [];\n\n// Сообщения для разных режимов\nif (originalMode === 'delete' && deleteCount > 0) {\n  message = `Successfully deleted record ID: ${originalEditId} from ${originalTable}`;\n} else if (originalMode === 'edit' && editCount > 0) {\n  message = `Successfully updated record ID: ${originalEditId} in ${originalTable}`;\n} else if (originalMode === 'replace') {\n  message = `Successfully replaced content in ${originalTable}`;\n} else {\n  // Режим append - детализируем что было обработано\n  if (documentsCount > 0) {\n    messages.push(`Документов обработано: ${documentsCount}`);\n  }\n  if (tablesCount > 0) {\n    messages.push(`Таблиц загружено: ${tablesCount}`);\n    // Добавляем детали по таблицам\n    processedFiles\n      .filter(f => f.type === 'table')\n      .forEach(table => {\n        messages.push(`  - ${table.name}: ${table.rows} строк, ${table.columns} колонок`);\n      });\n  }\n  \n  if (messages.length > 0) {\n    message = messages.join('\\n');\n  } else {\n    message = `Operation completed successfully in ${originalTable}`;\n  }\n}\n\n// Подсчитываем общее количество обработанных элементов\nconst totalProcessed = documentsCount + tablesCount + editCount + deleteCount;\n\n// Формируем финальный ответ\nreturn [{\n  json: {\n    success: true,\n    message: message,\n    table: originalTable,\n    mode: originalMode,\n    documents_processed: documentsCount,\n    tables_processed: tablesCount,\n    total_items_processed: totalProcessed,\n    editId: originalEditId,\n    details: processedFiles.length > 0 ? processedFiles : null,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "89e6a95b-c074-489b-a707-733258020311",
+      "name": "Prepare Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5312,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "c603f276-b6d3-41b7-9e1f-cc098eb51742",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        5488,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Обрабатываем данные из всех типов файлов\nconst items = $input.all();\nconst processedItems = [];\n\nitems.forEach(item => {\n  const json = item.json;\n  \n  // Определяем источник данных\n  let fileName = json.fileName || 'unknown';\n  let fileType = json.fileType || '';\n  let extractedContent = '';\n  let structuredData = null;\n  \n  // Для агрегированных данных\n  if (json.data && Array.isArray(json.data)) {\n    // Обрабатываем каждый файл из агрегированных данных\n    json.data.forEach(fileData => {\n      let currentContent = '';\n      let currentStructured = null;\n      \n      // Получаем имя и тип файла\n      const currentFileName = fileData.fileName || fileName;\n      const currentFileType = fileData.fileType || fileType;\n      \n      // CSV и Excel данные могут быть в разных местах\n      if (Array.isArray(fileData)) {\n        // Сами данные являются массивом (CSV/Excel)\n        currentStructured = fileData;\n        currentContent = fileData.map((row, index) => {\n          const cleanRow = {...row};\n          delete cleanRow._row_number;\n          \n          return `Строка ${index + 1}: ` + Object.entries(cleanRow)\n            .filter(([key, value]) => value !== null && value !== undefined)\n            .map(([key, value]) => `${key}=\"${value}\"`)\n            .join(', ');\n        }).join('\\n');\n      } else if (fileData.data) {\n        // Данные в поле data\n        if (Array.isArray(fileData.data)) {\n          currentStructured = fileData.data;\n          currentContent = fileData.data.map((row, index) => {\n            const cleanRow = {...row};\n            delete cleanRow._row_number;\n            \n            return `Строка ${index + 1}: ` + Object.entries(cleanRow)\n              .filter(([key, value]) => value !== null && value !== undefined)\n              .map(([key, value]) => `${key}=\"${value}\"`)\n              .join(', ');\n          }).join('\\n');\n        } else {\n          currentContent = fileData.data;\n        }\n      } else if (fileData.text) {\n        currentContent = fileData.text;\n      } else {\n        currentContent = JSON.stringify(fileData);\n      }\n      \n      // Добавляем обработанный файл\n      processedItems.push({\n        json: {\n          fileName: currentFileName,\n          fileType: currentFileType,\n          extractedContent: currentContent,\n          structuredData: currentStructured,\n          metadata: {\n            ...fileData.metadata,\n            hasStructuredData: currentStructured !== null,\n            contentLength: currentContent.length,\n            fileType: currentFileType\n          },\n          originalTable: json.originalTable || $('Webhook').item.json.body.table,\n          originalMode: json.originalMode || $('Webhook').item.json.body.mode\n        }\n      });\n    });\n  } \n  // Для не агрегированных данных (прямой вывод из Extract узлов)\n  else {\n    let content = '';\n    let structured = null;\n    \n    // CSV/Excel данные\n    if (Array.isArray(json)) {\n      structured = json;\n      content = json.map((row, index) => {\n        const cleanRow = {...row};\n        delete cleanRow._row_number;\n        \n        return `Строка ${index + 1}: ` + Object.entries(cleanRow)\n          .filter(([key, value]) => value !== null && value !== undefined)\n          .map(([key, value]) => `${key}=\"${value}\"`)\n          .join(', ');\n      }).join('\\n');\n    }\n    // PDF с постраничной структурой\n    else if (json.pages && Array.isArray(json.pages)) {\n      content = json.pages.map(page => page.text || '').join('\\n\\n--- Страница ---\\n\\n');\n    }\n    // Текстовые данные\n    else if (json.text) {\n      content = json.text;\n    }\n    // Данные в поле data\n    else if (json.data) {\n      if (typeof json.data === 'string') {\n        content = json.data;\n      } else if (Array.isArray(json.data)) {\n        structured = json.data;\n        content = JSON.stringify(json.data, null, 2);\n      } else {\n        content = JSON.stringify(json.data);\n      }\n    }\n    // Если ничего не подошло\n    else {\n      content = JSON.stringify(json);\n    }\n    \n    processedItems.push({\n      json: {\n        fileName: fileName,\n        fileType: fileType,\n        extractedContent: content,\n        structuredData: structured,\n        metadata: {\n          hasStructuredData: structured !== null,\n          contentLength: content.length,\n          fileType: fileType\n        },\n        originalTable: $('Webhook').item.json.body.table,\n        originalMode: $('Webhook').item.json.body.mode\n      }\n    });\n  }\n});\n\n// Если ничего не обработано, возвращаем пустой результат с предупреждением\nif (processedItems.length === 0) {\n  return [{\n    json: {\n      fileName: 'no_data',\n      fileType: 'error',\n      extractedContent: 'Не удалось извлечь данные из файла',\n      structuredData: null,\n      metadata: {\n        hasStructuredData: false,\n        contentLength: 0,\n        error: true\n      },\n      originalTable: $('Webhook').item.json.body.table,\n      originalMode: $('Webhook').item.json.body.mode\n    }\n  }];\n}\n\nreturn processedItems;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2496,
+        624
+      ],
+      "id": "a50d991d-88ef-4629-99cc-e08d61142791",
+      "name": "Format File Data"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -176,
+        1024
+      ],
+      "id": "e5dfe6a0-5f51-4fa0-8bb8-7d028fa57612",
+      "name": "No Operation, do nothing"
+    },
+    {
+      "parameters": {
+        "jsCode": "// DOCX это ZIP архив, переименовываем для распаковки\nconst items = $input.all(); // Берем ВСЕ элементы, не только первый\nconst processedItems = [];\n\nitems.forEach(item => {\n  // Проверяем, есть ли binary data\n  if (!item.binary || !item.binary.data) {\n    // Если нет binary data, пропускаем этот элемент\n    processedItems.push(item);\n    return;\n  }\n  \n  // Клонируем объект, чтобы не изменять оригинал\n  const processedItem = JSON.parse(JSON.stringify(item));\n  \n  // Переименовываем DOCX в ZIP\n  const bin = processedItem.binary.data;\n  bin.fileName = bin.fileName.replace(/\\.docx$/i, '.zip');\n  bin.fileExtension = 'zip';\n  bin.mimeType = 'application/zip';\n  \n  processedItems.push(processedItem);\n});\n\nreturn processedItems;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1152,
+        640
+      ],
+      "id": "be1ef457-a8b9-44ff-81eb-d34af6e0e488",
+      "name": "Rename DOCX to ZIP"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.compression",
+      "typeVersion": 1.1,
+      "position": [
+        1328,
+        592
+      ],
+      "id": "2da8d208-dca5-457b-be7b-31535441fa8a",
+      "name": "Compression"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Ищем файл с текстом документа во всех элементах\nconst items = $input.all();\nconst processedItems = [];\n\nitems.forEach(item => {\n  const binaries = item.binary;\n  \n  if (!binaries) {\n    console.log('Нет binary данных, пропускаем');\n    return;\n  }\n  \n  // Ищем document.xml в распакованных файлах\n  for (const [key, file] of Object.entries(binaries)) {\n    if (file.fileName && file.fileName.includes('document.xml')) {\n      processedItems.push({ \n        binary: { data: file },\n        json: item.json || {}\n      });\n      return; // Нашли document.xml, переходим к следующему элементу\n    }\n  }\n  \n  // Если не нашли document.xml, добавляем сообщение об ошибке\n  processedItems.push({\n    json: {\n      ...item.json,\n      error: \"document.xml не найден в архиве\"\n    }\n  });\n});\n\nif (processedItems.length === 0) {\n  return [{json: {error: \"Не найдено ни одного document.xml\"}}];\n}\n\nreturn processedItems;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1488,
+        592
+      ],
+      "id": "4b34a051-52f9-4aa7-88fc-00a088d1ab5e",
+      "name": "Extract document"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Извлекаем текст из всех document.xml файлов\nconst items = $input.all();\nconst processedItems = [];\n\nitems.forEach((item, index) => {\n  // Проверяем на ошибку из предыдущего узла\n  if (item.json && item.json.error) {\n    console.log(`Элемент ${index} содержит ошибку: ${item.json.error}`);\n    processedItems.push(item);\n    return;\n  }\n  \n  // Проверяем наличие binary data\n  if (!item.binary || !item.binary.data) {\n    console.log(`Элемент ${index} не содержит binary data`);\n    processedItems.push({\n      json: {\n        data: '',\n        fileName: `document_${index}.docx`,\n        fileType: \"docx\",\n        error: \"No binary data found\"\n      }\n    });\n    return;\n  }\n  \n  try {\n    // Получаем binary data\n    const binaryData = item.binary.data;\n    const buffer = Buffer.from(binaryData.data, 'base64');\n    const xml = buffer.toString('utf8');\n    \n    // Извлекаем весь текст из XML\n    // Ищем все текстовые элементы <w:t>\n    const textMatches = xml.match(/<w:t[^>]*>([^<]*)<\\/w:t>/g) || [];\n    const fullText = textMatches\n      .map(match => {\n        // Убираем XML теги\n        return match.replace(/<[^>]+>/g, '');\n      })\n      .join(' ')\n      .replace(/\\s+/g, ' ')\n      .trim();\n    \n    console.log(`Элемент ${index}: извлечено ${fullText.length} символов текста`);\n    \n    // Определяем имя файла\n    const fileName = item.json?.fileName || \n                    item.json?.originalData?.fileName ||\n                    `document_${index}.docx`;\n    \n    processedItems.push({\n      json: {\n        data: fullText,\n        fileName: fileName,\n        fileType: \"docx\",\n        metadata: {\n          ...item.json?.metadata,\n          textLength: fullText.length,\n          processedAt: new Date().toISOString()\n        }\n      }\n    });\n  } catch (error) {\n    console.error(`Ошибка обработки элемента ${index}:`, error);\n    processedItems.push({\n      json: {\n        data: '',\n        fileName: `error_${index}.docx`,\n        fileType: \"docx\",\n        error: `Ошибка извлечения текста: ${error.message}`\n      }\n    });\n  }\n});\n\nconsole.log(`Обработано файлов: ${processedItems.length}`);\n\nreturn processedItems;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1648,
+        592
+      ],
+      "id": "27b51452-ed14-4165-b689-ae510e25382d",
+      "name": "Extract Text from XML"
+    },
+    {
+      "parameters": {
+        "chunkSize": 1500,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [
+        4752,
+        1712
+      ],
+      "id": "56384d0b-0386-4730-a3d0-e4bfaa81e967",
+      "name": "Recursive Character Text Splitter"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Передаем данные из Switch Mode после очистки таблицы\n// Получаем исходные данные из Switch Mode\nconst originalData = $node[\"Switch Mode\"].json;\n\n// Проверяем успешность очистки\nconst clearResult = $input.all();\nconst clearSuccess = clearResult.length > 0;\n\nif (!clearSuccess) {\n  throw new Error(\"Failed to clear table\");\n}\n\n// Извлекаем body\nconst body = originalData.body || originalData;\n\n// Проверяем наличие файлов (как в Prepare Data)\nconst hasFilesRaw = body.hasFiles === true || \n                    body.hasFiles === 'true' || \n                    (body.files && body.files.length > 0) || \n                    false;\n\n// Объединяем файлы если есть\nconst files = [...(body.files || [])];\n\n// Извлекаем контент\nlet content = body.content || body.textContent || \"\";\n\n// Обработка URL из контента\nconst urlPattern = /https?:\\/\\/(www\\.)?[-a-zA-Z0-9@:%._\\+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\\b([-a-zA-Z0-9()@:%_\\+.~#?&//=]*)/gi;\nconst urls = content.match(urlPattern) || [];\n\n// Проверяем наличие URL\nconst hasUrlsRaw = urls.length > 0 && (\n  content.trim().startsWith('http') || \n  content.trim().startsWith('ССЫЛКИ ДЛЯ АНАЛИЗА') ||\n  content.trim().startsWith('URL') ||\n  (urls.length > 0 && content.trim().replace(urlPattern, '').trim().length < 50)\n);\n\n// Преобразуем в строки для совместимости\nconst hasFiles = String(hasFilesRaw);\nconst hasUrls = String(hasUrlsRaw);\n\n// Передаем исходные данные дальше с обработанными флагами\nreturn [{\n  json: {\n    ...originalData,\n    tableCleared: true,\n    clearSuccess: true,\n    body: {\n      ...body,\n      hasFiles: hasFiles,\n      hasUrls: hasUrls,\n      urls: urls,\n      files: files,\n      filesCount: files.length\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -768,
+        656
+      ],
+      "id": "f0c6cc18-d8c0-40a8-8163-2619e7c94f5d",
+      "name": "Pass Data After Clear"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.hasFiles }}",
+                    "rightValue": "true",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "48d978cf-eead-44dc-bcba-248ea583885c"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "files"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "0145af52-7c2a-4e4b-a58a-6677d1627589",
+                    "leftValue": "={{ $json.body.hasUrls }}",
+                    "rightValue": "true",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "(urls"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -256,
+        784
+      ],
+      "id": "3e05e6d2-1b5c-409a-94fa-4b762cf74d9b",
+      "name": "Check Data Type"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Извлекаем и обрабатываем URLs\nconst data = $input.first().json;\nconst urls = data.body?.urls || data.urls || [];\nconst processedUrls = [];\n\n// Функция для определения типа документа по URL\nfunction detectDocType(url) {\n  // Google Docs - экспортируем как DOCX\n  if (url.includes('docs.google.com/document')) {\n    const match = url.match(/\\/d\\/([a-zA-Z0-9-_]+)/);\n    if (match) {\n      return {\n        type: 'google_doc',\n        id: match[1],\n        exportUrl: `https://docs.google.com/document/d/${match[1]}/export?format=docx`,\n        expectedFormat: 'docx'\n      };\n    }\n  }\n  \n  // Google Sheets - экспортируем как XLSX\n  if (url.includes('docs.google.com/spreadsheets')) {\n    const match = url.match(/\\/d\\/([a-zA-Z0-9-_]+)/);\n    if (match) {\n      return {\n        type: 'google_sheet',\n        id: match[1],\n        exportUrl: `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=xlsx`,\n        expectedFormat: 'xlsx'\n      };\n    }\n  }\n  \n  // Google Presentations - экспортируем как PPTX\n  if (url.includes('docs.google.com/presentation')) {\n    const match = url.match(/\\/d\\/([a-zA-Z0-9-_]+)/);\n    if (match) {\n      return {\n        type: 'google_presentation',\n        id: match[1],\n        exportUrl: `https://docs.google.com/presentation/d/${match[1]}/export?format=pptx`,\n        expectedFormat: 'pptx'\n      };\n    }\n  }\n  \n  // Google Forms - экспортируем результаты как CSV\n  if (url.includes('docs.google.com/forms')) {\n    const match = url.match(/\\/d\\/([a-zA-Z0-9-_]+)/);\n    if (match) {\n      return {\n        type: 'google_form',\n        id: match[1],\n        exportUrl: `https://docs.google.com/forms/d/${match[1]}/export?format=csv`,\n        expectedFormat: 'csv'\n      };\n    }\n  }\n  \n  // Прямые ссылки на файлы - оставляем как есть\n  if (url.match(/\\.(pdf|docx|doc|txt|xlsx|xls|csv|pptx|ppt)$/i)) {\n    const extension = url.match(/\\.([^.]+)$/)[1].toLowerCase();\n    return {\n      type: 'direct_file',\n      extension: extension,\n      downloadUrl: url,\n      expectedFormat: extension\n    };\n  }\n  \n  // Google Drive файлы - пытаемся определить тип\n  if (url.includes('drive.google.com')) {\n    const match = url.match(/\\/d\\/([a-zA-Z0-9-_]+)|id=([a-zA-Z0-9-_]+)/);\n    if (match) {\n      const fileId = match[1] || match[2];\n      // Для Drive файлов без явного типа скачиваем как есть\n      return {\n        type: 'google_drive',\n        id: fileId,\n        downloadUrl: `https://drive.google.com/uc?export=download&id=${fileId}`,\n        expectedFormat: 'unknown'\n      };\n    }\n  }\n  \n  // Dropbox\n  if (url.includes('dropbox.com')) {\n    const directUrl = url.replace('dl=0', 'dl=1');\n    // Пытаемся определить формат по URL\n    const extensionMatch = url.match(/\\.([^.?]+)(\\?|$)/);\n    const format = extensionMatch ? extensionMatch[1].toLowerCase() : 'unknown';\n    return {\n      type: 'dropbox',\n      downloadUrl: directUrl,\n      expectedFormat: format\n    };\n  }\n  \n  // OneDrive/SharePoint\n  if (url.includes('sharepoint.com') || url.includes('1drv.ms')) {\n    return {\n      type: 'onedrive',\n      downloadUrl: url,\n      expectedFormat: 'unknown'\n    };\n  }\n  \n  return {\n    type: 'unknown',\n    url: url,\n    expectedFormat: 'unknown'\n  };\n}\n\n// Обрабатываем каждый URL\nurls.forEach((url, index) => {\n  const docInfo = detectDocType(url);\n  \n  processedUrls.push({\n    originalUrl: url,\n    ...docInfo,\n    index: index\n  });\n});\n\n// Возвращаем обработанные URLs для загрузки\nreturn [{\n  json: {\n    ...data,\n    processedUrls: processedUrls,\n    urlsToDownload: processedUrls.filter(u => \n      u.exportUrl || u.downloadUrl\n    )\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -64,
+        848
+      ],
+      "id": "3379dca6-3740-488c-b8b3-65f85c929379",
+      "name": "Process URLs"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "urlsToDownload",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        112,
+        944
+      ],
+      "id": "b3aff558-b91a-40c9-9375-0bc8f472aae2",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.exportUrl || $json.downloadUrl }}",
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "redirect": {
+            "redirect": {}
+          },
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        288,
+        800
+      ],
+      "id": "dd6f4882-9016-483c-bd57-5e61140f5756",
+      "name": "Download Files from URLs"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Преобразуем загруженные файлы в формат для обработки\nconst items = $input.all(); // Берем ВСЕ элементы, не только первый\nconst processedFiles = [];\n\nitems.forEach((item, index) => {\n  const binary = item.binary;\n  const json = item.json;\n  \n  // Проверяем, есть ли бинарные данные\n  if (!binary || Object.keys(binary).length === 0) {\n    processedFiles.push({\n      json: {\n        name: `error_file_${index}`,\n        fileType: 'error',\n        content: 'Не удалось загрузить файл. Проверьте, что документ имеет публичный доступ.',\n        metadata: {\n          source: 'url',\n          originalUrl: json.originalUrl || '',\n          error: true,\n          errorMessage: 'File download failed'\n        }\n      }\n    });\n    return;\n  }\n\n  // Получаем первый бинарный файл\n  const fileKey = Object.keys(binary)[0];\n  const file = binary[fileKey];\n\n  // Определяем тип файла на основе ожидаемого формата или MIME type\n  let fileType = json.expectedFormat || 'unknown';\n  let fileName = file.fileName || `downloaded_file_${index}.${fileType}`;\n\n  // Уточняем тип файла по MIME type если нужно\n  if (fileType === 'unknown' && file.mimeType) {\n    if (file.mimeType.includes('pdf')) {\n      fileType = 'pdf';\n    } else if (file.mimeType.includes('wordprocessingml') || file.mimeType.includes('msword')) {\n      fileType = 'docx';\n    } else if (file.mimeType.includes('spreadsheetml') || file.mimeType.includes('ms-excel')) {\n      fileType = 'xlsx';\n    } else if (file.mimeType.includes('presentationml') || file.mimeType.includes('ms-powerpoint')) {\n      fileType = 'pptx';\n    } else if (file.mimeType.includes('text/plain')) {\n      fileType = 'txt';\n    } else if (file.mimeType.includes('text/csv')) {\n      fileType = 'csv';\n    }\n  }\n\n  // Нормализуем расширения\n  const formatMap = {\n    'doc': 'docx',\n    'xls': 'xlsx',\n    'ppt': 'pptx'\n  };\n  fileType = formatMap[fileType] || fileType;\n\n  // Убеждаемся что имя файла имеет правильное расширение\n  if (!fileName.endsWith(`.${fileType}`)) {\n    fileName = fileName.replace(/\\.[^.]+$/, '') + `.${fileType}`;\n  }\n\n  // Создаем base64 data URL\n  const base64Data = file.data;\n  const dataUrl = `data:${file.mimeType || 'application/octet-stream'};base64,${base64Data}`;\n\n  // Добавляем обработанный файл\n  processedFiles.push({\n    json: {\n      name: fileName,\n      fileType: fileType,\n      size: file.fileSize || Buffer.from(base64Data, 'base64').length,\n      content: dataUrl,\n      metadata: {\n        source: 'url',\n        originalUrl: json.originalUrl || '',\n        documentType: json.type || 'unknown',\n        originalFormat: json.expectedFormat || fileType,\n        downloadedAt: new Date().toISOString()\n      },\n      originalTable: $node[\"Webhook\"]?.json?.body?.table || 'knowledge_base',\n      originalMode: $node[\"Webhook\"]?.json?.body?.mode || 'append'\n    },\n    binary: {\n      data: file\n    }\n  });\n});\n\nreturn processedFiles;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        880
+      ],
+      "id": "28160ece-1926-48be-9c0a-fceb7ba0eeea",
+      "name": "Convert Downloaded to File Format"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {
+          "headerRow": true
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        1152,
+        800
+      ],
+      "id": "b0f01bec-2ab1-40f5-8c86-b98d4197e40f",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        1152,
+        960
+      ],
+      "id": "06e1da79-efac-44b8-ba2f-b18c9e721007",
+      "name": "Extract from File1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Полная обработка табличных данных\nconst items = $input.all();\nconst processedTables = [];\n\nconsole.log(`Получено элементов: ${items.length}`);\n\n// Проверяем формат данных\nif (items.length > 0) {\n  // Если пришло много отдельных элементов - это строки одной таблицы\n  if (items.length > 1 && items[0].json && !Array.isArray(items[0].json)) {\n    // Все items - это строки одной таблицы\n    const rows = items.map(item => item.json);\n    \n    // ВАЖНОЕ ИЗМЕНЕНИЕ: Получаем оригинальное имя файла\n    const originalBody = $node[\"Webhook\"]?.json?.body || {};\n    const switchFileTypeData = $('Switch File Type').item.json;\n    \n    // Берем имя файла из Switch File Type или из webhook\n    let fileName = switchFileTypeData.fileName || \n                   originalBody.fileName ||\n                   originalBody.files?.[0]?.name ||\n                   'unknown_spreadsheet.xlsx';\n    \n    // Нормализуем имя файла (убираем путь если есть)\n    fileName = fileName.split('/').pop().split('\\\\').pop();\n    \n    // Генерация статичного ID на основе имени файла\n    // Убираем расширение и специальные символы для создания ID\n    const baseFileName = fileName.replace(/\\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');\n    const fileId = `table_${baseFileName}`;\n    \n    const fileType = fileName.toLowerCase().endsWith('.csv') ? 'csv' : 'xlsx';\n    const sourceUrl = originalBody.urls ? originalBody.urls[0] : null;\n    \n    // Извлечение заголовков из первой строки\n    const headers = Object.keys(rows[0]).map(h => String(h).trim());\n    console.log(`Заголовки: ${headers.join(', ')}`);\n    console.log(`Имя файла: ${fileName}, ID: ${fileId}`);\n    \n    // Сбор текстового содержимого\n    const textParts = [`Файл: ${fileName}`];\n    textParts.push(`Колонки: ${headers.join(', ')}`);\n    textParts.push(`Количество записей: ${rows.length}`);\n    \n    // Извлечение уникальных текстов\n    const uniqueTexts = new Set();\n    rows.forEach(row => {\n      Object.entries(row).forEach(([key, value]) => {\n        if (value && typeof value === 'string' && isNaN(value)) {\n          const cleaned = value.trim();\n          if (cleaned.length > 2 && cleaned.length < 500) {\n            uniqueTexts.add(cleaned);\n          }\n        }\n      });\n    });\n    \n    if (uniqueTexts.size > 0) {\n      textParts.push('\\nТекстовое содержимое:');\n      textParts.push(...Array.from(uniqueTexts).slice(0, 100));\n    }\n    \n    const fullTextContent = textParts.join('\\n');\n    \n    // Очистка строк\n    const cleanedRows = rows.map(row => {\n      const cleanRow = {};\n      headers.forEach(header => {\n        let value = row[header];\n        if (value === null || value === undefined) {\n          value = '';\n        } else if (typeof value === 'object') {\n          value = JSON.stringify(value);\n        } else {\n          value = String(value).trim();\n        }\n        cleanRow[header] = value;\n      });\n      return cleanRow;\n    });\n    \n    processedTables.push({\n      json: {\n        fileId: fileId,\n        fileName: fileName,\n        fileType: fileType,\n        sourceUrl: sourceUrl,\n        \n        metadata: {\n          id: fileId,\n          title: fileName,\n          file_type: fileType,\n          url: sourceUrl,\n          schema: JSON.stringify(headers),\n          total_rows: rows.length,\n          text_content: fullTextContent\n        },\n        \n        rows: cleanedRows,\n        headers: headers,\n        textContent: fullTextContent,\n        \n        totalRows: rows.length,\n        totalColumns: headers.length,\n        uniqueTextValues: uniqueTexts.size,\n        \n        originalTable: originalBody.table || 'knowledge_base',\n        originalMode: originalBody.mode || 'append'\n      }\n    });\n    \n    console.log(`Обработана таблица: ${fileName}, ${rows.length} строк`);\n    \n  } else if (items.length === 1 && Array.isArray(items[0].json)) {\n    // Один элемент с массивом - старый формат\n    const rows = items[0].json;\n    // ... остальная логика как была\n  }\n}\n\nif (processedTables.length === 0) {\n  console.log(\"Нет данных для обработки\");\n  throw new Error(\"No table data to process\");\n}\n\nconsole.log(`Всего обработано таблиц: ${processedTables.length}`);\nreturn processedTables;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        816
+      ],
+      "id": "a235828c-0502-4891-a1bc-aeac4c088554",
+      "name": "Process Table Data"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO document_metadata (id, title, file_type, url, schema, total_rows, text_content)\nVALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)\nON CONFLICT (id) DO UPDATE SET\n  title = EXCLUDED.title,\n  file_type = EXCLUDED.file_type,\n  url = EXCLUDED.url,\n  schema = EXCLUDED.schema,\n  total_rows = EXCLUDED.total_rows,\n  text_content = EXCLUDED.text_content,\n  created_at = NOW()\nRETURNING *;",
+        "options": {
+          "queryReplacement": "=[\n  \"{{ $json.fileId }}\",\n  \"{{ $json.fileName }}\",\n  \"{{ $json.fileType }}\",\n  \"{{ $json.sourceUrl || null }}\",\n  \"{{ $json.metadata.schema }}\",\n  {{ $json.totalRows }},\n  \"{{ $json.textContent }}\"\n]"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2752,
+        864
+      ],
+      "id": "ae3094ac-af39-466a-ae67-379436d89bf2",
+      "name": "Save Table Metadata",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "rows",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        3184,
+        704
+      ],
+      "id": "ece4f73d-6cd5-4a7b-be1e-b5feea903df0",
+      "name": "Split Table Rows"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO document_rows (dataset_id, row_number, row_data)\nVALUES ($1, $2, $3::jsonb)\nON CONFLICT DO NOTHING\nRETURNING id;",
+        "options": {
+          "queryReplacement": "=[\n  \"{{ $('Pass Table Data').item.json.fileId }}\",\n  {{ $itemIndex + 1 }},\n  \"{{ JSON.stringify($json).replace(/'/g, \"''\") }}\"\n]"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3456,
+        704
+      ],
+      "id": "df8f4ae3-7fc1-490f-b996-2810545bc7dd",
+      "name": "Save Table Rows",
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Формируем результат успешной загрузки таблицы\nconst input = $input.first().json;\nconst metadata = $('Pass Table Data').item.json;\n\nreturn [{\n  json: {\n    success: true,\n    type: 'table',\n    message: `Таблица \"${metadata.fileName}\" загружена: ${metadata.totalRows} строк`,\n    fileId: metadata.fileId,\n    fileName: metadata.fileName,\n    totalRows: metadata.totalRows,\n    totalColumns: metadata.totalColumns,\n    table: metadata.originalTable,\n    mode: metadata.originalMode\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3184,
+        864
+      ],
+      "id": "f8cde010-c279-4853-8213-7e307e4a377c",
+      "name": "Table Process Complete"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные от предыдущего узла (Save Table Metadata)\nconst inputItems = $input.all();\nconst inputData = inputItems[0].json;\n\n// Определяем источник данных\nlet sourceData;\n\n// Проверяем, пришли ли данные через ветку удаления\ntry {\n  // Пробуем получить данные от Pass Data After Delete\n  const deleteData = $('Pass Data After Delete').all();\n  if (deleteData && deleteData.length > 0 && deleteData[0].json.deletionCompleted) {\n    // Данные пришли через ветку TRUE (удаление)\n    sourceData = deleteData[0].json;\n  }\n} catch (e) {\n  // Pass Data After Delete не выполнялся\n}\n\n// Если не получили данные от Pass Data After Delete, берем от Pass Original Table Data\nif (!sourceData) {\n  try {\n    const originalData = $('Pass Original Table Data').all();\n    if (originalData && originalData.length > 0) {\n      // Данные пришли через ветку FALSE\n      sourceData = originalData[0].json;\n    }\n  } catch (e) {\n    // Pass Original Table Data тоже не выполнялся\n  }\n}\n\n// Если все еще нет данных, берем из Process Table Data\nif (!sourceData) {\n  sourceData = $('Process Table Data').item.json;\n}\n\n// Возвращаем данные с флагом сохранения метаданных\nreturn [{\n  json: {\n    ...sourceData,\n    metadataSaved: true,\n    metadataId: inputData.id || sourceData.fileId\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2944,
+        848
+      ],
+      "id": "0c46cefd-4aca-4b06-8540-3f2cc131527a",
+      "name": "Pass Table Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Подготовка табличных данных для векторизации\nconst data = $input.first().json;\n\n// Проверяем наличие текстового содержимого\nif (!data.textContent || data.textContent.length < 10) {\n  return []; // Пропускаем если нет текста\n}\n\n// Формируем документ для векторной базы\nreturn [{\n  json: {\n    content: data.textContent,\n    metadata: {\n      type: 'spreadsheet',\n      source_type: 'table',\n      file_id: data.fileId,\n      file_name: data.fileName,\n      file_type: data.fileType,\n      columns: data.headers.join(', '),\n      total_rows: data.totalRows,\n      total_columns: data.totalColumns,\n      unique_text_values: data.uniqueTextValues,\n      table: data.originalTable || 'knowledge_base',\n      created_at: new Date().toISOString()\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3184,
+        1008
+      ],
+      "id": "7bf14615-c1a3-4f81-ae5b-cd4a991c9dbd",
+      "name": "Vectorize Table"
+    },
+    {
+      "parameters": {},
+      "id": "48606489-da34-45ef-aea9-a2989ca05f1b",
+      "name": "Google Gemini Embeddings1",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        4048,
+        1552
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "abo0BDHSJPM0pgRU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [
+        4144,
+        1712
+      ],
+      "id": "fe13f801-ad02-422b-8874-3b5f0a343e50",
+      "name": "Recursive Character Text Splitter1"
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "tableName": {
+          "__rl": true,
+          "value": "={{ $json.metadata.table }}",
+          "mode": ""
+        },
+        "embeddingBatchSize": 400,
+        "options": {}
+      },
+      "id": "6e189449-6c28-4636-b384-a8b036982a3b",
+      "name": "Insert Table to Supabase",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        4144,
+        1376
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "7ldcSWe5TTPVh3zH",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.content }}",
+        "textSplittingMode": "custom",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "table",
+                "value": "={{ $json.metadata.table }}"
+              },
+              {
+                "name": "file_id",
+                "value": "={{ $json.metadata.file_id || '' }}"
+              },
+              {
+                "name": "file_name",
+                "value": "={{ $json.metadata.file_name || '' }}"
+              },
+              {
+                "name": "type",
+                "value": "={{ $json.metadata.type || 'spreadsheet' }}"
+              },
+              {
+                "name": "file_type",
+                "value": "={{ $json.metadata.file_type || 'xlsx' }}"
+              },
+              {
+                "name": "total_rows",
+                "value": "={{ $json.metadata.total_rows || 0 }}"
+              },
+              {
+                "name": "columns",
+                "value": "={{ $json.metadata.columns || '' }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "656582e8-eeec-4423-bf7a-a84c058bd09b",
+      "name": "Default Data Loader Table",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        4192,
+        1568
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  id, \n  COALESCE(content, '') as content,\n  COALESCE(metadata, '{}'::jsonb) as metadata,\n  created_at \nFROM {{ $json.body.table }} \nORDER BY id ASC",
+        "options": {}
+      },
+      "id": "3d3a9c8d-23cf-4aa3-9d94-2c56c1a4b0f4",
+      "name": "Read from Postgres",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1120,
+        304
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Форматируем результаты для удобного просмотра\nconst items = $input.all();\nconst tableName = $('Webhook1').item.json.body.table;\n\n// Собираем все записи\nconst formattedResults = items.map(item => ({\n  id: item.json.id,\n  content: item.json.content,\n  metadata: item.json.metadata,\n  created_at: item.json.created_at\n}));\n\n// Важно: возвращаем данные как единый объект, но с полным массивом\nreturn [{\n  json: {\n    success: true,\n    table: tableName,\n    total_records: formattedResults.length,\n    records: formattedResults,\n    raw_count: items.length // для отладки\n  }\n}];"
+      },
+      "id": "f990591f-e5a8-41b4-bad9-1289513fb80a",
+      "name": "Format Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -912,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Форматируем результаты для читабельного отображения\nconst input = $input.first().json;\nconst tableName = input.table;\nconst records = input.records || [];\n\n// Уже отсортировано по id ASC из базы, просто форматируем\nconst formattedRecords = records.map((record, index) => {\n  // Проверяем на пустое содержимое\n  const contentDisplay = record.content || '[Пустая запись]';\n  \n  return {\n    number: index + 1,\n    content: contentDisplay,\n    id: record.id,\n    created_at: new Date(record.created_at).toLocaleString('ru-RU')\n  };\n});\n\n// Создаем текстовый вывод - УПРОЩЕННЫЙ ФОРМАТ\nconst textOutput = formattedRecords.map(record => \n  `Запись #${record.number} (ID: ${record.id})\\n${record.content}`\n).join('\\n\\n');\n\nreturn [{\n  json: {\n    success: true,\n    table: tableName,\n    total_records: formattedRecords.length,\n    records: formattedRecords,\n    formatted_text: textOutput\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -704,
+        304
+      ],
+      "id": "bbdd520e-4742-41b0-930d-774627e35e2f",
+      "name": "Format for Display"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "read-vector-base",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a8636dd0-5b4f-4414-a28d-6ea900de0baf",
+      "name": "Webhook1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1808,
+        384
+      ],
+      "webhookId": "15c9b3da-a4cf-4b6e-9cbc-e7debcca6825"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "147e554d-f810-44fd-a4e4-98c93fcdd270",
+      "name": "Respond to Webhook1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -512,
+        464
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -464,
+        1488
+      ],
+      "id": "9b32daa6-9c30-42cf-9334-0ece90018e94",
+      "name": "Error Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "// УНИВЕРСАЛЬНЫЙ ОБРАБОТЧИК ОШИБОК v2.0\n// Работает с любой структурой данных от Error Trigger\n\nconst input = $input.first().json;\n\n// Извлекаем данные с учетом разных форматов Error Trigger\nlet errorInfo = {};\n\n// Проверяем разные возможные структуры\nif (input.execution) {\n  // Формат с execution (как в вашем примере)\n  errorInfo = {\n    workflowName: input.workflow?.name || 'Неизвестный workflow',\n    workflowId: input.workflow?.id || 'unknown',\n    executionId: input.execution?.id || 'unknown',\n    executionUrl: input.execution?.url || '',\n    failedNode: input.execution?.error?.node?.name || input.execution?.lastNodeExecuted || 'Неизвестный узел',\n    nodeType: input.execution?.error?.node?.type || 'unknown',\n    errorMessage: input.execution?.error?.message || input.execution?.error?.description || 'Ошибка без описания',\n    errorStack: input.execution?.error?.stack || '',\n    timestamp: input.execution?.error?.timestamp || Date.now()\n  };\n} else if (input.error) {\n  // Простой формат с error\n  errorInfo = {\n    workflowName: input.workflow || $workflow.name || 'Неизвестный workflow',\n    workflowId: $workflow.id || 'unknown',\n    executionId: $execution.id || 'unknown',\n    executionUrl: '',\n    failedNode: input.node || input.error.node || 'Неизвестный узел',\n    nodeType: input.nodeType || 'unknown',\n    errorMessage: input.error.message || input.error || 'Ошибка без описания',\n    errorStack: input.error.stack || '',\n    timestamp: Date.now()\n  };\n} else {\n  // Fallback для любого другого формата\n  errorInfo = {\n    workflowName: $workflow.name || 'Неизвестный workflow',\n    workflowId: $workflow.id || 'unknown',\n    executionId: $execution.id || 'unknown',\n    executionUrl: '',\n    failedNode: input.node || input.nodeName || 'Неизвестный узел',\n    nodeType: 'unknown',\n    errorMessage: input.message || JSON.stringify(input).substring(0, 500),\n    errorStack: '',\n    timestamp: Date.now()\n  };\n}\n\n// Форматируем время\nconst errorTime = new Date(errorInfo.timestamp).toLocaleString('ru-RU');\n\n// УНИВЕРСАЛЬНЫЙ АНАЛИЗАТОР ОШИБОК\n// Работает для любого workflow\nlet errorCategory = '🔧 Техническая ошибка';\nlet recommendation = '';\nlet priority = '🟡 Средний';\n\n// Анализ по тексту ошибки (универсальные паттерны)\nconst errorLower = errorInfo.errorMessage.toLowerCase();\n\n// База данных\nif (errorLower.includes('relation') && errorLower.includes('does not exist')) {\n  errorCategory = '🗄️ Таблица не найдена в БД';\n  recommendation = `Таблица \"${errorInfo.errorMessage.match(/\"([^\"]+)\"/)?.[1] || 'неизвестная'}\" не существует. Создайте её или исправьте название.`;\n  priority = '🔴 Критический';\n}\nelse if (errorLower.includes('column') && errorLower.includes('does not exist')) {\n  errorCategory = '🗄️ Колонка не найдена в БД';\n  recommendation = `Колонка отсутствует в таблице. Проверьте структуру БД.`;\n  priority = '🔴 Критический';\n}\nelse if (errorLower.includes('postgres') || errorLower.includes('sql')) {\n  errorCategory = '🗄️ Ошибка PostgreSQL';\n  recommendation = 'Проверьте SQL-запрос и подключение к БД';\n  priority = '🔴 Критический';\n}\n// Сеть и подключения\nelse if (errorLower.includes('econnrefused')) {\n  errorCategory = '🔌 Сервер недоступен';\n  recommendation = 'Сервер отклонил соединение. Проверьте, что сервис запущен и доступен.';\n  priority = '🔴 Критический';\n}\nelse if (errorLower.includes('timeout') || errorLower.includes('etimedout')) {\n  errorCategory = '⏱️ Превышено время ожидания';\n  recommendation = 'Операция заняла слишком много времени. Увеличьте таймаут или проверьте сервер.';\n  priority = '🟠 Высокий';\n}\nelse if (errorLower.includes('404') || errorLower.includes('not found')) {\n  errorCategory = '🔍 Ресурс не найден';\n  recommendation = 'Проверьте правильность URL или пути к ресурсу.';\n  priority = '🟠 Высокий';\n}\n// API и авторизация\nelse if (errorLower.includes('unauthorized') || errorLower.includes('401')) {\n  errorCategory = '🔑 Ошибка авторизации';\n  recommendation = 'Проверьте API ключи и токены доступа.';\n  priority = '🔴 Критический';\n}\nelse if (errorLower.includes('rate limit') || errorLower.includes('quota')) {\n  errorCategory = '🚫 Превышен лимит API';\n  recommendation = 'Достигнут лимит запросов. Подождите или увеличьте лимиты.';\n  priority = '🟠 Высокий';\n}\n// Данные\nelse if (errorLower.includes('undefined') || errorLower.includes('cannot read')) {\n  errorCategory = '⚠️ Отсутствуют данные';\n  recommendation = 'Узел получил пустые или некорректные данные. Проверьте предыдущие узлы.';\n  priority = '🟠 Высокий';\n}\nelse if (errorLower.includes('json') || errorLower.includes('parse')) {\n  errorCategory = '📝 Ошибка парсинга данных';\n  recommendation = 'Некорректный формат JSON. Проверьте структуру данных.';\n  priority = '🟠 Высокий';\n}\n// AI\nelse if (errorLower.includes('gemini') || errorLower.includes('openai') || errorLower.includes('anthropic')) {\n  errorCategory = '🤖 Ошибка AI сервиса';\n  recommendation = 'Проверьте API ключ, лимиты и формат запроса к AI.';\n  priority = '🟠 Высокий';\n}\n\n// Формируем сообщение\nconst message = `${priority} *ОШИБКА В WORKFLOW*\n\n${errorCategory}\n\n📋 *Workflow:* ${errorInfo.workflowName}\n❌ *Сбойный узел:* ${errorInfo.failedNode}\n⏰ *Время:* ${errorTime}\n\n📝 *Описание ошибки:*\n\\`\\`\\`\n${errorInfo.errorMessage.substring(0, 500)}\n\\`\\`\\`\n\n💡 *Рекомендация:* \n${recommendation || 'Изучите детали ошибки в логах n8n'}\n\n🔍 *Как исправить:*\n1. ${errorInfo.executionUrl ? `Откройте: ${errorInfo.executionUrl}` : `Откройте n8n → Executions → ID: ${errorInfo.executionId}`}\n2. Кликните на узел \"${errorInfo.failedNode}\"\n3. ${recommendation ? 'Примените рекомендацию выше' : 'Изучите детали ошибки'}\n\n📊 *Детали:*\n- Workflow ID: \\`${errorInfo.workflowId}\\`\n- Execution ID: \\`${errorInfo.executionId}\\`\n- Тип узла: ${errorInfo.nodeType}`;\n\n// Логируем для отладки\nconsole.log('Error processed:', {\n  workflow: errorInfo.workflowName,\n  node: errorInfo.failedNode,\n  error: errorInfo.errorMessage\n});\n\nreturn [{\n  json: {\n    message: message,\n    parse_mode: 'Markdown',\n    priority: priority,\n    error_details: errorInfo\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -256,
+        1488
+      ],
+      "id": "8b05e829-b16f-4331-8ea3-95dbe95f97a1",
+      "name": "Format Error Message"
+    },
+    {
+      "parameters": {
+        "chatId": "-1002588885971",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "={{ $json.parse_mode }}"
+        }
+      },
+      "id": "b44ee13a-932c-4e27-a2a6-fcb59fcfc408",
+      "name": "Error Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -64,
+        1488
+      ],
+      "webhookId": "95289c60-3387-4996-8ec5-82ef2d620a80",
+      "credentials": {
+        "telegramApi": {
+          "id": "fn7ywFo6SxQJtPcU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// ЕДИНАЯ ПРОВЕРКА API КЛЮЧА С RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 30;\n\n// Получаем данные\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// ============================================\n// RATE LIMITING\n// ============================================\nconst staticData = $getWorkflowStaticData('global');\n\nif (!staticData.rateLimits) {\n  staticData.rateLimits = {};\n}\n\n// Очистка старых записей\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\n\n// Проверка лимита\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  \n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{\n      json: {\n        success: false,\n        error: 'Слишком много запросов',\n        details: `Превышен лимит: ${RATE_LIMIT_MAX_REQUESTS} запросов в минуту`,\n        status: 429,\n        retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000),\n        timestamp: new Date().toISOString(),\n        authorized: false\n      }\n    }];\n  }\n}\n\n// ============================================\n// ПРОВЕРКА API КЛЮЧА\n// ============================================\nlet providedKey = headers['x-api-key'] || body.apiKey || inputData.query?.apiKey || '';\n\nconst mode = body.mode || 'append';\nconst table = body.table || 'knowledge_base';\nconst editId = body.editId || null;\n\nif (!providedKey) {\n  return [{\n    json: {\n      success: false,\n      error: 'API ключ не предоставлен',\n      details: 'Для выполнения любых операций требуется API ключ',\n      status: 401,\n      mode: mode,\n      table: table,\n      timestamp: new Date().toISOString(),\n      authorized: false\n    }\n  }];\n}\n\nif (providedKey !== API_KEY) {\n  return [{\n    json: {\n      success: false,\n      error: 'Неверный API ключ',\n      details: 'Предоставленный API ключ недействителен',\n      status: 401,\n      mode: mode,\n      table: table,\n      timestamp: new Date().toISOString(),\n      authorized: false\n    }\n  }];\n}\n\n// ============================================\n// ВАЛИДАЦИЯ ТАБЛИЦЫ\n// ============================================\nconst ALLOWED_TABLES = [\n  'lead_qualification',\n  'knowledge_base_en',\n  'sales_strategies_en',\n  'contact_capture_en',\n  'conversation_scenarios_en',\n  'communication_style_en',\n  'interaction_policies_en',\n  'knowledge_base',\n  'sales_strategies', \n  'contact_capture',\n  'conversation_scenarios',\n  'communication_style',\n  'interaction_policies',\n  'documents'\n];\n\nif (!ALLOWED_TABLES.includes(table)) {\n  return [{\n    json: {\n      success: false,\n      error: `Недопустимая таблица: ${table}`,\n      details: `Разрешенные таблицы: ${ALLOWED_TABLES.join(', ')}`,\n      status: 400,\n      mode: mode,\n      timestamp: new Date().toISOString(),\n      authorized: false\n    }\n  }];\n}\n\n// ============================================\n// ПРОВЕРКИ ДЛЯ РАЗНЫХ РЕЖИМОВ\n// ============================================\nif (mode === 'delete' || mode === 'edit') {\n  if (!editId || isNaN(parseInt(editId)) || parseInt(editId) <= 0) {\n    return [{\n      json: {\n        success: false,\n        error: `Некорректный ID для операции ${mode}`,\n        details: 'ID должен быть положительным числом',\n        status: 400,\n        mode: mode,\n        table: table,\n        timestamp: new Date().toISOString(),\n        authorized: false\n      }\n    }];\n  }\n}\n\n// Проверка наличия контента (кроме delete)\nif (mode !== 'delete' && !body.content && !body.files && !body.urls) {\n  return [{\n    json: {\n      success: false,\n      error: 'Нет данных для обработки',\n      details: 'Необходимо предоставить контент, файлы или URL',\n      status: 400,\n      mode: mode,\n      table: table,\n      timestamp: new Date().toISOString(),\n      authorized: false\n    }\n  }];\n}\n\n// ============================================\n// УСПЕХ\n// ============================================\nreturn [{\n  json: {\n    ...inputData,\n    body: {\n      ...body,\n      apiKey: providedKey,\n      authorized: true\n    },\n    authorized: true\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1616,
+        944
+      ],
+      "id": "7abf109f-50ce-4353-9cd8-fe2c6302e0aa",
+      "name": "API Authorization Check"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Универсальный ответ об ошибке авторизации\nconst error = $input.first().json;\n\nreturn [{\n  json: {\n    success: false,\n    message: error.error || 'Ошибка авторизации',\n    details: error.details || '',\n    status: error.status || 401,\n    operation: {\n      mode: error.mode,\n      table: error.table,\n      editId: error.editId\n    },\n    timestamp: error.timestamp || new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1120,
+        1120
+      ],
+      "id": "1685e444-9f70-4073-98a6-916480733036",
+      "name": "Universal Auth Error"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ec520a04-3b3e-4198-830c-b65b3d2e03d1",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": " true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1392,
+        944
+      ],
+      "id": "fd958a6f-2d62-4d01-86bf-8327f3cfdec1",
+      "name": "API Authorization Check2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ec520a04-3b3e-4198-830c-b65b3d2e03d1",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": " true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1392,
+        384
+      ],
+      "id": "094c22fb-1982-49d6-bc9d-dcb808a66b15",
+      "name": "API Authorization Check1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// ПРОВЕРКА API КЛЮЧА С RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 30;\n\n// Получаем данные\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// ============================================\n// RATE LIMITING\n// ============================================\nconst staticData = $getWorkflowStaticData('global');\n\nif (!staticData.rateLimits) {\n  staticData.rateLimits = {};\n}\n\n// Очистка старых записей\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\n\n// Проверка лимита\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  \n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{\n      json: {\n        success: false,\n        error: 'Слишком много запросов',\n        details: `Превышен лимит: ${RATE_LIMIT_MAX_REQUESTS} запросов в минуту`,\n        status: 429,\n        retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000),\n        timestamp: new Date().toISOString(),\n        authorized: false\n      }\n    }];\n  }\n}\n\n// ============================================\n// ПРОВЕРКА API КЛЮЧА\n// ============================================\nlet providedKey = headers['x-api-key'] || body.apiKey || inputData.query?.apiKey || '';\n\nconst table = body.table || 'knowledge_base';\nconst tables = table.includes(',') ? table.split(',').map(t => t.trim()) : [table];\n\nif (!providedKey) {\n  return [{\n    json: {\n      success: false,\n      error: 'API ключ не предоставлен',\n      details: 'Для чтения базы данных требуется API ключ',\n      status: 401,\n      table: table,\n      timestamp: new Date().toISOString(),\n      authorized: false\n    }\n  }];\n}\n\nif (providedKey !== API_KEY) {\n  return [{\n    json: {\n      success: false,\n      error: 'Неверный API ключ',\n      details: 'Предоставленный API ключ недействителен',\n      status: 401,\n      table: table,\n      timestamp: new Date().toISOString(),\n      authorized: false\n    }\n  }];\n}\n\n// ============================================\n// ВАЛИДАЦИЯ ТАБЛИЦЫ\n// ============================================\nconst ALLOWED_TABLES = [\n  'knowledge_base_en',\n  'lead_qualification',\n  'sales_strategies_en',\n  'contact_capture_en',\n  'conversation_scenarios_en',\n  'communication_style_en',\n  'interaction_policies_en',\n  'knowledge_base',\n  'sales_strategies', \n  'contact_capture',\n  'conversation_scenarios',\n  'communication_style',\n  'interaction_policies',\n  'documents'\n];\n\nconst invalidTables = tables.filter(t => !ALLOWED_TABLES.includes(t));\n\nif (invalidTables.length > 0) {\n  return [{\n    json: {\n      success: false,\n      error: `Недопустимые таблицы: ${invalidTables.join(', ')}`,\n      details: `Разрешенные таблицы: ${ALLOWED_TABLES.join(', ')}`,\n      status: 400,\n      table: table,\n      requested_tables: tables,\n      timestamp: new Date().toISOString(),\n      authorized: false\n    }\n  }];\n}\n\n// ============================================\n// УСПЕХ\n// ============================================\nreturn [{\n  json: {\n    ...inputData,\n    body: {\n      ...body,\n      apiKey: providedKey,\n      authorized: true\n    },\n    authorized: true,\n    success: true\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1600,
+        384
+      ],
+      "id": "1e7b170c-8a1b-4404-8d50-73b27ca7b93c",
+      "name": "API Authorization Check3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Универсальный ответ об ошибке авторизации\nconst error = $input.first().json;\n\nreturn [{\n  json: {\n    success: false,\n    message: error.error || 'Ошибка авторизации',\n    details: error.details || '',\n    status: error.status || 401,\n    operation: {\n      mode: error.mode,\n      table: error.table,\n      editId: error.editId\n    },\n    timestamp: error.timestamp || new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1120,
+        464
+      ],
+      "id": "bb6b0181-5d99-4189-bc22-00e6c9699c5f",
+      "name": "Universal Auth Error1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, title FROM document_metadata \n   WHERE title = '{{ $json.fileName }}' \n   OR id = '{{ $json.fileId }}'\n   LIMIT 1",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1488,
+        816
+      ],
+      "id": "fe2dca65-d4ce-453e-80f6-38056fd2341d",
+      "name": "Check Existing Table",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "8e474418-7192-4a32-9fe6-5ac2f25ff9bf",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1648,
+        816
+      ],
+      "id": "41acb52f-cdba-4dda-8ed9-e8cb76d818a3",
+      "name": "Table Exists?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные о существующей таблице из Check Existing Table\nconst checkResult = $('Check Existing Table').item.json;\nconst originalTableData = $('Process Table Data').item.json;\n\n// Проверяем что данные действительно есть\nif (!checkResult || checkResult.length === 0) {\n  throw new Error(\"No existing table data found\");\n}\n\nconst existingTable = Array.isArray(checkResult) ? checkResult[0] : checkResult;\nconst tableId = existingTable.id || originalTableData.fileId;\n\nreturn [{\n  json: {\n    tableId: tableId,\n    tableName: originalTableData.originalTable || 'documents',\n    fileName: originalTableData.fileName,\n    originalData: originalTableData,\n    existingTableId: existingTable.id\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1840,
+        784
+      ],
+      "id": "61d104ab-fc93-434f-b3d4-8d8b4c8987ff",
+      "name": "Delete Old Table Data"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM {{ $json.tableName }}\n   WHERE metadata->>'file_id' = '{{ $json.tableId }}'\n   OR metadata->>'file_name' = '{{ $json.fileName }}'\n   RETURNING id",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2048,
+        544
+      ],
+      "id": "27d8c9b3-75c1-4053-aa7d-32b378654a1e",
+      "name": "Delete from Documents",
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM document_rows\n   WHERE dataset_id = '{{ $json.tableId }}'\n   RETURNING id",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2048,
+        720
+      ],
+      "id": "41a0f041-8904-46cc-a848-502238e21c6b",
+      "name": "Delete Table Rows",
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM document_metadata\n   WHERE id = '{{ $json.tableId }}'\n   RETURNING id",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2048,
+        880
+      ],
+      "id": "c02f82f8-6293-47e1-ae02-451b1bc9ba15",
+      "name": "Delete Table Metadata",
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем исходные данные от Process Table Data\nconst originalTableData = $('Process Table Data').item.json;\n\n// Передаем исходные данные дальше для сохранения\nreturn [{\n  json: {\n    ...originalTableData,\n    skipDelete: true,  // Флаг что удаление не требовалось\n    message: \"New table - no deletion needed\"\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1840,
+        960
+      ],
+      "id": "4d97891b-9958-4018-b85e-50494891e1c1",
+      "name": "Pass Original Table Data"
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2288,
+        784
+      ],
+      "id": "a58ce4fe-54d0-4fae-a1fe-df548ad781f5",
+      "name": "Merge Delete Results"
+    },
+    {
+      "parameters": {
+        "jsCode": "// После удаления передаем исходные данные для сохранения новых\nconst deleteResults = $input.all();\n// Берем оригинальные данные из узла Delete Old Table Data\nconst deleteNodeData = $('Delete Old Table Data').first().json;\nconst originalData = deleteNodeData.originalData;\n\n// Подсчитываем количество удаленных записей\nlet totalDeleted = 0;\ndeleteResults.forEach(result => {\n  if (result.json && Array.isArray(result.json)) {\n    totalDeleted += result.json.length;\n  } else if (result.json && result.json.id) {\n    totalDeleted += 1;\n  }\n});\n\nreturn [{\n  json: {\n    ...originalData,\n    deletionCompleted: true,\n    deletedRecords: totalDeleted,\n    message: \"Old data deleted, ready to save new\"\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2496,
+        800
+      ],
+      "id": "d5a5f5f1-a5fe-4384-a13a-ff85cacab6b7",
+      "name": "Pass Data After Delete"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ==========================================\n-- 1. ТАБЛИЦА МЕТАДАННЫХ ДОКУМЕНТОВ\n-- ==========================================\nCREATE TABLE IF NOT EXISTS {{ $json.table_metadata }} (\n    id VARCHAR PRIMARY KEY,\n    title VARCHAR NOT NULL,\n    file_type VARCHAR(10),\n    url VARCHAR,\n    schema JSONB,\n    total_rows INTEGER,\n    text_content TEXT,\n    vector_indexed BOOLEAN DEFAULT FALSE,\n    created_at TIMESTAMP DEFAULT NOW()\n);\n\n-- ==========================================\n-- 2. ТАБЛИЦА ДЛЯ СТРОК ДОКУМЕНТОВ\n-- ==========================================\nCREATE TABLE IF NOT EXISTS {{ $json.table_rows }} (\n    id SERIAL PRIMARY KEY,\n    dataset_id VARCHAR REFERENCES {{ $json.table_metadata }}(id) ON DELETE CASCADE,\n    row_number INTEGER,\n    row_data JSONB NOT NULL,\n    created_at TIMESTAMP DEFAULT NOW()\n);\n\n-- ==========================================\n-- 3. ИНДЕКСЫ ДЛЯ ПРОИЗВОДИТЕЛЬНОСТИ\n-- ==========================================\nCREATE INDEX IF NOT EXISTS idx_{{ $json.table_rows }}_dataset \n  ON {{ $json.table_rows }}(dataset_id);\n  \nCREATE INDEX IF NOT EXISTS idx_{{ $json.table_rows }}_data \n  ON {{ $json.table_rows }} USING GIN(row_data);\n  \nCREATE INDEX IF NOT EXISTS idx_{{ $json.table_metadata }}_created \n  ON {{ $json.table_metadata }}(created_at);\n  \nCREATE INDEX IF NOT EXISTS idx_{{ $json.table_metadata }}_text \n  ON {{ $json.table_metadata }} USING GIN(to_tsvector('english', COALESCE(text_content, '')));\n\n-- ==========================================\n-- 4. ТАБЛИЦА ДЛЯ ВСЕХ ДОКУМЕНТОВ (ВЕКТОРНЫЙ ПОИСК)\n-- ==========================================\nCREATE TABLE IF NOT EXISTS {{ $json.table_documents }} (\n  id BIGSERIAL PRIMARY KEY,\n  content TEXT NOT NULL,\n  metadata JSONB DEFAULT '{}',\n  embedding vector(768),\n  created_at TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- ==========================================\n-- 5. ИНДЕКСЫ ДЛЯ ВЕКТОРНОГО ПОИСКА\n-- ==========================================\nCREATE INDEX IF NOT EXISTS idx_{{ $json.table_documents }}_embedding \n  ON {{ $json.table_documents }} USING ivfflat (embedding vector_cosine_ops) \n  WITH (lists = 100);\n  \nCREATE INDEX IF NOT EXISTS idx_{{ $json.table_documents }}_metadata \n  ON {{ $json.table_documents }} USING GIN (metadata);\n\n-- ==========================================\n-- 6. ФУНКЦИЯ ДЛЯ ВЕКТОРНОГО ПОИСКА\n-- ==========================================\nCREATE OR REPLACE FUNCTION public.match_{{ $json.table_documents }}(\n  filter jsonb,\n  match_count int, \n  query_embedding vector(768)\n)\nRETURNS TABLE (\n  id bigint,\n  content text,\n  metadata jsonb,\n  similarity float\n)\nLANGUAGE plpgsql\nAS $$\nBEGIN\n  RETURN QUERY\n  SELECT \n    d.id,\n    d.content,\n    d.metadata,\n    1 - (d.embedding <=> query_embedding) as similarity\n  FROM {{ $json.table_documents }} d\n  WHERE \n    CASE \n      WHEN filter IS NOT NULL THEN d.metadata @> filter\n      ELSE true\n    END\n  ORDER BY d.embedding <=> query_embedding\n  LIMIT match_count;\nEND;\n$$;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1392,
+        -128
+      ],
+      "id": "e53fe731-8c6a-4b60-8202-a6f2f337792d",
+      "name": "CREATE TABLE EXEL",
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "2b5d44ea-57a0-494f-a3bf-c96ae28b43cd",
+              "name": "table_metadata",
+              "value": "reports_metadata",
+              "type": "string"
+            },
+            {
+              "id": "0c87497c-95ad-4b47-a8fa-35dca9d0cec9",
+              "name": "table_rows",
+              "value": "reports_rows",
+              "type": "string"
+            },
+            {
+              "id": "bbd79ac9-e1ee-4934-95c7-e2d864a56f8b",
+              "name": "table_documents",
+              "value": "reports_documents",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1600,
+        -128
+      ],
+      "id": "ba376f44-42f7-428b-ae25-cca238f2a94d",
+      "name": "Table Config"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Форматируем контент для прямой загрузки (без AI обработки)\nconst inputData = $input.first().json;\nconst body = inputData.body || inputData;\n\n// Определяем источник данных\nlet rawContent = '';\nlet sourceType = '';\nlet fileName = 'text_content';\n\n// Проверяем откуда пришли данные\nif (inputData.extractedContent) {\n  // Данные от Format File Data (файлы)\n  rawContent = inputData.extractedContent;\n  sourceType = 'file';\n  fileName = inputData.fileName || 'uploaded_file';\n} else if (body.content || body.textContent) {\n  // Данные от Prepare Data (текст)\n  rawContent = body.content || body.textContent || \"\";\n  sourceType = 'text';\n} else {\n  // Fallback\n  rawContent = JSON.stringify(inputData);\n  sourceType = 'unknown';\n}\n\n// Получаем параметры\nconst table = body.table || inputData.originalTable || 'knowledge_base';\nconst mode = body.mode || inputData.originalMode || 'append';\n\nconsole.log(`Format Direct Content: source=${sourceType}, length=${rawContent.length}, table=${table}`);\n\n// Создаем структуру идентичную Parse AI Response\nreturn [{\n  json: {\n    table: table,\n    documents: [{\n      content: rawContent,\n      metadata: {\n        category: \"general\",\n        created_at: new Date().toISOString(),\n        table: table,\n        mode: mode,\n        skipAI: true,\n        direct_load: true,\n        source_type: sourceType,\n        file_name: fileName,\n        content_length: rawContent.length\n      }\n    }],\n    mode: mode,\n    documentsCount: 1,\n    filesProcessed: 1\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3488,
+        1264
+      ],
+      "id": "5b319865-4407-4ca9-8326-ce4766c71666",
+      "name": "Format Direct Content"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2896,
+        1376
+      ],
+      "id": "e167d4cf-e662-4737-bd46-a687bd2f474e",
+      "name": "Merge1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "1f9b4d1c-5557-401e-95c9-29e43bd15ab1",
+              "leftValue": "={{ $json.body.skipAI === true && ($json.body.mode === 'append' || $json.body.mode === 'replace') }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3328,
+        1376
+      ],
+      "id": "26977d89-c466-45b4-b1fa-446dcf88767b",
+      "name": "Check Skip AI"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Распространяем флаг skipAI на все элементы\nconst items = $input.all();\nconst processedItems = [];\n\n// Ищем skipAI в узле Prepare Data\nlet skipAIFlag = false;\nconst prepareDataNode = $('Prepare Data');\nif (prepareDataNode && prepareDataNode.item && prepareDataNode.item.json) {\n  skipAIFlag = prepareDataNode.item.json.body?.skipAI || false;\n}\n\nconsole.log(`Propagate Skip AI: found skipAI=${skipAIFlag} from Prepare Data`);\n\n// Обрабатываем все элементы\nitems.forEach((item, index) => {\n  const json = item.json;\n  \n  // Если это элемент от Format File Data (нет body.skipAI)\n  if (!json.body || json.body.skipAI === undefined) {\n    // Добавляем skipAI из Prepare Data\n    processedItems.push({\n      json: {\n        ...json,\n        body: {\n          ...(json.body || {}),\n          skipAI: skipAIFlag,\n          mode: json.originalMode || json.body?.mode || 'append',\n          table: json.originalTable || json.body?.table || 'knowledge_base'\n        }\n      }\n    });\n    console.log(`Item ${index}: Added skipAI=${skipAIFlag} from Prepare Data`);\n  } else {\n    // Элемент уже имеет skipAI (от Prepare Data)\n    processedItems.push(item);\n    console.log(`Item ${index}: Already has skipAI=${json.body.skipAI}`);\n  }\n});\n\nreturn processedItems;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3104,
+        1376
+      ],
+      "id": "140046ad-b2cd-496b-a4b6-5826437af145",
+      "name": "Propagate Skip AI"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- База знаний о продукте\nCREATE TABLE {{ $json.table_interaction }} (\n  id BIGSERIAL PRIMARY KEY,\n  content TEXT NOT NULL,\n  metadata JSONB DEFAULT '{}',\n  embedding vector(768),\n  created_at TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- Создание индекса для векторного поиска\nCREATE INDEX ON {{ $json.table_interaction }} USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);\n\n-- Функция для векторного поиска\nCREATE OR REPLACE FUNCTION public.match_{{ $json.table_interaction }}(\n  filter jsonb,\n  match_count int, \n  query_embedding vector(768)\n)\nRETURNS TABLE (\n  id bigint,\n  content text,\n  metadata jsonb,\n  similarity float\n)\nLANGUAGE plpgsql\nAS $$\nBEGIN\n  RETURN QUERY\n  SELECT \n    kb.id,\n    kb.content,\n    kb.metadata,\n    1 - (kb.embedding <=> query_embedding) as similarity\n  FROM {{ $json.table_interaction }} kb\n  ORDER BY kb.embedding <=> query_embedding\n  LIMIT match_count;\nEND;\n$$;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1376,
+        48
+      ],
+      "id": "fcb53b19-4e05-4868-82bf-b1f4793ce963",
+      "name": "CREATE TABLE",
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1808,
+        48
+      ],
+      "id": "10791516-fa4d-475c-ad87-3b6551055285",
+      "name": "CREATE TABLE1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "99a0428a-8f3a-4f3d-af56-01af8463f8aa",
+              "name": "table_interaction",
+              "value": "LEAD_QUALIFICATION",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1584,
+        48
+      ],
+      "id": "ef36bb41-3d2a-4600-a63b-cdaa5fbf5ef7",
+      "name": "Table Config t"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM ai_learning_log ORDER BY created_at DESC LIMIT 200",
+        "options": {}
+      },
+      "id": "445668c0-37ef-4354-b8ea-de3ac6eeade9",
+      "name": "Get Learning Logs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1568,
+        1488
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные из всех источников\nconst logs = $input.all();\n\n// Инициализируем объект статистики\nconst stats = {\n  totalCycles: 0,\n  totalDialogs: 0,\n  approvedUpdates: 0,\n  rejectedUpdates: 0,\n  currentCycle: null,\n  recentUpdates: [],\n  dailyStats: [],\n  tableStats: {},\n  avgPriority: 0,\n  mostActiveTable: ''\n};\n\n// Переменные для подсчета\nlet totalDialogs = 0;\nlet priorities = [];\nconst tableCount = {};\nlet cycleCount = 0;\nlet approvedCount = 0;\nlet rejectedCount = 0;\n\n// Сначала находим последний цикл\nlet lastCycle = null;\nlet hasCompletedRecord = false;\n\n// Первый проход - сначала ищем cycle_completed, потом cycle_started\nlet completedSessions = new Set();\n\n// Сначала собираем все завершенные сессии\nfor (const item of logs) {\n  const log = item.json;\n  if (log.type === 'cycle_completed') {\n    completedSessions.add(log.session_id);\n  }\n}\n\n// Теперь находим последний цикл\nfor (const item of logs) {\n  const log = item.json;\n  \n  // Находим первый (он же последний по времени) cycle_started\n  if (log.type === 'cycle_started' && !lastCycle) {\n    lastCycle = {\n      log: log,\n      metadata: typeof log.metadata === 'string' ? JSON.parse(log.metadata || '{}') : (log.metadata || {})\n    };\n    // Проверяем, завершен ли этот цикл\n    hasCompletedRecord = completedSessions.has(log.session_id);\n    break; // Нашли последний цикл, выходим\n  }\n}\n\n// Устанавливаем текущий цикл если нашли\nif (lastCycle) {\n  stats.currentCycle = {\n    status: hasCompletedRecord ? 'completed' : lastCycle.log.status,\n    startTime: lastCycle.log.created_at,\n    dialogs: 0,\n    totalDialogs: lastCycle.metadata.dialogs_to_analyze || 15,\n    workflowId: lastCycle.metadata.workflow_execution_id || 'N/A',\n    sessionId: lastCycle.log.session_id,\n    completionTime: null // Добавляем поле для времени завершения\n  };\n  \n  // Если цикл завершен, ищем время завершения из записи cycle_completed\n  if (hasCompletedRecord) {\n    for (const item of logs) {\n      const log = item.json;\n      if (log.type === 'cycle_completed' && log.session_id === lastCycle.log.session_id) {\n        stats.currentCycle.completionTime = log.created_at;\n        // Также можем взять количество обработанных диалогов из metadata если есть\n        if (log.metadata) {\n          try {\n            const completedMeta = typeof log.metadata === 'string' ? JSON.parse(log.metadata) : log.metadata;\n            if (completedMeta.dialogs_analyzed) {\n              stats.currentCycle.dialogs = parseInt(completedMeta.dialogs_analyzed) || 0;\n            }\n          } catch (e) {\n            // Игнорируем ошибки парсинга\n          }\n        }\n        break;\n      }\n    }\n  }\n}\n\n// Второй проход - собираем статистику\nfor (const item of logs) {\n  const log = item.json;\n  \n  let metadata = {};\n  if (log.metadata) {\n    try {\n      metadata = typeof log.metadata === 'string' ? JSON.parse(log.metadata) : log.metadata;\n    } catch (e) {\n      metadata = {};\n    }\n  }\n  \n  // Дальше идет существующий код обработки...\n  \n  // Подсчет циклов\n  if (log.type === 'cycle_started') {\n    cycleCount++;\n    totalDialogs += parseInt(metadata.dialogs_to_analyze) || 0;\n  }\n  \n  // Подсчет обновлений\n  if (log.type === 'approved_update') {\n    approvedCount++;\n    const update = {\n      time: log.created_at,\n      type: log.type,\n      action: log.action || 'unknown',\n      table: log.table_name || 'unknown',\n      status: log.status || 'applied',\n      priority: metadata.priority || null,\n      content: log.content || null,\n      reason: log.reason || null,  // ДОБАВЛЕНО\n      problem_addressed: log.problem_addressed || null  // ДОБАВЛЕНО\n    };\n    \n    stats.recentUpdates.push(update);\n    \n    if (metadata.priority) {\n      priorities.push(parseInt(metadata.priority));\n    }\n    \n    if (log.table_name) {\n      tableCount[log.table_name] = (tableCount[log.table_name] || 0) + 1;\n    }\n  }\n  \n  if (log.type === 'rejected_update') {\n    rejectedCount++;\n    const update = {\n      time: log.created_at,\n      type: log.type,\n      action: log.action || 'unknown',\n      table: log.table_name || 'unknown',\n      status: log.status || 'rejected',\n      priority: null,\n      content: log.content || null,\n      reason: log.reason || null,  // ДОБАВЛЕНО\n      problem_addressed: log.problem_addressed || null  // ДОБАВЛЕНО\n    };\n    \n    stats.recentUpdates.push(update);\n    \n    if (log.table_name) {\n      tableCount[log.table_name] = (tableCount[log.table_name] || 0) + 1;\n    }\n  }\n}\n\n// Устанавливаем финальные значения\nstats.totalCycles = cycleCount;\nstats.totalDialogs = totalDialogs;\nstats.approvedUpdates = approvedCount;\nstats.rejectedUpdates = rejectedCount;\n\n// Рассчитываем средний приоритет\nif (priorities.length > 0) {\n  stats.avgPriority = Math.round(priorities.reduce((a, b) => a + b, 0) / priorities.length);\n}\n\n// Находим самую активную таблицу\nif (Object.keys(tableCount).length > 0) {\n  const sorted = Object.entries(tableCount).sort((a, b) => b[1] - a[1]);\n  stats.mostActiveTable = sorted[0][0];\n}\n\n// Генерируем статистику по дням\nconst dayNames = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];\nconst today = new Date();\n\n// Создаем массив для последних 7 дней\nfor (let i = 6; i >= 0; i--) {\n  const date = new Date(today);\n  date.setDate(date.getDate() - i);\n  const dayName = dayNames[date.getDay()];\n  \n  // Подсчитываем обновления за этот день\n  let dayUpdates = 0;\n  let dayRejected = 0;\n  \n  const dayStart = new Date(date.setHours(0, 0, 0, 0));\n  const dayEnd = new Date(date.setHours(23, 59, 59, 999));\n  \n  for (const update of stats.recentUpdates) {\n    const updateDate = new Date(update.time);\n    if (updateDate >= dayStart && updateDate <= dayEnd) {\n      if (update.status === 'applied') dayUpdates++;\n      if (update.status === 'rejected') dayRejected++;\n    }\n  }\n  \n  stats.dailyStats.push({\n    date: dayName,\n    updates: dayUpdates,\n    rejected: dayRejected\n  });\n}\n\n// Статистика по таблицам\nfor (const [table, count] of Object.entries(tableCount)) {\n  if (!stats.tableStats[table]) {\n    stats.tableStats[table] = {\n      total: 0,\n      approved: 0,\n      rejected: 0\n    };\n  }\n  stats.tableStats[table].total = count;\n}\n\n// Подсчитываем approved/rejected по таблицам\nfor (const update of stats.recentUpdates) {\n  if (update.table && stats.tableStats[update.table]) {\n    if (update.status === 'applied') {\n      stats.tableStats[update.table].approved++;\n    } else if (update.status === 'rejected') {\n      stats.tableStats[update.table].rejected++;\n    }\n  }\n}\n\n// Ограничиваем количество последних обновлений\nstats.recentUpdates = stats.recentUpdates.slice(0, 50);\n\n// Если нет текущего цикла, ставим заглушку\nif (!stats.currentCycle) {\n  stats.currentCycle = {\n    status: 'completed',\n    startTime: new Date().toISOString(),\n    dialogs: 0,\n    totalDialogs: 0,\n    workflowId: 'N/A'\n  };\n}\n\n// Возвращаем результат\nreturn {\n  success: true,\n  stats: stats,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "abac25e7-f518-4b46-abd1-a509e3adaf4f",
+      "name": "Process Statistics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1152,
+        1568
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "condition_1",
+                    "leftValue": "={{ $json.error }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "object",
+                      "operation": "exists",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Error"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "5b6ffd7b-00fc-47f5-9f1b-df8dc93e6481",
+      "name": "Check for Errors",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -1376,
+        1488
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Возвращаем ошибку\nreturn {\n  success: false,\n  error: 'Failed to fetch statistics',\n  stats: {\n    totalCycles: 0,\n    totalDialogs: 0,\n    approvedUpdates: 0,\n    rejectedUpdates: 0,\n    currentCycle: null,\n    recentUpdates: [],\n    dailyStats: [],\n    tableStats: {}\n  }\n};"
+      },
+      "id": "7e704029-dc92-462f-a19c-9fd3b513cc69",
+      "name": "Return Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1152,
+        1408
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "12e41d34-6486-48e4-b72e-7ab2231e6047",
+      "name": "Respond to Webhook2",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -928,
+        1488
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "get-learning-stats",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1831517b-c241-401c-a9e9-e9073e7d2f5c",
+      "name": "Webhook2",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1744,
+        1488
+      ],
+      "webhookId": "23185d3e-8d97-4d02-a46c-6fbfb27ee70e"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "API Authorization Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Mode": {
+      "main": [
+        [
+          {
+            "node": "Clear Table",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Prepare Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delete Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear Table": {
+      "main": [
+        [
+          {
+            "node": "Pass Data After Clear",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Prepare Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Data": {
+      "main": [
+        [
+          {
+            "node": "Has Files?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Record": {
+      "main": [
+        [
+          {
+            "node": "Prepare Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Files?": {
+      "main": [
+        [
+          {
+            "node": "Check Data Type",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Files": {
+      "main": [
+        [
+          {
+            "node": "Process File Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process File Content": {
+      "main": [
+        [
+          {
+            "node": "Switch File Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch File Type": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rename DOCX to ZIP",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract from File1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fallback Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF Text": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fallback Extraction": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Files": {
+      "main": [
+        [
+          {
+            "node": "Format File Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Check Edit Mode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Edit Mode": {
+      "main": [
+        [
+          {
+            "node": "Prepare SQL for Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Split Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare SQL for Update": {
+      "main": [
+        [
+          {
+            "node": "Update Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Record": {
+      "main": [
+        [
+          {
+            "node": "Merge After Edit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Documents": {
+      "main": [
+        [
+          {
+            "node": "Insert to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Merge After Edit",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Google Gemini Embeddings": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Insert to Supabase",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Insert to Supabase",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge After Edit": {
+      "main": [
+        [
+          {
+            "node": "Prepare Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format File Data": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Operation, do nothing": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Rename DOCX to ZIP": {
+      "main": [
+        [
+          {
+            "node": "Compression",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compression": {
+      "main": [
+        [
+          {
+            "node": "Extract document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract document": {
+      "main": [
+        [
+          {
+            "node": "Extract Text from XML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text from XML": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recursive Character Text Splitter": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Default Data Loader",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Data After Clear": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Data Type": {
+      "main": [
+        [
+          {
+            "node": "Split Files",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process URLs": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Download Files from URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Files from URLs": {
+      "main": [
+        [
+          {
+            "node": "Convert Downloaded to File Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert Downloaded to File Format": {
+      "main": [
+        [
+          {
+            "node": "Process File Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Process Table Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File1": {
+      "main": [
+        [
+          {
+            "node": "Process Table Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Table Data": {
+      "main": [
+        [
+          {
+            "node": "Check Existing Table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Table Metadata": {
+      "main": [
+        [
+          {
+            "node": "Pass Table Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Table Rows": {
+      "main": [
+        [
+          {
+            "node": "Save Table Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Table Process Complete": {
+      "main": [
+        [
+          {
+            "node": "Merge After Edit",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Pass Table Data": {
+      "main": [
+        [
+          {
+            "node": "Vectorize Table",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Split Table Rows",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Table Process Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vectorize Table": {
+      "main": [
+        [
+          {
+            "node": "Insert Table to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Embeddings1": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Insert Table to Supabase",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recursive Character Text Splitter1": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Default Data Loader Table",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Table to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Merge After Edit",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Default Data Loader Table": {
+      "ai_document": [
+        [
+          {
+            "node": "Insert Table to Supabase",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read from Postgres": {
+      "main": [
+        [
+          {
+            "node": "Format Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Results": {
+      "main": [
+        [
+          {
+            "node": "Format for Display",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format for Display": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook1": {
+      "main": [
+        [
+          {
+            "node": "API Authorization Check3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error Message": {
+      "main": [
+        [
+          {
+            "node": "Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API Authorization Check": {
+      "main": [
+        [
+          {
+            "node": "API Authorization Check2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Universal Auth Error": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API Authorization Check2": {
+      "main": [
+        [
+          {
+            "node": "Switch Mode",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Universal Auth Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API Authorization Check1": {
+      "main": [
+        [
+          {
+            "node": "Read from Postgres",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Universal Auth Error1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API Authorization Check3": {
+      "main": [
+        [
+          {
+            "node": "API Authorization Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Universal Auth Error1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Existing Table": {
+      "main": [
+        [
+          {
+            "node": "Table Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Table Exists?": {
+      "main": [
+        [
+          {
+            "node": "Delete Old Table Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pass Original Table Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Old Table Data": {
+      "main": [
+        [
+          {
+            "node": "Delete from Documents",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Delete Table Rows",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Delete Table Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete from Documents": {
+      "main": [
+        [
+          {
+            "node": "Merge Delete Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Table Rows": {
+      "main": [
+        [
+          {
+            "node": "Merge Delete Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Delete Table Metadata": {
+      "main": [
+        [
+          {
+            "node": "Merge Delete Results",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Pass Original Table Data": {
+      "main": [
+        [
+          {
+            "node": "Save Table Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Delete Results": {
+      "main": [
+        [
+          {
+            "node": "Pass Data After Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Data After Delete": {
+      "main": [
+        [
+          {
+            "node": "Save Table Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Table Config": {
+      "main": [
+        [
+          {
+            "node": "CREATE TABLE EXEL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "Propagate Skip AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Skip AI": {
+      "main": [
+        [
+          {
+            "node": "Format Direct Content",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Direct Content": {
+      "main": [
+        [
+          {
+            "node": "Split Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Propagate Skip AI": {
+      "main": [
+        [
+          {
+            "node": "Check Skip AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CREATE TABLE1": {
+      "main": [
+        [
+          {
+            "node": "Table Config t",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Table Config t": {
+      "main": [
+        [
+          {
+            "node": "CREATE TABLE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Learning Logs": {
+      "main": [
+        [
+          {
+            "node": "Check for Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Statistics": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for Errors": {
+      "main": [
+        [
+          {
+            "node": "Return Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Statistics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Return Error": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook2": {
+      "main": [
+        [
+          {
+            "node": "Get Learning Logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "30115c99-50a4-429f-9658-57897fc58fca",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "lJt2puFWBfSteZKx",
+  "tags": []
+}

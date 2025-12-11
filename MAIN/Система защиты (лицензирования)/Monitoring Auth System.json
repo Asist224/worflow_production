@@ -1,0 +1,875 @@
+{
+  "name": "Monitoring Auth System",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "auth-login",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "fde176dc-f740-4aaa-a361-81625b42662a",
+      "name": "Webhook Login",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1040,
+        144
+      ],
+      "webhookId": "auth-login"
+    },
+    {
+      "parameters": {
+        "jsCode": "// =====================================================\n// ВАЛИДАЦИЯ ВХОДНЫХ ДАННЫХ ОТ ФОРМЫ ЛОГИНА\n// =====================================================\n\n// Получаем данные из webhook\nconst body = $input.first().json.body;\n\n// Проверяем наличие обязательных полей\nif (!body || typeof body !== 'object') {\n    throw new Error('Invalid request: body is missing or not an object');\n}\n\nconst { username, password } = body;\n\n// Валидация username\nif (!username || typeof username !== 'string' || username.trim().length < 3) {\n    throw new Error('Invalid username: must be at least 3 characters');\n}\n\n// Валидация password\nif (!password || typeof password !== 'string' || password.length < 6) {\n    throw new Error('Invalid password: must be at least 6 characters');\n}\n\n// Возвращаем очищенные данные\nreturn [{\n    json: {\n        username: username.trim().toLowerCase(),\n        password: password,\n        originalUsername: username.trim()\n    }\n}];"
+      },
+      "id": "bb0d25ef-df4f-4604-b78b-1457ec60224c",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -512,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, username, password_hash, email, role, is_active \nFROM auth_users \nWHERE username = $1 AND is_active = true",
+        "options": {
+          "queryReplacement": "={{ $json.username }}"
+        }
+      },
+      "id": "6c6cf7b4-ecfb-4f1d-82e9-9b5c3fb0cb80",
+      "name": "Get User from DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -352,
+        112
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// =====================================================\n// ПОДГОТОВКА ДАННЫХ ДЛЯ ПРОВЕРКИ ПАРОЛЯ\n// =====================================================\n\nconst adminData = $input.first().json;\nconst requestData = $('Validate Input').first().json;\n\n// Если пользователь не найден\nif (!adminData.username) {\n    return [{\n        json: {\n            success: false,\n            message: 'Invalid credentials',\n            authenticated: false\n        }\n    }];\n}\n\n// Передаем данные для проверки пароля через PostgreSQL\nreturn [{\n    json: {\n        user_id: adminData.id,\n        username: adminData.username,\n        password_hash: adminData.password_hash,\n        role: adminData.role,\n        email: adminData.email,\n        input_password: requestData.password\n    }\n}];"
+      },
+      "id": "35c45f77-b01d-4b82-b3d7-6f9eaedb9692",
+      "name": "Verify Password",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE auth_users \nSET last_login = NOW()\nWHERE id = '{{ $json.user.id }}'\nRETURNING id, username, role;",
+        "options": {}
+      },
+      "id": "dbb0b969-b610-47d9-b709-3bfd546ced7c",
+      "name": "Update Last Login",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1184,
+        16
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $('Format Response').first().json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "71b9471c-a95b-4445-93ba-57bc55050e48",
+      "name": "Response Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1392,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"authenticated\": false,\n  \"message\": \"Invalid credentials\"\n}",
+        "options": {
+          "responseCode": 401,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "3d2f078a-a5ab-48a0-92b6-d3f52f136f10",
+      "name": "Response Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        832,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "auth-validate",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1689037b-e859-4310-bff6-75360062406b",
+      "name": "Webhook Validate Token",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1024,
+        496
+      ],
+      "webhookId": "auth-validate"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "71a3e61a-fca5-4027-aa11-2b0cde9ea35c",
+      "name": "Response Validate",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        352,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  CASE \n    WHEN '{{ $json.password_hash }}' = crypt('{{ $json.input_password }}', '{{ $json.password_hash }}')\n    THEN true\n    ELSE false\n  END as password_valid;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        16
+      ],
+      "id": "a62e9d13-8d29-4982-b9e0-237b677ca1ea",
+      "name": "Check Password",
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// =====================================================\n// ОБЪЕДИНЕНИЕ РЕЗУЛЬТАТОВ ПРОВЕРКИ ПАРОЛЯ\n// =====================================================\n\nconst passwordCheck = $input.first().json;\nconst userData = $('Verify Password').first().json;\n\nreturn [{\n    json: {\n        ...userData,\n        password_valid: passwordCheck.password_valid\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        16
+      ],
+      "id": "7a03867f-a202-4e97-a24d-958e26ef8a7e",
+      "name": "Merge Results"
+    },
+    {
+      "parameters": {
+        "useJson": true,
+        "claimsJson": "={\n  \"user_id\": \"{{ $('Merge Results').first().json.user_id }}\",\n  \"username\": \"{{ $('Merge Results').first().json.username }}\",\n  \"role\": \"{{ $('Merge Results').first().json.role }}\",\n  \"email\": \"{{ $('Merge Results').first().json.email }}\"\n}",
+        "options": {
+          "algorithm": "HS256"
+        }
+      },
+      "id": "fc4b3b8a-a11e-43f9-afbd-60939d609410",
+      "name": "Generate JWT Token",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        832,
+        16
+      ],
+      "credentials": {
+        "jwtAuth": {
+          "id": "avobCe37AxPkeOXa",
+          "name": "License System JWT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// =====================================================\n// ФОРМИРОВАНИЕ ФИНАЛЬНОГО ОТВЕТА\n// =====================================================\n\nconst jwtToken = $input.first().json;\nconst userData = $('Merge Results').first().json;\n\nreturn [{\n    json: {\n        success: true,\n        authenticated: true,\n        token: jwtToken.token,\n        expires_in: '24h',\n        user: {\n            id: userData.user_id,\n            username: userData.username,\n            email: userData.email,\n            role: userData.role\n        }\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        16
+      ],
+      "id": "a8941dc9-2005-417a-976e-fe1a9020052e",
+      "name": "Format Response"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "user-found",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "exists",
+                "operation": "exists"
+              }
+            },
+            {
+              "id": "19ecb939-6792-4d63-8e3f-16b4b1460676",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3eae599f-90de-4059-ac2e-1e0b1b6583b3",
+      "name": "User Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7a3db021-c00c-46dc-9925-e642df301d35",
+              "leftValue": "={{ $json.password_valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        608,
+        32
+      ],
+      "id": "af766760-594b-4256-b8a0-30a1d427da6c",
+      "name": "IF Auth Success"
+    },
+    {
+      "parameters": {
+        "operation": "verify",
+        "token": "={{ $json.token }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        -304,
+        464
+      ],
+      "id": "92fb8893-3162-4526-8148-a987f5e61239",
+      "name": "JWT",
+      "alwaysOutputData": false,
+      "credentials": {
+        "jwtAuth": {
+          "id": "avobCe37AxPkeOXa",
+          "name": "License System JWT"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// =====================================================\n// ИЗВЛЕЧЕНИЕ JWT ТОКЕНА ИЗ ЗАГОЛОВКА AUTHORIZATION\n// =====================================================\n\n// Получаем заголовок Authorization\nconst authHeader = $input.first().json.headers?.authorization || \n                   $input.first().json.headers?.Authorization;\n\n// Проверяем наличие заголовка\nif (!authHeader) {\n    throw new Error('Missing Authorization header');\n}\n\n// Проверяем формат \"Bearer <token>\"\nif (!authHeader.startsWith('Bearer ')) {\n    throw new Error('Invalid Authorization header format. Expected: Bearer <token>');\n}\n\n// Извлекаем токен (убираем \"Bearer \")\nconst token = authHeader.substring(7).trim();\n\n// Проверяем что токен не пустой\nif (!token) {\n    throw new Error('Empty token in Authorization header');\n}\n\n// Возвращаем токен для JWT узла\nreturn [{\n    json: {\n        token: token,\n        // Сохраняем оригинальные данные для использования позже\n        originalHeaders: $input.first().json.headers\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        464
+      ],
+      "id": "193be325-8f79-42bd-9808-5cd3f69065e2",
+      "name": "Extract Token from Heade"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "80416628-a9f0-47dd-9419-cbd428b3b6c3",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -96,
+        464
+      ],
+      "id": "8b67025f-fe3a-4697-95fa-6d0e22ecbe11",
+      "name": "Token Valid?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// =====================================================\n// ФОРМАТИРОВАНИЕ УСПЕШНОГО ОТВЕТА\n// =====================================================\n\n// Получаем расшифрованные данные из JWT\nconst payload = $input.first().json.payload || $input.first().json;\n\n// Формируем ответ в нужном формате\nreturn [{\n    json: {\n        valid: true,\n        user: {\n            id: payload.user_id || payload.userId,\n            username: payload.username,\n            role: payload.role,\n            email: payload.email\n        }\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        112,
+        368
+      ],
+      "id": "5caaf448-13bb-44ca-8854-036ec8d71201",
+      "name": "Format Success Response"
+    },
+    {
+      "parameters": {
+        "jsCode": "// =====================================================\n// ФОРМАТИРОВАНИЕ ОТВЕТА ПРИ ОШИБКЕ\n// =====================================================\n\nreturn [{\n    json: {\n        valid: false,\n        error: 'Invalid or expired token'\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        112,
+        560
+      ],
+      "id": "a71b6338-0223-4bf8-b192-c0f17f23816e",
+      "name": "Format Error Response"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 401,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "7588041f-bb49-4714-9944-bc6397cfffdb",
+      "name": "Format Error Response1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        304,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -896,
+        144
+      ],
+      "id": "aa1f6170-2725-4f6d-8822-c5dec44f582d",
+      "name": "Security Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -736,
+        144
+      ],
+      "id": "709f637c-b51f-48f6-bea2-2d2b2f2c6099",
+      "name": "Auth Check"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -512,
+        272
+      ],
+      "id": "849dcf7b-15e5-418d-bdae-f1073f350aad",
+      "name": "Error Response"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -848,
+        496
+      ],
+      "id": "3fa252b2-521c-4ec2-932d-f4c1ed93ce54",
+      "name": "Security Check1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -704,
+        496
+      ],
+      "id": "774301f8-a57d-4879-8a7e-f158ea97bd27",
+      "name": "Auth Check1"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -464,
+        624
+      ],
+      "id": "279fb8ee-9e54-4cb2-bb68-432a1c8ee3f7",
+      "name": "Error Response1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Login": {
+      "main": [
+        [
+          {
+            "node": "Security Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Get User from DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get User from DB": {
+      "main": [
+        [
+          {
+            "node": "User Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Password": {
+      "main": [
+        [
+          {
+            "node": "Check Password",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Last Login": {
+      "main": [
+        [
+          {
+            "node": "Response Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Validate Token": {
+      "main": [
+        [
+          {
+            "node": "Security Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Password": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Results": {
+      "main": [
+        [
+          {
+            "node": "IF Auth Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate JWT Token": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Update Last Login",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "User Exists?": {
+      "main": [
+        [
+          {
+            "node": "Verify Password",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Response Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Auth Success": {
+      "main": [
+        [
+          {
+            "node": "Generate JWT Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Response Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JWT": {
+      "main": [
+        [
+          {
+            "node": "Token Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Token from Heade": {
+      "main": [
+        [
+          {
+            "node": "JWT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Valid?": {
+      "main": [
+        [
+          {
+            "node": "Format Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Success Response": {
+      "main": [
+        [
+          {
+            "node": "Response Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error Response": {
+      "main": [
+        [
+          {
+            "node": "Format Error Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check": {
+      "main": [
+        [
+          {
+            "node": "Auth Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check1": {
+      "main": [
+        [
+          {
+            "node": "Auth Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check1": {
+      "main": [
+        [
+          {
+            "node": "Extract Token from Heade",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "eb39bb1f-b5a5-4720-9a1b-a65f07703cd5",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "R9vcaWX9WEsz1rz9",
+  "tags": []
+}

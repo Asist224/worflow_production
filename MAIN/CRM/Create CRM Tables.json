@@ -1,0 +1,61 @@
+{
+  "name": "Create CRM Tables",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "f1f115b5-11d1-438a-98c3-85191eafca15",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -320,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Таблица для хранения логов отправки в CRM\nCREATE TABLE IF NOT EXISTS crm_sent_leads (\n    id SERIAL PRIMARY KEY,\n    session_id VARCHAR(255) UNIQUE NOT NULL,\n    crm_type VARCHAR(50) NOT NULL,\n    crm_lead_id VARCHAR(255),\n    lead_score INTEGER,\n    lead_temperature VARCHAR(20),\n    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n    webhook_url TEXT,\n    response_data JSONB,\n    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n);\n\n-- Индексы\nCREATE INDEX IF NOT EXISTS idx_crm_sent_leads_session_id ON crm_sent_leads(session_id);\nCREATE INDEX IF NOT EXISTS idx_crm_sent_leads_sent_at ON crm_sent_leads(sent_at);\nCREATE INDEX IF NOT EXISTS idx_crm_sent_leads_temperature ON crm_sent_leads(lead_temperature);\n\n-- Таблица для логов автоматизации\nCREATE TABLE IF NOT EXISTS automation_log (\n    id SERIAL PRIMARY KEY,\n    action_type VARCHAR(50) NOT NULL,\n    session_id VARCHAR(255),\n    details JSONB,\n    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n);\n\n-- Индексы для логов\nCREATE INDEX IF NOT EXISTS idx_automation_log_action_type ON automation_log(action_type);\nCREATE INDEX IF NOT EXISTS idx_automation_log_session_id ON automation_log(session_id);\nCREATE INDEX IF NOT EXISTS idx_automation_log_created_at ON automation_log(created_at);\n\n-- Возвращаем результат\nSELECT 'Tables created successfully' as result;",
+        "options": {}
+      },
+      "id": "68a2ceb0-6dec-42d5-8fdf-43a906b8ed38",
+      "name": "Create CRM Tables",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -128,
+        -160
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Create CRM Tables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "aac88d4c-4a6e-4955-9e47-1af676defde5",
+  "meta": {
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "9QCSPRXfIrKNkoAF",
+  "tags": []
+}

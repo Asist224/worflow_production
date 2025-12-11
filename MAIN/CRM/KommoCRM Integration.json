@@ -1,0 +1,1137 @@
+{
+  "name": "KommoCRM Integration",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "send-to-kommocrm",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "8aca6c85-083c-46e8-9005-f7c5486685cc",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -4896,
+        320
+      ],
+      "webhookId": "amocrm-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const CLIENT_CONFIG = {\n  // === ОБЯЗАТЕЛЬНЫЕ НАСТРОЙКИ ===\n  clientName: 'Cryptomator',\n  subdomain: 'evgenstrizh',\n  accountId: 35434799,\n  pipelineId: 12289079,\n  pipelineName: 'Cryptomator',\n\n  // === ПОЛНЫЙ СПИСОК СТАДИЙ ===\n  stages: [\n    { id: 94980771, name: 'Incoming leads', sort: 10, type: 1, color: '#c1c1c1', isUnsorted: true },\n    { id: 94980775, name: 'Initial Contact', sort: 20, type: 0, color: '#99ccff' },\n    { id: 94980779, name: 'Offer made', sort: 30, type: 0, color: '#ffff99' },\n    { id: 94980783, name: 'Negotiation', sort: 40, type: 0, color: '#ffcc66' },\n    { id: 142, name: 'Closed - won', sort: 10000, type: 0, color: '#CCFF66', isSuccess: true },\n    { id: 143, name: 'Closed - lost', sort: 11000, type: 0, color: '#D5D8DB', isClosed: true }\n  ],\n\n  // === МАППИНГ СТАДИЙ ПО ТЕМПЕРАТУРЕ ===\n  stageMapping: {\n    hot: 94980783,      // Negotiation\n    warm: 94980779,     // Offer made\n    cold: 94980775      // Initial Contact\n  },\n\n  // === ID КАСТОМНЫХ ПОЛЕЙ КОНТАКТОВ ===\n  customFields: {\n    position: 668708,      // Position\n    phone: 668710,      // Phone\n    email: 668712,      // Email\n    company: 730828      // Company\n  },\n\n  // === ENUM ID ДЛЯ ТИПОВ ТЕЛЕФОНОВ ===\n  phoneEnums: {\n    WORK: 524756,\n    WORKDD: 524758,\n    MOB: 524760,\n    FAX: 524762,\n    HOME: 524764,\n    OTHER: 524766\n  },\n\n  // === ENUM ID ДЛЯ ТИПОВ EMAIL ===\n  emailEnums: {\n    WORK: 524768,\n    PRIV: 524770,\n    OTHER: 524772\n  },\n\n  // === БАЗОВЫЕ НАСТРОЙКИ ===\n  defaultManagerId: 14090375,\n  defaultCurrency: 'USD',\n  timezone: 'UTC',\n  industry: 'fintech',\n\n  // === УВЕДОМЛЕНИЯ ===\n  sendTelegramForHot: true,\n  telegramChatId: '-1002588885971',\n\n  // === СРОКИ ЗАКРЫТИЯ СДЕЛОК ===\n  closeDays: {\n    hot: 14,\n    warm: 30,\n    cold: 60\n  }\n};\n\n// Возвращаем конфиг + данные из webhook\nreturn [{\n  json: {\n    ...items[0].json,\n    CLIENT_CONFIG: CLIENT_CONFIG,\n    pipelineId: CLIENT_CONFIG.pipelineId\n  }\n}];"
+      },
+      "id": "9546e778-5b0a-419d-b2e2-0a9966c73f14",
+      "name": "Set Client Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4384,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  wm.session_id,\n  wm.platform,\n  wm.message_count,\n  ucd.full_name,\n  ucd.first_name,\n  ucd.last_name,\n  ucd.phone,\n  ucd.email,\n  ucd.telegram,\n  ucd.whatsapp,\n  ucd.company,\n  ucd.position,\n  ucd.location,\n  da.emotional_tone,\n  da.customer_needs,\n  da.recommendations,\n  da.lead_scoring,\n  da.bant_qualification,\n  da.extracted_entities\nFROM webchat_monitoring wm\nLEFT JOIN user_contact_data ucd ON wm.session_id = ucd.session_id\nLEFT JOIN dialog_analysis da ON wm.session_id = da.session_id\nWHERE wm.session_id = '{{ $json.body.sessionId }}'\nLIMIT 1",
+        "options": {}
+      },
+      "id": "9b67f8a2-5485-4773-9123-51f4c30cbb9e",
+      "name": "Get Session Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -4176,
+        304
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  CASE \n    WHEN message::json->>'type' = 'human' THEN 'human'\n    WHEN message::json->>'type' = 'ai' THEN 'ai'\n    ELSE 'system'\n  END as message_type,\n  COALESCE(\n    message::json->>'content',\n    message::json->>'text'\n  ) as content,\n  created_at\nFROM (\n  SELECT * FROM n8n_chat_histories_ru WHERE session_id = '{{ $('Get Session Data').item.json.session_id }}'\n  UNION ALL\n  SELECT * FROM n8n_chat_histories_en WHERE session_id = '{{ $('Get Session Data').item.json.session_id }}'\n) all_messages\nWHERE message IS NOT NULL\nORDER BY created_at ASC",
+        "options": {}
+      },
+      "id": "6e2657e3-dfc4-46b2-b879-22520ed9fe0d",
+      "name": "Get Dialog History",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -3968,
+        304
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhook = $('Set Client Config').first().json;\nconst sessionData = $('Get Session Data').first().json;\nconst dialogHistory = $('Get Dialog History').all().map(item => item.json);\nconst stages = webhook.CLIENT_CONFIG.stages;\n\nreturn [{\n  json: {\n    webhook: webhook,\n    sessionData: sessionData,\n    dialogHistory: dialogHistory,\n    stages: stages,\n    CLIENT_CONFIG: webhook.CLIENT_CONFIG\n  }\n}];"
+      },
+      "id": "70f81087-9481-4e86-955b-5f8e55ca610d",
+      "name": "Merge All Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3776,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ОПТИМИЗИРОВАННАЯ ВЕРСИЯ - использует stages из CLIENT_CONFIG\n// НЕ требует дополнительных API запросов!\n\nconst CLIENT_CONFIG = items[0].json.CLIENT_CONFIG || {};\nconst startTime = Date.now();\nconst mergedData = items[0].json;\nconst requestData = mergedData.webhook;\nconst sessionId = requestData.body?.sessionId || requestData.sessionId || null;\nconst sessionData = mergedData.sessionData;\nconst dialogHistory = mergedData.dialogHistory;\nconst stages = mergedData.stages;\n\nlet leadScoring = {};\nlet bant = {};\nlet entities = {};\nlet customerNeeds = [];\nlet recommendations = [];\nlet emotionalTone = {};\n\ntry {\n  leadScoring = sessionData.lead_scoring ? \n    (typeof sessionData.lead_scoring === 'string' ? \n      JSON.parse(sessionData.lead_scoring) : sessionData.lead_scoring) : {};\n  \n  if (sessionData.bant_qualification) {\n    bant = typeof sessionData.bant_qualification === 'string' ? \n      JSON.parse(sessionData.bant_qualification) : sessionData.bant_qualification;\n  }\n  \n  if (sessionData.extracted_entities) {\n    entities = typeof sessionData.extracted_entities === 'string' ? \n      JSON.parse(sessionData.extracted_entities) : sessionData.extracted_entities;\n  }\n  \n  customerNeeds = sessionData.customer_needs ? \n    (typeof sessionData.customer_needs === 'string' ? \n      JSON.parse(sessionData.customer_needs) : sessionData.customer_needs) : [];\n  \n  recommendations = sessionData.recommendations ? \n    (typeof sessionData.recommendations === 'string' ? \n      JSON.parse(sessionData.recommendations) : sessionData.recommendations) : [];\n      \n  emotionalTone = sessionData.emotional_tone ?\n    (typeof sessionData.emotional_tone === 'string' ?\n      JSON.parse(sessionData.emotional_tone) : sessionData.emotional_tone) : {};\n} catch (e) {\n  console.error('Parse error:', e);\n}\n\nconst validateEmail = (email) => {\n  if (!email) return { valid: false, value: null };\n  const regex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\n  return { valid: regex.test(email), value: email };\n};\n\nconst validatePhone = (phone) => {\n  if (!phone) return { valid: false, value: null };\n  const cleaned = phone.replace(/[^\\d+]/g, '');\n  return { valid: cleaned.length >= 10, value: cleaned };\n};\n\nconst emailData = entities?.contacts?.email?.value ? \n  validateEmail(entities.contacts.email.value) : validateEmail(sessionData.email);\n  \nconst phoneData = entities?.contacts?.phone?.value ? \n  validatePhone(entities.contacts.phone.value) : validatePhone(sessionData.phone);\n  \nconst telegram = entities?.contacts?.telegram?.value || sessionData.telegram || null;\nconst whatsapp = entities?.contacts?.whatsapp?.value || sessionData.whatsapp || null;\n\nconst firstName = entities?.person?.firstName || sessionData.first_name || '';\nconst lastName = entities?.person?.lastName || sessionData.last_name || '';\nconst fullName = entities?.person?.fullName || sessionData.full_name || \n  `${firstName} ${lastName}`.trim() || 'Клиент из чата';\nconst companyName = entities?.organization?.companyName || sessionData.company || '';\nconst position = entities?.organization?.position || sessionData.position || '';\nconst location = entities?.location?.city || sessionData.location || '';\n\nconst leadScore = leadScoring?.score || 0;\nconst leadTemp = leadScoring?.temperature || 'cold';\nconst bantTotal = bant?.totalScore || 0;\nconst bantBudget = bant?.budget || {};\nconst bantNeed = bant?.need || {};\nconst bantAuthority = bant?.authority || {};\nconst bantTimeline = bant?.timeline || {};\n\n// Умное определение стадии\nfunction determineStage(leadTemp, stages, config) {\n  // 1. Проверяем custom mapping\n  const customStageId = config.stageMapping[leadTemp];\n  if (customStageId) {\n    const found = stages.find(s => s.id === customStageId);\n    if (found) {\n      return { stageId: found.id, stageName: found.name, method: 'custom' };\n    }\n  }\n  \n  // 2. Поиск по keywords в stages\n  for (const stage of stages) {\n    if (stage.keywords && Array.isArray(stage.keywords)) {\n      for (const keyword of stage.keywords) {\n        if (keyword.toLowerCase().includes(leadTemp.toLowerCase())) {\n          return { stageId: stage.id, stageName: stage.name, method: 'keyword' };\n        }\n      }\n    }\n  }\n  \n  // 3. Fallback - берем по позиции\n  const activeStages = stages.filter(s => s.type !== 1 && !s.isSuccess && !s.isClosed)\n    .sort((a, b) => (a.sort || 0) - (b.sort || 0));\n  \n  let fallbackStage;\n  if (leadTemp === 'hot') {\n    fallbackStage = activeStages[Math.min(Math.floor(activeStages.length * 0.6), activeStages.length - 1)];\n  } else if (leadTemp === 'warm') {\n    fallbackStage = activeStages[Math.min(Math.floor(activeStages.length * 0.4), activeStages.length - 1)];\n  } else {\n    fallbackStage = activeStages[0];\n  }\n  \n  return { stageId: fallbackStage.id, stageName: fallbackStage.name, method: 'fallback' };\n}\n\nconst stageResult = determineStage(leadTemp, stages, CLIENT_CONFIG);\n\nlet opportunityAmount = 0;\nif (bantBudget?.value && bantBudget.value > 0) {\n  opportunityAmount = bantBudget.value;\n} else if (bantBudget?.range?.min && bantBudget.range.min > 0) {\n  opportunityAmount = bantBudget.range.min;\n}\n\nconst customFieldsValues = [];\n\nif (phoneData.valid) {\n  customFieldsValues.push({\n    field_id: CLIENT_CONFIG.customFields.phone,\n    values: [{\n      value: phoneData.value,\n      enum_id: CLIENT_CONFIG.phoneEnums.WORK\n    }]\n  });\n}\n\nif (emailData.valid) {\n  customFieldsValues.push({\n    field_id: CLIENT_CONFIG.customFields.email,\n    values: [{\n      value: emailData.value,\n      enum_id: CLIENT_CONFIG.emailEnums.WORK\n    }]\n  });\n}\n\nif (position) {\n  customFieldsValues.push({\n    field_id: CLIENT_CONFIG.customFields.position,\n    values: [{\n      value: position\n    }]\n  });\n}\n\nconst closeDays = CLIENT_CONFIG.closeDays[leadTemp] || 60;\nconst closeDate = new Date();\ncloseDate.setDate(closeDate.getDate() + closeDays);\nconst closeDateUnix = Math.floor(closeDate.getTime() / 1000);\n\nconst utmData = {\n  source: sessionData.utm_source || 'direct',\n  medium: sessionData.utm_medium || 'none',\n  campaign: sessionData.utm_campaign || 'organic'\n};\n\nconst aiCommentInput = {\n  leadScore: leadScore,\n  leadTemperature: leadTemp,\n  bantTotal: bantTotal,\n  bantQualified: bant?.qualified || false,\n  bant: {\n    budget: {\n      score: bantBudget?.score || 0,\n      description: bantBudget?.description || 'Не указан',\n      value: bantBudget?.value || null,\n      mentioned: bantBudget?.mentioned || false\n    },\n    authority: {\n      score: bantAuthority?.score || 0,\n      role: bantAuthority?.role || 'unknown',\n      level: bantAuthority?.level || 'unknown',\n      description: bantAuthority?.description || 'Не определено'\n    },\n    need: {\n      score: bantNeed?.score || 0,\n      severity: bantNeed?.severity || 'unknown',\n      painPoints: bantNeed?.painPoints || [],\n      description: bantNeed?.description || 'Не выявлено'\n    },\n    timeline: {\n      score: bantTimeline?.score || 0,\n      urgency: bantTimeline?.urgency || 'unknown',\n      deadline: bantTimeline?.deadline || null,\n      description: bantTimeline?.description || 'Не указано'\n    }\n  },\n  customerProfile: {\n  name: fullName,\n  company: companyName,\n  position: position || '',     // ← пустая строка если null\n  location: location || '',\n  email: emailData.value || '', // ← пустая строка если null\n  phone: phoneData.value || ''  // ← пустая строка если null\n},\n  customerNeeds: customerNeeds,\n  painPoints: bantNeed?.painPoints || [],\n  emotionalTone: {\n    overall: emotionalTone?.overall || 'neutral',\n    satisfaction: emotionalTone?.satisfaction || 50,\n    description: emotionalTone?.description || ''\n  },\n  recommendations: recommendations,\n  productsInterested: entities?.products || [],\n  currentSolution: entities?.currentSolution || {},\n  competitors: entities?.competitors || [],\n  dialogHistory: dialogHistory.map(msg => ({\n    role: msg.message_type,\n    content: msg.content?.substring(0, 200) || ''\n  })),\n  messageCount: sessionData.message_count || dialogHistory.length,\n  platform: sessionData.platform || 'webchat',\n  utmData: utmData,\n  industry: CLIENT_CONFIG.industry,\n  stageName: stageResult.stageName,\n  opportunityAmount: opportunityAmount,\n  currency: CLIENT_CONFIG.defaultCurrency,\n  priceList: CLIENT_CONFIG.priceList\n};\n\nreturn [{\n  json: {\n    clientName: CLIENT_CONFIG.clientName,\n    sessionId: sessionId,\n    leadScore: leadScore,\n    leadTemperature: leadTemp,\n    bantScore: bantTotal,\n    bantQualified: bant?.qualified || false,\n    bantLevel: bant?.qualificationLevel || 'cold',\n    stageId: stageResult.stageId,\n    stageName: stageResult.stageName,\n    pipelineId: CLIENT_CONFIG.pipelineId,\n    pipelineName: CLIENT_CONFIG.pipelineName,\n    isHotLead: leadScore >= 70,\n    responsibleUserId: requestData.assignedManager || CLIENT_CONFIG.defaultManagerId,\n    subdomain: CLIENT_CONFIG.subdomain,\n    sendTelegram: CLIENT_CONFIG.sendTelegramForHot && leadScore >= 70,\n    telegramChatId: CLIENT_CONFIG.telegramChatId,\n    contact: {\n      name: fullName,\n      first_name: firstName,\n      last_name: lastName,\n      custom_fields_values: customFieldsValues,\n      responsible_user_id: requestData.assignedManager || CLIENT_CONFIG.defaultManagerId\n    },\n    lead: {\n      name: `🤖 ${fullName} | Score: ${leadScore}${companyName ? ' | ' + companyName : ''}`,\n      pipeline_id: CLIENT_CONFIG.pipelineId,\n      status_id: stageResult.stageId,\n      price: opportunityAmount,\n      responsible_user_id: requestData.assignedManager || CLIENT_CONFIG.defaultManagerId,\n      created_by: requestData.assignedManager || CLIENT_CONFIG.defaultManagerId,\n      updated_by: requestData.assignedManager || CLIENT_CONFIG.defaultManagerId,\n      closed_at: closeDateUnix\n    },\n    searchData: (() => {\n  const data = {};\n  if (phoneData.valid && phoneData.value) {\n    data.phone = phoneData.value;\n  }\n  if (emailData.valid && emailData.value) {\n    data.email = emailData.value;\n  }\n  return data;\n})(),\n    validation: {\n      hasEmail: emailData.valid,\n      hasPhone: phoneData.valid,\n      hasName: !!fullName,\n      isValid: emailData.valid || phoneData.valid,\n      missingFields: [\n        !emailData.valid && !phoneData.valid ? 'contact' : null,\n        !fullName ? 'name' : null\n      ].filter(Boolean)\n    },\n    utmData: utmData,\n    aiCommentInput: aiCommentInput,\n    startTime: startTime,\n    CLIENT_CONFIG: CLIENT_CONFIG\n  }\n}];"
+      },
+      "id": "a5415e80-84c2-434a-b304-1b2d9afc9c06",
+      "name": "Format Data (Optimized)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3584,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=# ЗАДАЧА: Сгенерировать оптимальный комментарий для CRM\n\n## ВХОДНЫЕ ДАННЫЕ:\n\n### Lead Qualification:\n- Lead Score: {{ $json.aiCommentInput.leadScore }}/100\n- Temperature: {{ $json.aiCommentInput.leadTemperature }}\n- BANT Score: {{ $json.aiCommentInput.bantTotal }}/70\n- Qualified: {{ $json.aiCommentInput.bantQualified }}\n\n### BANT:\n**Budget:** {{ $json.aiCommentInput.bant.budget.description }}\n**Authority:** {{ $json.aiCommentInput.bant.authority.description }}\n**Need:** {{ $json.aiCommentInput.bant.need.description }}\n**Timeline:** {{ $json.aiCommentInput.bant.timeline.description }}\n\n### Customer:\n- Name: {{ $json.aiCommentInput.customerProfile.name }}\n- Company: {{ $json.aiCommentInput.customerProfile.company || 'Не указана' }}\n- Email: {{ $json.aiCommentInput.customerProfile.email }}\n- Phone: {{ $json.aiCommentInput.customerProfile.phone || 'Нет' }}\n\n### Needs:\n{{ JSON.stringify($json.aiCommentInput.customerNeeds) }}\n\n### Emotional Tone:\n- Overall: {{ $json.aiCommentInput.emotionalTone.overall }}\n- Satisfaction: {{ $json.aiCommentInput.emotionalTone.satisfaction }}%\n\n### Dialog:\nTotal Messages: {{ $json.aiCommentInput.messageCount }}\nLast 5:\n{{ $json.aiCommentInput.dialogHistory.slice(-5).map(m => `${m.role === 'human' ? 'Клиент' : 'AI'}: ${m.content}`).join('\\n') }}\n\n### Context:\n- Platform: {{ $json.aiCommentInput.platform }}\n- UTM: {{ $json.aiCommentInput.utmData.source }}/{{ $json.aiCommentInput.utmData.medium }}\n- Client: {{ $json.clientName }}\n- Industry: {{ $json.aiCommentInput.industry }}\n- Stage: {{ $json.aiCommentInput.stageName }}\n\n---\n\nСоздай комментарий следуя структуре из System Message. Обязательно добавь JSON блок с извлечёнными продуктами и ценами в конце.",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "=Ты - эксперт по анализу лидов и CRM. Создавай структурированные, actionable комментарии для менеджеров по продажам. Используй эмодзи, будь конкретным, фокусируйся на действиях. Комментарий должен быть 250-400 слов.\n\n## КРИТИЧНАЯ ЗАДАЧА - ИЗВЛЕЧЕНИЕ ПРОДУКТОВ И ЦЕН:\n\nВнимательно проанализируй ВЕСЬ диалог и найди:\n\n### 1. ЛЮБЫЕ упоминания продуктов/тарифов:\n- Названия планов: \"starter\", \"basic\", \"premium\", \"pro\"\n- Русские аналоги: \"стартовый\", \"базовый\", \"начальный\"\n- Фразы: \"начну со стартового\", \"хочу базовый пакет\"\n\n### 2. ЦЕНЫ (точные или косвенные):\n\n**ТОЧНЫЕ цены из диалога:**\n- Любая сумма с периодом: \"500 рублей/месяц\" → \"500 RUB/month\"\n- Любая сумма с периодом: \"2000 BGN в год\" → \"2000 BGN/year\"\n- Любая сумма с валютой: \"$100\", \"€50\", \"1000 руб\" → сохранить как есть\n- Сумма БЕЗ валюты: \"5000 за месяц\" → \"5000/month\"\n\n**КОСВЕННЫЕ цены (из контекста):**\n- Если AI назвал цену → клиент согласился (\"Готов\", \"Беру\", \"Начну с этого\") → извлекай ЭТУ цену\n- Если клиент спросил \"Сколько?\" → AI ответил с цифрой → клиент продолжил диалог позитивно → извлекай\n\n**ФОРМАТ извлечения:**\n- Сохраняй ТОЧНО как в диалоге: \"2000 BGN/месяц\", \"$99\", \"15000 рублей\"\n- НЕ придумывай цены, которых не было\n- НЕ используй примерные значения\n- Если цены НЕТ в диалоге → mentionedPrices = []\n\n---\n\n## ВАЖНО - ЛОГИКА ИЗВЛЕЧЕНИЯ:\n\n✅ **ЕСЛИ клиент упомянул продукт** (например \"начну со стартового\"):\n- Проверь ВЕСЬ диалог - называл ли AI цену этого продукта?\n- Если ДА → добавь цену в mentionedPrices\n- Если НЕТ → оставь mentionedPrices пустым\n\n✅ **ЕСЛИ клиент согласился купить** (\"Да готов\", \"Начну с этого\"):\n- Посмотри, что AI предлагал ПЕРЕД этим\n- Если AI назвал цену/продукт → извлеки их!\n\n✅ **ПРИМЕРЫ ПРАВИЛЬНОГО ИЗВЛЕЧЕНИЯ:**\n\nДиалог 1:\n- AI: \"Тариф Starter за $29/месяц\"\n- Клиент: \"Наверное начну со стартового\"\n→ mentionedProducts: [\"starter\"], mentionedPrices: [\"$29/month\"]\n\nДиалог 2:\n- AI: \"Консультация стоит $99\"\n- Клиент: \"Хорошо, готов\"\n→ mentionedProducts: [\"консультация\"], mentionedPrices: [\"$99\"]\n\nДиалог 3:\n- Клиент: \"Сколько стоит?\"\n- AI: \"Цены на сайте\"\n- Клиент: \"Ок, посмотрю\"\n→ mentionedProducts: [], mentionedPrices: []\n\n---\n\n## КРИТИЧНО - ФОРМАТИРОВАНИЕ JSON:\n\nВ САМОМ КОНЦЕ комментария (после всех разделов) добавь ЧИСТЫЙ JSON блок БЕЗ markdown:\n\n**ЕСЛИ что-то найдено:**\n{\n  \"mentionedProducts\": [\"starter\"],\n  \"mentionedPrices\": [\"$29/month\"],\n  \"billingPeriod\": \"monthly\",\n  \"confidence\": \"high\"\n}\n\n**ЕСЛИ ничего НЕ найдено:**\n{\n  \"mentionedProducts\": [],\n  \"mentionedPrices\": [],\n  \"billingPeriod\": null,\n  \"confidence\": \"none\"\n}\n\n❌ НЕ оборачивай в ```json``` или ```\n❌ НЕ добавляй лишние пробелы\n✅ Просто чистый JSON в одну строку или с минимальными переносами\n\n---\n\n## ФОРМАТИРОВАНИЕ КОММЕНТАРИЯ (БЕЗ MARKDOWN КОД-БЛОКОВ):\n\nИспользуй ТОЛЬКО:\n- Эмодзи\n- Жирный текст (**текст**)\n- Списки (• или 1️⃣, 2️⃣, 3️⃣)\n\n❌ НЕ используй: ```code```, `backticks`, markdown блоки\n\nСтруктура:\n\n🎯 EXECUTIVE SUMMARY\n[2-3 строки - суть]\n\n📊 QUALIFICATION\n🔥 Lead Score: X/100 (TEMPERATURE)\n📋 BANT: X/70\n\n💡 KEY INSIGHTS\n-  [Инсайт 1]\n-  [Инсайт 2]\n-  [Инсайт 3]\n\n👤 CUSTOMER PROFILE\n💰 Budget: [информация]\n⚡ Urgency: [уровень]\n🎯 Pain Points: [список]\n🎁 Needs: [список]\n\n🚀 NEXT STEPS (ПРИОРИТЕТ)\n1️⃣ [Действие 1]\n2️⃣ [Действие 2]\n\n⚠️ IMPORTANT NOTES\n-  [Важная информация]\n\n💬 CONVERSATION SUMMARY\n[Краткое резюме]\n\n📌 METADATA\n🌐 UTM: source/medium\n💬 Platform: X\n\n{\n  \"mentionedProducts\": [\"...\"],\n  \"mentionedPrices\": [\"...\"],\n  \"billingPeriod\": \"...\",\n  \"confidence\": \"...\"\n}"
+            }
+          ]
+        }
+      },
+      "id": "02d86abf-f9ba-483c-a919-1057da238137",
+      "name": "Generate AI Comment",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        -3392,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "f3d87a85-bf5f-4b56-a682-214f884915e2",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -3440,
+        496
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "abo0BDHSJPM0pgRU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// АДАПТИРОВАННАЯ ВЕРСИЯ ДЛЯ kommoCRM (как в Bitrix24)\nconst formattedData = $('Format Data (Optimized)').first().json;\nconst agentResponse = $('Generate AI Comment').first().json;\n\n// 🔍 ИЗВЛЕЧЕНИЕ AI КОММЕНТАРИЯ (поддержка всех форматов)\nlet aiComment = '';\nif (agentResponse.output) {\n  aiComment = agentResponse.output;\n} else if (agentResponse.text) {\n  aiComment = agentResponse.text;\n} else if (agentResponse.response) {\n  aiComment = agentResponse.response;\n} else {\n  aiComment = JSON.stringify(agentResponse);\n}\n\nconsole.log('AI Comment extracted, length:', aiComment.length);\n\n// 🧹 МАКСИМАЛЬНАЯ ОЧИСТКА для kommoCRM API (С СОХРАНЕНИЕМ СТРУКТУРЫ)\naiComment = aiComment\n  // Удалить служебные заголовки от AI\n  .replace(/###?\\s*Оптимальный Комментарий для CRM[\\s\\S]*?(?=\\n\\*\\*)/i, '')\n  .replace(/ОПТИМАЛЬНЫЙ КОММЕНТАРИЙ ДЛЯ CRM/gi, '')\n  \n  // Удалить code blocks\n  .replace(/```[\\s\\S]*?```/g, '')\n  .replace(/```/g, '')\n  .replace(/`{1,2}([^`]+)`{1,2}/g, '$1')\n  \n  // УДАЛИТЬ ВСЕ ЭМОДЗИ И СПЕЦСИМВОЛЫ\n  .replace(/[\\u{1F300}-\\u{1F9FF}]/gu, '')\n  .replace(/[\\u{2600}-\\u{26FF}]/gu, '')\n  .replace(/[\\u{2700}-\\u{27BF}]/gu, '')\n  .replace(/[\\u{1F600}-\\u{1F64F}]/gu, '')\n  .replace(/[\\u{1F680}-\\u{1F6FF}]/gu, '')\n  .replace(/[\\u{1F1E0}-\\u{1F1FF}]/gu, '')\n  .replace(/[🎯🔥📊💡⚡🚨✅❌⏳💰📌🌡️❄️👤💬🏢📧☎️📍🎁🔍⚠️📝🏭🌐🤝🛡️🚀✨🧑‍💻🤖💻⭐♦️◆●]/g, '')\n  .replace(/[◆●♦◇○■□▪▫]/g, '')\n  \n  // УДАЛИТЬ ДУБЛИРУЮЩИЕСЯ БЛОКИ\n  .replace(/IMPORTANT NOTES[\\s\\S]*?(?=CONVERSATION SUMMARY|METADATA|$)/i, '')\n  .replace(/CONVERSATION SUMMARY[\\s\\S]*?(?=METADATA|$)/i, '')\n  \n  // Удалить markdown\n  .replace(/^#+\\s*/gm, '')\n  .replace(/\\*\\*/g, '')\n  .replace(/---/g, '')\n  .replace(/===/g, '')\n  \n  // Очистить экранированные символы\n  .replace(/\\\\n/g, '\\n')\n  .replace(/\\\\u[0-9a-fA-F]{4}/g, '')\n  \n  // Очистить ТОЛЬКО лишние переносы\n  .replace(/\\n{3,}/g, '\\n\\n')\n  \n  // Очистить лишние пробелы\n  .replace(/ +/g, ' ')\n  .replace(/\\n /g, '\\n')\n  .replace(/ \\n/g, '\\n')\n  \n  .trim();\n\nconsole.log('AI Comment after cleanup, length:', aiComment.length);\n\n// ⚠️ CRITICAL CHECK - если aiComment пустой после очистки\nif (!aiComment || aiComment.length < 50) {\n  console.log('🚨 WARNING: AI Comment too short, restoring from original');\n  // Восстанавливаем из оригинала без агрессивной очистки\n  aiComment = (agentResponse.output || agentResponse.text || agentResponse.response || '')\n    .replace(/```[\\s\\S]*?```/g, '')\n    .replace(/[🎯🔥📊💡⚡🚨✅❌⏳💰📌🌡️❄️👤💬🏢📧☎️📍🎁🔍⚠️📝🏭🌐🤝🛡️🚀✨🧑‍💻🤖💻⭐♦️◆●]/g, '')\n    .replace(/\\*\\*/g, '')\n    .trim();\n}\n\n// 🔍 ИЗВЛЕЧЕНИЕ ДАННЫХ О ПРОДУКТАХ ИЗ AI-ОТВЕТА\nlet extractedData = null;\nconst jsonMatch = aiComment.match(/\\{[\\s\\S]*?\"mentionedProducts\"[\\s\\S]*?\\}/);\nif (jsonMatch) {\n  try {\n    extractedData = JSON.parse(jsonMatch[0]);\n    aiComment = aiComment.replace(jsonMatch[0], '').trim();\n  } catch (e) {\n    console.log('Could not parse extracted product data:', e);\n  }\n}\n\n// 💰 УНИВЕРСАЛЬНЫЙ РАСЧЕТ OPPORTUNITY\nconst PRICE_LIST = formattedData.CLIENT_CONFIG?.priceList || {};\nconst OPPORTUNITY_MODE = formattedData.CLIENT_CONFIG?.opportunityMode || 'smart';\n\nlet opportunityAmount = formattedData.opportunityAmount || 0;\nlet opportunityNote = '';\nlet opportunitySource = 'none';\nlet billingPeriod = 'unknown';\n\n// 📊 ПРИОРИТЕТ 1: Если уже рассчитан\nif (opportunityAmount > 0) {\n  opportunitySource = 'pre_calculated';\n  console.log('Using pre-calculated opportunity:', opportunityAmount);\n}\n\n// 📊 ПРИОРИТЕТ 2: ТОЧНАЯ ЦЕНА ИЗ ДИАЛОГА\nif (opportunityAmount === 0 && extractedData?.mentionedPrices?.length > 0) {\n  const priceString = extractedData.mentionedPrices[0].toLowerCase();\n  const numberMatch = priceString.match(/\\$?(\\d+(?:,\\d{3})*(?:\\.\\d{2})?)/);\n  \n  if (numberMatch) {\n    const priceValue = parseFloat(numberMatch[1].replace(/,/g, ''));\n    \n    if (priceString.includes('month') || priceString.includes('мес') || priceString.includes('/mo')) {\n      opportunityAmount = priceValue;\n      billingPeriod = 'monthly';\n      opportunityNote = `Client mentioned: $${priceValue}/month`;\n      opportunitySource = 'dialog_price_monthly';\n      \n    } else if (priceString.includes('year') || priceString.includes('год') || priceString.includes('annual')) {\n      opportunityAmount = priceValue;\n      billingPeriod = 'annual';\n      opportunityNote = `Client mentioned: $${priceValue}/year`;\n      opportunitySource = 'dialog_price_annual';\n      \n    } else {\n      opportunityAmount = priceValue;\n      billingPeriod = 'unspecified';\n      opportunityNote = `Client mentioned: $${priceValue}`;\n      opportunitySource = 'dialog_price';\n    }\n    \n    console.log(`✅ EXACT price from dialog: $${opportunityAmount}`);\n  }\n}\n\n// 📊 ПРИОРИТЕТ 3: ПРОДУКТ + ПРАЙС-ЛИСТ\nif (opportunityAmount === 0 && \n    (OPPORTUNITY_MODE === 'smart' || OPPORTUNITY_MODE === 'estimate') &&\n    extractedData?.mentionedProducts?.length > 0 && \n    Object.keys(PRICE_LIST).length > 0) {\n  \n  const mentionedProduct = extractedData.mentionedProducts[0].toLowerCase();\n  \n  for (const [productKey, productData] of Object.entries(PRICE_LIST)) {\n    const keywords = productData.keywords || [productKey];\n    const isMatch = keywords.some(kw => mentionedProduct.includes(kw.toLowerCase()));\n    \n    if (isMatch) {\n      const defaultBilling = productData.defaultBilling || 'monthly';\n      \n      if (defaultBilling === 'monthly') {\n        opportunityAmount = productData.monthly;\n        billingPeriod = 'monthly';\n        opportunityNote = `${productData.display}: $${productData.monthly}/month (from price list)`;\n      } else {\n        opportunityAmount = productData.annual;\n        billingPeriod = 'annual';\n        opportunityNote = `${productData.display}: $${productData.annual}/year (from price list)`;\n      }\n      \n      opportunitySource = 'price_list';\n      console.log(`✅ Product from price list: $${opportunityAmount}`);\n      break;\n    }\n  }\n}\n\n// 📊 ПРИОРИТЕТ 4: BANT БЮДЖЕТ\nif (opportunityAmount === 0) {\n  const bantBudget = formattedData.aiCommentInput?.bant?.budget;\n  \n  if (bantBudget?.value && bantBudget.value > 0) {\n    opportunityAmount = bantBudget.value;\n    billingPeriod = 'unspecified';\n    opportunityNote = `BANT budget analysis: $${opportunityAmount}`;\n    opportunitySource = 'bant_budget';\n    console.log(`✅ BANT budget: $${opportunityAmount}`);\n  }\n}\n\n// 📊 ПРИОРИТЕТ 5: СРЕДНИЙ ЧЕК ПО ТЕМПЕРАТУРЕ (smart mode)\nif (opportunityAmount === 0 && OPPORTUNITY_MODE === 'smart') {\n  const leadTemp = formattedData.leadTemperature;\n  const averageDeals = formattedData.CLIENT_CONFIG?.averageDeals || {};\n  \n  opportunityAmount = averageDeals[leadTemp] || averageDeals.cold || 0;\n  billingPeriod = 'estimated';\n  opportunityNote = `Estimated based on lead temperature: ${leadTemp}`;\n  opportunitySource = 'average_deal';\n  console.log(`✅ Average deal for ${leadTemp}: $${opportunityAmount}`);\n}\n\n// 📊 ФИНАЛ: Если ничего не найдено\nif (opportunityAmount === 0) {\n  opportunityNote = 'No pricing information available - to be determined by manager';\n  opportunitySource = 'none';\n  console.log(`⚠️ No opportunity data found → $0`);\n}\n\n// ✅ ОБНОВЛЯЕМ LEAD PRICE\nconst updatedLead = {\n  ...(formattedData.lead || {}),\n  price: opportunityAmount\n};\n\n// 📊 ЛОГИРОВАНИЕ ДЛЯ АНАЛИТИКИ\nconst opportunityCalculation = {\n  amount: opportunityAmount,\n  billingPeriod: billingPeriod,\n  note: opportunityNote,\n  source: opportunitySource,\n  mode: OPPORTUNITY_MODE,\n  extractedData: extractedData\n};\n\n// 📝 ФИНАЛЬНАЯ ПРОВЕРКА\nconsole.log('=== FINAL CHECK ===');\nconsole.log('AI Comment length:', aiComment.length);\nconsole.log('Opportunity Amount:', opportunityAmount);\nconsole.log('==================');\n\n// ⚠️ CRITICAL: Убедись что aiComment НЕ пустой\nif (!aiComment || aiComment.trim().length === 0) {\n  console.log('🚨 CRITICAL ERROR: AI Comment is EMPTY!');\n  aiComment = `Lead Score: ${formattedData.leadScore}/100 (${formattedData.leadTemperature})\\nBANT: ${formattedData.bantScore}/70\\nOpportunity: ${opportunityAmount}\\n\\n[AI Comment generation failed - please review manually]`;\n}\n\n// ВОЗВРАЩАЕМ ОБНОВЛЁННЫЕ ДАННЫЕ\nreturn [{\n  json: {\n    ...formattedData,\n    lead: updatedLead,\n    aiComment: aiComment, // ← ВСЕГДА ЗАПОЛНЕН\n    opportunityAmount: opportunityAmount,\n    opportunityCalculation: opportunityCalculation,\n    commentAdded: true\n  }\n}];"
+      },
+      "id": "1d648bdd-ef27-4244-aa24-4c743c70efa6",
+      "name": "Update Deal with AI Comment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3008,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.validation.isValid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "id": "validation-check"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3e626144-6f0a-4c7b-80de-35a1cc04b3a2",
+      "name": "Validate Data",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -2784,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем результаты поиска из нового узла\nconst searchResult = $('Get list of contacts').first().json;\nconst formatData = $('Update Deal with AI Comment').first().json;\n\n// Проверяем наличие контактов\nconst contacts = searchResult._embedded?.contacts || [];\n\nlet contactExists = false;\nlet existingContactId = null;\n\nif (contacts.length > 0) {\n  contactExists = true;\n  existingContactId = contacts[0].id;\n  console.log('✅ Contact found:', existingContactId);\n} else {\n  console.log('❌ Contact not found, will create new');\n}\n\nreturn [{\n  json: {\n    ...formatData,\n    contactExists: contactExists,\n    existingContactId: existingContactId,\n    searchResults: contacts\n  }\n}];"
+      },
+      "id": "5001946f-d3cb-4fbb-a64a-c30d1b4f2d17",
+      "name": "Check Contact",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2320,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.contactExists }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "id": "contact-exists-check"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2cd7822a-5bba-432d-bfa5-92ed9823431c",
+      "name": "If Contact Exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -2128,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ИСПРАВЛЕННАЯ ВЕРСИЯ - работает с узлом Merge\n\n// Получаем данные из предыдущих узлов\nconst mergedResult = items[0].json; // Результат от Merge (Update или Create)\nconst checkContactData = $('Check Contact').first().json; // Данные проверки\n\n// Определяем откуда пришли данные и извлекаем contactId\nlet contactId;\nlet contactAction;\n\n// Проверяем структуру ответа от kommoCRM\nif (mergedResult._embedded?.contacts?.[0]?.id) {\n  // Пришли данные от Update Contact или Create Contact\n  contactId = mergedResult._embedded.contacts[0].id;\n  \n  // Определяем действие - если existingContactId есть, значит update\n  if (checkContactData.existingContactId) {\n    contactAction = 'updated';\n  } else {\n    contactAction = 'created';\n  }\n} else if (checkContactData.existingContactId) {\n  // Fallback - используем существующий ID\n  contactId = checkContactData.existingContactId;\n  contactAction = 'found';\n} else {\n  // Критическая ошибка - нет ID контакта\n  throw new Error('Contact ID not found in merged data');\n}\n\n// Возвращаем объединённые данные\nreturn [{\n  json: {\n    ...checkContactData,\n    contactId: contactId,\n    contactAction: contactAction,\n    kommoCrmResponse: mergedResult // Для дебага\n  }\n}];"
+      },
+      "id": "46a1c17d-ffdc-4683-8048-e77770e990da",
+      "name": "Merge Contact Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1536,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const leadResult = $('Create Lead').first().json;\nconst contactData = $('Merge Contact Result').first().json;\n\nconst leadId = leadResult._embedded?.leads?.[0]?.id;\n\nreturn [{\n  json: {\n    ...contactData,\n    leadId: leadId,\n    leadUrl: `https://${contactData.subdomain}.kommo.com/leads/detail/${leadId}`,\n    executionTime: Date.now() - contactData.startTime\n  }\n}];"
+      },
+      "id": "cf8ad264-989f-4a01-b395-a0841bab7038",
+      "name": "Prepare Note Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1136,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const noteData = $('Prepare Note Data').first().json;\n\nreturn [{\n  json: {\n    ...noteData,\n    noteAdded: true,\n    crmType: 'kommocrm'\n  }\n}];"
+      },
+      "id": "635d587a-a473-4eaa-b6d7-39dbad5f0847",
+      "name": "Prepare Final Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -752,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const finalData = $('Prepare Final Data').first().json;\n\nconst shouldSendTelegram = (\n  finalData.sendTelegram === true && \n  finalData.isHotLead === true && \n  finalData.leadScore >= 70\n);\n\nreturn [{\n  json: {\n    ...finalData,\n    shouldSendTelegram: shouldSendTelegram\n  }\n}];"
+      },
+      "id": "2b32adbd-6dda-4b39-95b0-0d9642f5557c",
+      "name": "Prepare Telegram Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.shouldSendTelegram }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "id": "telegram-check"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d2aa158e-1fef-47e2-bef6-b4e47160eca6",
+      "name": "If Send Telegram",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -368,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json;\n\nconst clientName = data.contact.name || 'Неизвестный';\nconst companyName = data.aiCommentInput?.customerProfile?.company || '';  // ← ИСПРАВЛЕНО!\nconst email = data.contact.custom_fields_values?.find(f => f.field_id === data.CLIENT_CONFIG.customFields.email)?.values?.[0]?.value || '';\nconst phone = data.contact.custom_fields_values?.find(f => f.field_id === data.CLIENT_CONFIG.customFields.phone)?.values?.[0]?.value || '';\nconst leadScore = data.leadScore || 0;\nconst bantScore = data.bantScore || 0;\nconst opportunity = data.opportunityAmount || 0;\nconst currency = data.CLIENT_CONFIG.defaultCurrency;\nconst stageName = data.stageName || '';\nconst leadId = data.leadId || 'pending';\nconst leadUrl = data.leadUrl || '';\n\nlet message = `🔥 <b>ГОРЯЧИЙ ЛИД DETECTED!</b>\\n\\n`;\nmessage += `👤 <b>Клиент:</b> ${clientName}\\n`;\nif (companyName) {\n  message += `🏢 <b>Компания:</b> ${companyName}\\n`;\n}\nmessage += `\\n`;\nmessage += `📊 <b>Lead Score:</b> ${leadScore}/100\\n`;\nmessage += `📋 <b>BANT Score:</b> ${bantScore}/70\\n`;\nif (opportunity > 0) {\n  message += `💰 <b>Opportunity:</b> ${opportunity} ${currency}\\n`;\n}\nmessage += `📍 <b>Stage:</b> ${stageName}\\n`;\nmessage += `\\n`;\nif (email) {\n  message += `📧 <code>${email}</code>\\n`;\n}\nif (phone) {\n  message += `☎️ <code>${phone}</code>\\n`;\n}\nmessage += `\\n`;\nif (leadUrl) {\n  message += `🔗 <a href=\"${leadUrl}\">Открыть лид в kommoCRM</a>\\n`;\n  message += `\\n`;\n}\nmessage += `⚡ <b>ТРЕБУЕТСЯ СРОЧНЫЙ ОТВЕТ!</b>\\n`;\nmessage += `Свяжитесь с клиентом в течение 5 минут\\n`;\nmessage += `\\n`;\nconst now = new Date();\nconst timestamp = now.toLocaleString('ru-RU', { \n  timeZone: 'Europe/Sofia',\n  day: '2-digit',\n  month: '2-digit',\n  year: 'numeric',\n  hour: '2-digit',\n  minute: '2-digit'\n});\nmessage += `⏰ ${timestamp}`;\n\nreturn [{\n  json: {\n    message: message,\n    chatId: data.telegramChatId,\n    leadId: leadId,\n    originalData: data\n  }\n}];"
+      },
+      "id": "e9b95335-ad49-48a2-8dcb-84000d32a37e",
+      "name": "Format Telegram Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "3fc00340-e7f1-4e53-b33a-695a088cd327",
+      "name": "Send Telegram Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        32,
+        -16
+      ],
+      "webhookId": "30b2801b-f930-4418-a00b-20880d165081",
+      "credentials": {
+        "telegramApi": {
+          "id": "fn7ywFo6SxQJtPcU",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Prepare Final Data').first().json;\n\nconst bantBudget = data.aiCommentInput?.bant?.budget?.score || 0;\nconst bantAuthority = data.aiCommentInput?.bant?.authority?.score || 0;\nconst bantNeed = data.aiCommentInput?.bant?.need?.score || 0;\nconst bantTimeline = data.aiCommentInput?.bant?.timeline?.score || 0;\n\nconst utmSource = data.utmData?.source || 'direct';\nconst utmMedium = data.utmData?.medium || 'none';\nconst utmCampaign = data.utmData?.campaign || '';\n\nreturn [{\n  json: {\n    sessionId: data.sessionId,\n    clientId: data.clientName,\n    status: 'success',\n    leadScore: data.leadScore,\n    leadTemperature: data.leadTemperature,\n    bantScore: data.bantScore,\n    bantQualified: data.bantQualified,\n    bantLevel: data.bantLevel,\n    bantBudgetScore: bantBudget,\n    bantAuthorityScore: bantAuthority,\n    bantNeedScore: bantNeed,\n    bantTimelineScore: bantTimeline,\n    crmType: 'kommocrm',\n    crmContactId: String(data.contactId),\n    crmContactAction: data.contactAction,\n    crmLeadId: String(data.leadId),\n    crmStageId: data.stageId,\n    crmPipelineId: data.pipelineId,\n    opportunityAmount: data.opportunityAmount,\n    telegramSent: data.sendTelegram || false,\n    executionTimeMs: data.executionTime || 0,\n    utmSource: utmSource,\n    utmMedium: utmMedium,\n    utmCampaign: utmCampaign,\n    leadUrl: data.leadUrl,\n    stageName: data.stageName,\n    noteAdded: data.noteAdded,\n    currency: data.CLIENT_CONFIG.defaultCurrency,\n    originalData: data\n  }\n}];"
+      },
+      "id": "5305843b-6e3e-4b1b-875c-4f89e0eb91fb",
+      "name": "Prepare DB Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO crm_sent_leads (\n  session_id,\n  crm_type,\n  crm_lead_id,\n  lead_score,\n  lead_temperature,\n  sent_at,\n  webhook_url\n) VALUES (\n  '{{ $json.sessionId }}',\n  '{{ $json.crmType }}',\n  '{{ $json.crmLeadId }}',\n  {{ $json.leadScore }},\n  '{{ $json.leadTemperature }}',\n  NOW(),\n  '{{ $json.leadUrl }}'\n)\nON CONFLICT (session_id) \nDO UPDATE SET\n  crm_lead_id = EXCLUDED.crm_lead_id,\n  lead_score = EXCLUDED.lead_score,\n  lead_temperature = EXCLUDED.lead_temperature,\n  sent_at = EXCLUDED.sent_at,\n  webhook_url = EXCLUDED.webhook_url;",
+        "options": {}
+      },
+      "id": "f718329a-3e57-4f31-8bee-e6b9dc671da9",
+      "name": "Save CRM Log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        32,
+        384
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO integration_logs (\n  session_id,\n  client_id,\n  status,\n  crm_type,\n  crm_contact_id,\n  crm_contact_action,\n  crm_deal_id,\n  crm_pipeline_id,\n  crm_stage_id,\n  opportunity_amount,\n  lead_score,\n  bant_score,\n  execution_time_ms,\n  telegram_sent,\n  response_payload,\n  created_at,\n  updated_at\n) VALUES (\n  '{{ $json.sessionId }}',\n  '{{ $json.clientName || \"Unknown\" }}',\n  '{{ $json.status || \"success\" }}',\n  '{{ $json.crmType }}',\n  '{{ $json.crmContactId }}',\n  '{{ $json.crmContactAction }}',\n  '{{ $json.crmLeadId }}',\n  {{ $json.crmPipelineId }},\n  {{ $json.crmStageId }},\n  {{ $json.opportunityAmount }},\n  {{ $json.leadScore }},\n  {{ $json.bantScore }},\n  {{ $json.executionTimeMs }},\n  {{ $json.telegramSent }},\n  '{{ JSON.stringify($json.originalData.aiComment) }}'::jsonb,\n  NOW(),\n  NOW()\n);",
+        "options": {}
+      },
+      "id": "47fb5a71-aed9-4eed-9b60-716727d91504",
+      "name": "Save Integration Log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        32,
+        192
+      ],
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const preparedData = $('Prepare DB Data').first().json;\n\nreturn [{\n  json: {\n    ...preparedData,\n    dbSaved: true\n  }\n}];"
+      },
+      "id": "21c6c319-ba80-4012-9cdf-11acd282eeeb",
+      "name": "Merge DB Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"message\": \"Lead successfully sent to amoCRM\",\n  \"sessionId\": $json.sessionId,\n  \"leadId\": $json.crmLeadId,\n  \"contactId\": $json.crmContactId,\n  \"contactAction\": $json.crmContactAction,\n  \"leadScore\": $json.leadScore,\n  \"leadTemperature\": $json.leadTemperature,\n  \"bantScore\": $json.bantScore,\n  \"bantQualified\": $json.bantQualified,\n  \"bantLevel\": $json.bantLevel,\n  \"opportunityAmount\": $json.opportunityAmount,\n  \"currency\": $json.currency,\n  \"stageName\": $json.stageName,\n  \"leadUrl\": $json.leadUrl,\n  \"commentAdded\": $json.commentAdded,\n  \"telegramSent\": $json.telegramSent,\n  \"executionTime\": $json.executionTimeMs + \"ms\",\n  \"dbSaved\": true\n} }}",
+        "options": {}
+      },
+      "id": "6d439d6e-5876-47a5-b38c-ae8718a9dad7",
+      "name": "Response Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        416,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"error\": \"Validation error\",\n  \"message\": \"Invalid data: {{ $json.validation.missingFields.join(', ') }}\",\n  \"details\": {\n    \"hasEmail\": {{ $json.validation.hasEmail }},\n    \"hasPhone\": {{ $json.validation.hasPhone }},\n    \"hasName\": {{ $json.validation.hasName }},\n    \"missingFields\": {{ JSON.stringify($json.validation.missingFields) }}\n  }\n}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "2f7ce23d-cf6e-4478-942a-da5ca90ae2ac",
+      "name": "Response Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2304,
+        512
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -1696,
+        288
+      ],
+      "id": "3fb0b965-3fe7-482c-a75b-376c01d77110",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "resource": "contacts",
+        "filter": {
+          "query": "={{ $json.searchData.email || $json.searchData.phone }}"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-kommo.kommo",
+      "typeVersion": 1,
+      "position": [
+        -2528,
+        288
+      ],
+      "id": "05d5fa73-2dc6-4045-9dd8-0f01e776b124",
+      "name": "Get list of contacts",
+      "credentials": {
+        "kommoOAuth2Api": {
+          "id": "Wxsld8cBJ5iVMxyU",
+          "name": "Kommo account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "contacts",
+        "operation": "updateContacts",
+        "collection": {
+          "contact": [
+            {
+              "id": "={{ $json.existingContactId }}",
+              "name": "={{ $json.contact.name }}",
+              "responsible_user_id": "={{ $json.responsibleUserId }}",
+              "created_by": "={{ $json.responsibleUserId }}",
+              "updated_by": "={{ $json.responsibleUserId }}",
+              "custom_fields_values": {
+                "custom_field": [
+                  {
+                    "data": "{\"id\":668710,\"type\":\"multitext\"}",
+                    "value": "={{ $json.aiCommentInput.customerProfile.phone }}"
+                  },
+                  {
+                    "data": "{\"id\":668712,\"type\":\"multitext\"}",
+                    "value": "={{ $json.aiCommentInput.customerProfile.email }}"
+                  },
+                  {
+                    "data": "{\"id\":668708,\"type\":\"text\"}",
+                    "value": "={{ $json.aiCommentInput.customerProfile.position }}"
+                  },
+                  {
+                    "data": "{\"id\":730828,\"type\":\"text\"}",
+                    "value": "={{ $json.aiCommentInput.customerProfile.company }}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-kommo.kommo",
+      "typeVersion": 1,
+      "position": [
+        -1920,
+        192
+      ],
+      "id": "073ba922-baf5-4c62-b131-e4567f479690",
+      "name": "Update contacts",
+      "credentials": {
+        "kommoOAuth2Api": {
+          "id": "Wxsld8cBJ5iVMxyU",
+          "name": "Kommo account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "contacts",
+        "operation": "createContacts",
+        "collection": {
+          "contact": [
+            {
+              "name": "={{ $json.contact.name }}",
+              "first_name": "={{ $json.contact.first_name }}",
+              "last_name": "={{ $json.contact.last_name }}",
+              "responsible_user_id": "={{ $json.responsibleUserId }}",
+              "created_by": "={{ $json.responsibleUserId }}",
+              "updated_by": "={{ $json.responsibleUserId }}",
+              "custom_fields_values": {
+                "custom_field": [
+                  {
+                    "data": "{\"id\":668712,\"type\":\"multitext\"}",
+                    "value": "={{ $json.aiCommentInput.customerProfile.email }}"
+                  },
+                  {
+                    "data": "{\"id\":668710,\"type\":\"multitext\"}",
+                    "value": "={{ $json.aiCommentInput.customerProfile.phone }}"
+                  },
+                  {
+                    "data": "{\"id\":668708,\"type\":\"text\"}",
+                    "value": "={{ $json.aiCommentInput.customerProfile.position }}"
+                  },
+                  {
+                    "data": "{\"id\":730828,\"type\":\"text\"}",
+                    "value": "={{ $json.aiCommentInput.customerProfile.company }}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-kommo.kommo",
+      "typeVersion": 1,
+      "position": [
+        -1920,
+        384
+      ],
+      "id": "cc27197f-c433-4e86-a4c6-951ca9e38179",
+      "name": "Create new contacts",
+      "credentials": {
+        "kommoOAuth2Api": {
+          "id": "Wxsld8cBJ5iVMxyU",
+          "name": "Kommo account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "notes",
+        "operation": "createNotes",
+        "notes": {
+          "common": [
+            {
+              "entity_id": "={{ $json.leadId }}",
+              "text": "={{ $json.aiComment }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-kommo.kommo",
+      "typeVersion": 1,
+      "position": [
+        -928,
+        288
+      ],
+      "id": "5d5586b4-98d3-4502-b7a1-7fb3f67ea109",
+      "name": "Add Note to Lead",
+      "credentials": {
+        "kommoOAuth2Api": {
+          "id": "Wxsld8cBJ5iVMxyU",
+          "name": "Kommo account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "leads",
+        "operation": "createLeads",
+        "collection": {
+          "lead": [
+            {
+              "name": "={{ $json.lead.name }}",
+              "price": "={{ $json.lead.price }}",
+              "pipeline_id": "={{ $json.pipelineId }}",
+              "status_id": "={{ $json.lead.status_id }}",
+              "responsible_user_id": "={{ $json.lead.responsible_user_id }}",
+              "_embedded": {
+                "contacts": [
+                  {
+                    "id": {
+                      "contact": [
+                        {
+                          "id": "={{ $json.contactId }}"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-kommo.kommo",
+      "typeVersion": 1,
+      "position": [
+        -1328,
+        288
+      ],
+      "id": "3d46c7e2-78d5-480f-8e80-1c0543cfcadc",
+      "name": "Create Lead",
+      "credentials": {
+        "kommoOAuth2Api": {
+          "id": "Wxsld8cBJ5iVMxyU",
+          "name": "Kommo account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://evgenstrizh.kommo.com/api/v4/contacts/custom_fields",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "kommoOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "[\n  {\n    \"name\": \"Company\",\n    \"type\": \"text\",\n    \"code\": \"COMPANY\"\n  }\n]",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -4576,
+        0
+      ],
+      "id": "15715fea-c053-486a-bd22-8c197deaa595",
+      "name": "Create Company Field",
+      "credentials": {
+        "kommoOAuth2Api": {
+          "id": "Wxsld8cBJ5iVMxyU",
+          "name": "Kommo account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4736,
+        320
+      ],
+      "id": "a87c44a0-7619-4b00-9026-2851694655de",
+      "name": "Security Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -4576,
+        320
+      ],
+      "id": "052af7da-ef52-4df3-b8d4-aa54b2cdcc7f",
+      "name": "Auth Check"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -4384,
+        464
+      ],
+      "id": "b5fe5341-50d6-4a65-bbf1-8335aff5e6aa",
+      "name": "Error Response"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Security Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Client Config": {
+      "main": [
+        [
+          {
+            "node": "Get Session Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Session Data": {
+      "main": [
+        [
+          {
+            "node": "Get Dialog History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Dialog History": {
+      "main": [
+        [
+          {
+            "node": "Merge All Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge All Data": {
+      "main": [
+        [
+          {
+            "node": "Format Data (Optimized)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Data (Optimized)": {
+      "main": [
+        [
+          {
+            "node": "Generate AI Comment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate AI Comment": {
+      "main": [
+        [
+          {
+            "node": "Update Deal with AI Comment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate AI Comment",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Deal with AI Comment": {
+      "main": [
+        [
+          {
+            "node": "Validate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Data": {
+      "main": [
+        [
+          {
+            "node": "Get list of contacts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Response Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Contact": {
+      "main": [
+        [
+          {
+            "node": "If Contact Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Contact Exists": {
+      "main": [
+        [
+          {
+            "node": "Update contacts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create new contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Contact Result": {
+      "main": [
+        [
+          {
+            "node": "Create Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Note Data": {
+      "main": [
+        [
+          {
+            "node": "Add Note to Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Final Data": {
+      "main": [
+        [
+          {
+            "node": "Prepare Telegram Check",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare DB Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Telegram Check": {
+      "main": [
+        [
+          {
+            "node": "If Send Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Send Telegram": {
+      "main": [
+        [
+          {
+            "node": "Format Telegram Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Telegram Message": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare DB Data": {
+      "main": [
+        [
+          {
+            "node": "Save CRM Log",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Save Integration Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save CRM Log": {
+      "main": [
+        [
+          {
+            "node": "Merge DB Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Integration Log": {
+      "main": [
+        [
+          {
+            "node": "Merge DB Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge DB Results": {
+      "main": [
+        [
+          {
+            "node": "Response Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Merge Contact Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create new contacts": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Update contacts": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Note to Lead": {
+      "main": [
+        [
+          {
+            "node": "Prepare Final Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get list of contacts": {
+      "main": [
+        [
+          {
+            "node": "Check Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Lead": {
+      "main": [
+        [
+          {
+            "node": "Prepare Note Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check": {
+      "main": [
+        [
+          {
+            "node": "Auth Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check": {
+      "main": [
+        [
+          {
+            "node": "Set Client Config",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "83b439c0-ca14-4553-8d46-51394cdd0bb0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "qRiH2XAhuvaPwnnF",
+  "tags": []
+}

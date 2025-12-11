@@ -1,0 +1,492 @@
+{
+  "name": "Client Domain Management API",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  client_id,\n  name,\n  allowed_domains,\n  max_domains,\n  status,\n  expires_at\nFROM clients\nWHERE client_id = '{{ $json.query.client_id }}'\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "99c9c62d-f4c0-4b9c-9859-90f80dd2a2f8",
+      "name": "GET - Get Client Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -320,
+        -160
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: true,\n  client_id: $json.client_id,\n  allowed_domains: $json.allowed_domains || [],\n  max_domains: $json.max_domains,\n  current_count: ($json.allowed_domains || []).length,\n  can_add_more: ($json.allowed_domains || []).length < $json.max_domains\n}) }}",
+        "options": {}
+      },
+      "id": "dbf08ba4-9897-42c6-b180-eeb93d3834dd",
+      "name": "Response - GET",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -64,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  client_id,\n  allowed_domains,\n  max_domains\nFROM clients\nWHERE client_id = '{{ $json.body.client_id }}'\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "4224b15e-ee67-4334-928b-77cc91238543",
+      "name": "POST - Get Current Domains",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -320,
+        80
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Проверка лимита и дубликатов\nconst clientData = $input.item.json;\nconst webhookData = $('Webhook - Domains_POST').item.json;\nconst newDomain = webhookData.body.domain;\n\nif (!newDomain) {\n  return [{\n    json: {\n      error: true,\n      message: 'domain is required'\n    }\n  }];\n}\n\nconst currentDomains = clientData.allowed_domains || [];\nconst maxDomains = clientData.max_domains || 1;\n\n// Проверка дубликата\nif (currentDomains.includes(newDomain)) {\n  return [{\n    json: {\n      error: true,\n      message: 'Domain already exists'\n    }\n  }];\n}\n\n// Проверка лимита\nif (currentDomains.length >= maxDomains) {\n  return [{\n    json: {\n      error: true,\n      message: `Maximum domains limit reached (${maxDomains})`\n    }\n  }];\n}\n\n// Добавляем новый домен\nconst updatedDomains = [...currentDomains, newDomain];\n\nreturn [{\n  json: {\n    client_id: clientData.client_id,\n    updated_domains: updatedDomains\n  }\n}];"
+      },
+      "id": "de50e79e-e168-4990-bb73-bae6164c0194",
+      "name": "POST - Validate & Add Domain",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -64,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clients\nSET \n  allowed_domains = ARRAY[{{ $json.updated_domains.map(d => \"'\" + d + \"'\").join(',') }}]::text[],\n  updated_at = NOW()\nWHERE client_id = '{{ $json.client_id }}'\nRETURNING client_id, allowed_domains, max_domains;",
+        "options": {}
+      },
+      "id": "9fe743b8-82a9-458c-afae-f8b7f5b70f19",
+      "name": "POST - Update DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        352,
+        48
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: true,\n  message: 'Domain added successfully',\n  allowed_domains: $json.allowed_domains,\n  current_count: $json.allowed_domains.length,\n  max_domains: $json.max_domains\n}) }}",
+        "options": {}
+      },
+      "id": "5f8d996c-9353-403e-9c04-637bcb2ba4ce",
+      "name": "Response - POST",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        512,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  client_id,\n  allowed_domains,\n  max_domains\nFROM clients\nWHERE client_id = '{{ $json.query.client_id }}'\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "a4f0bf61-e74c-42eb-84d1-5a4a019535cd",
+      "name": "DELETE - Get Current Domains",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -304,
+        288
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Удаление домена - получаем domain из query\nconst clientData = $input.item.json;\nconst webhookData = $('Webhook - Domains_DELETE').item.json;\n\n// Пробуем взять domain из body (если есть) или из query\nconst domainToDelete = webhookData.body?.domain || webhookData.query?.domain;\n\nif (!domainToDelete) {\n  return [{\n    json: {\n      error: true,\n      message: 'domain is required'\n    }\n  }];\n}\n\nconst currentDomains = clientData.allowed_domains || [];\n\n// Проверка существования\nif (!currentDomains.includes(domainToDelete)) {\n  return [{\n    json: {\n      error: true,\n      message: 'Domain not found'\n    }\n  }];\n}\n\n// Удаляем домен\nconst updatedDomains = currentDomains.filter(d => d !== domainToDelete);\n\nreturn [{\n  json: {\n    client_id: clientData.client_id,\n    updated_domains: updatedDomains\n  }\n}];"
+      },
+      "id": "74cb26ab-3a1d-4135-91f7-17f978da8b9e",
+      "name": "DELETE - Validate & Remove",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -64,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clients\nSET \n  allowed_domains = {{ $json.updated_domains.length > 0 ? \"ARRAY[\" + $json.updated_domains.map(d => \"'\" + d + \"'\").join(',') + \"]::text[]\" : \"ARRAY[]::text[]\" }},\n  updated_at = NOW()\nWHERE client_id = '{{ $json.client_id }}'\nRETURNING client_id, allowed_domains, max_domains;",
+        "options": {}
+      },
+      "id": "d18de3d6-83af-4d2a-ae48-6dd1525739ec",
+      "name": "DELETE - Update DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        368,
+        352
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: true,\n  message: 'Domain removed successfully',\n  allowed_domains: $json.allowed_domains,\n  current_count: $json.allowed_domains.length,\n  max_domains: $json.max_domains\n}) }}",
+        "options": {}
+      },
+      "id": "cfe06fd2-1a99-4eb1-8f93-651e4f9e2126",
+      "name": "Response - DELETE",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        560,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: true, message: $json.error ? $json.message : 'Invalid request' }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "bfb571ff-4a5d-485e-a0ad-b856b9dfdb88",
+      "name": "Response - Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        352,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "path": "client/domains",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "85f4e784-a10b-4b55-815f-f2f2dca7236d",
+      "name": "Webhook - Domains_GET",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        -160
+      ],
+      "webhookId": "f3b5fc7e-af7b-40eb-91ed-fb7dec5287a4"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "client/domains",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "16246198-ae09-4283-b2c9-75c4613ea260",
+      "name": "Webhook - Domains_POST",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -528,
+        80
+      ],
+      "webhookId": "f3b5fc7e-af7b-40eb-91ed-fb7dec5287a4"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: true, message: $json.error ? $json.message : 'Invalid request' }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "9973fc74-ca3f-43ac-9fb6-1971e8952198",
+      "name": "Response - Error1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        368,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cb28812c-985f-4fed-81d5-482d1b34f92c",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        112,
+        32
+      ],
+      "id": "5dda8f8f-cff2-4a92-9743-82f3d26128fb",
+      "name": "Check Error"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "13091eca-013a-4091-959a-1d41c4384c1c",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        128,
+        320
+      ],
+      "id": "e9c33b68-3bc6-4129-8308-d32c4ab456aa",
+      "name": "Check Error1"
+    },
+    {
+      "parameters": {
+        "httpMethod": "DELETE",
+        "path": "client/domains",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a5a630c1-ea13-4658-ad0d-6ee807b0339d",
+      "name": "Webhook - Domains_DELETE",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -512,
+        288
+      ],
+      "webhookId": "f3b5fc7e-af7b-40eb-91ed-fb7dec5287a4"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "GET - Get Client Data": {
+      "main": [
+        [
+          {
+            "node": "Response - GET",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST - Get Current Domains": {
+      "main": [
+        [
+          {
+            "node": "POST - Validate & Add Domain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST - Validate & Add Domain": {
+      "main": [
+        [
+          {
+            "node": "Check Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST - Update DB": {
+      "main": [
+        [
+          {
+            "node": "Response - POST",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DELETE - Get Current Domains": {
+      "main": [
+        [
+          {
+            "node": "DELETE - Validate & Remove",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DELETE - Validate & Remove": {
+      "main": [
+        [
+          {
+            "node": "Check Error1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DELETE - Update DB": {
+      "main": [
+        [
+          {
+            "node": "Response - DELETE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Domains_GET": {
+      "main": [
+        [
+          {
+            "node": "GET - Get Client Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Domains_POST": {
+      "main": [
+        [
+          {
+            "node": "POST - Get Current Domains",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Error": {
+      "main": [
+        [
+          {
+            "node": "Response - Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "POST - Update DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Error1": {
+      "main": [
+        [
+          {
+            "node": "Response - Error1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DELETE - Update DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Domains_DELETE": {
+      "main": [
+        [
+          {
+            "node": "DELETE - Get Current Domains",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "7896f879-a5cc-492a-81e4-e6a626ca3a90",
+  "meta": {
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "OEzOamH7SUbUgIh1",
+  "tags": []
+}

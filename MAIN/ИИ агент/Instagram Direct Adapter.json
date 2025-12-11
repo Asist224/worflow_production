@@ -1,0 +1,934 @@
+{
+  "name": "Instagram Direct Adapter",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "instagram-webhook",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1520,
+        0
+      ],
+      "id": "8f708ba0-c215-42ea-ad66-72fcf2303ed1",
+      "name": "Instagram Webhook",
+      "webhookId": "instagram-direct-webhook"
+    },
+    {
+      "parameters": {
+        "path": "instagram-webhook",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1520,
+        -144
+      ],
+      "id": "6da5c568-ac05-4842-9cd0-1377c55e1a9e",
+      "name": "Instagram Webhook GET",
+      "webhookId": "instagram-direct-webhook-get"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Instagram Direct webhook data\nconst body = items[0].json.body;\nlet parsedData;\n\ntry {\n  parsedData = typeof body === 'string' ? JSON.parse(body) : body;\n} catch (error) {\n  console.error('Failed to parse webhook data:', error);\n  return [{json: {error: 'Invalid webhook data'}}];\n}\n\n// Handle webhook verification\nif (items[0].json.query?.['hub.mode'] === 'subscribe') {\n  const verifyToken = items[0].json.query?.['hub.verify_token'];\n  const challenge = items[0].json.query?.['hub.challenge'];\n  \n  console.log('Verification attempt:');\n  console.log('Token received:', verifyToken);\n  console.log('Token expected:', 'ig_verify_token_2024');\n  console.log('Challenge:', challenge);\n  \n  if (verifyToken === 'ig_verify_token_2024') {\n    console.log('Token matched! Returning challenge:', challenge);\n    return [{json: {verification: true, challenge: challenge}}];\n  }\n  \n  console.log('Token mismatch!');\n  return [{json: {verification: false}}];\n}\n\n// Extract message data from Instagram webhook\nconst entry = parsedData.entry?.[0];\nconst messaging = entry?.messaging?.[0] || entry?.changes?.[0]?.value;\n\nif (!messaging) {\n  console.log('No messaging data found');\n  return [{json: {skip: true}}];\n}\n\n// ВАЖНО: Пропускаем эхо-сообщения от самого бота\nif (messaging.message?.is_echo === true) {\n  console.log('Echo message detected, skipping');\n  return [{json: {skip: true, reason: 'echo_message'}}];\n}\n\n// Format Instagram data to common structure\nconst formattedData = {\n  message: {\n    id: messaging.message?.mid || messaging.id,\n    from: {\n      id: messaging.sender?.id || messaging.from?.id,\n      username: messaging.sender?.username || messaging.from?.username,\n      name: messaging.sender?.name || 'Instagram User'\n    },\n    chat: {\n      id: messaging.sender?.id || messaging.from?.id,\n      type: 'private'\n    },\n    text: messaging.message?.text || '',\n    timestamp: messaging.timestamp || Date.now()\n  },\n  platform: 'instagram',\n  instagram_business_account: entry?.id,\n  raw: parsedData\n};\n\n// Handle attachments\nif (messaging.message?.attachments) {\n  const attachment = messaging.message.attachments[0];\n  if (attachment.type === 'audio') {\n    formattedData.message.voice = {\n      file_url: attachment.payload?.url\n    };\n  } else if (attachment.type === 'image') {\n    formattedData.message.photo = {\n      file_url: attachment.payload?.url\n    };\n  } else if (attachment.type === 'video') {\n    formattedData.message.video = {\n      file_url: attachment.payload?.url\n    };\n  }\n}\n\n// Handle story mentions/replies\nif (messaging.message?.is_echo === false && messaging.message?.reply_to) {\n  formattedData.story_reply = true;\n  formattedData.story_id = messaging.message.reply_to.story?.id;\n}\n\nreturn [{json: formattedData}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1264,
+        -16
+      ],
+      "id": "7a2848e2-9b10-45c8-ac96-9e0d79b6a50f",
+      "name": "Parse Instagram Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check Manager Mode for Instagram\nconst input = $input.all();\nconst data = input[0].json;\n\n// ВАЖНО: Пропускаем эхо-сообщения\nif (data.message?.is_echo === true) {\n  return [{\n    json: {\n      ...data,\n      skip: true,\n      skip_reason: 'Echo message - skip manager check'\n    }\n  }];\n}\n\n// Extract data\nconst userId = data.message?.from?.id || '';\nconst accountId = data.instagram_business_account || '';\nconst messageText = data.message?.text || '';\n\n// Check if message is from the business account itself (manager)\nif (userId === accountId) {\n  return [{\n    json: {\n      ...data,\n      skip: true,\n      skip_reason: 'Message from business account/manager',\n      is_manager_message: true\n    }\n  }];\n}\n\n// Check manager commands\nif (messageText && messageText.toLowerCase() === '/bot off') {\n  // Manager wants to take over\n  return [{\n    json: {\n      ...data,\n      skip: true,\n      skip_reason: 'Manager takeover command',\n      manager_takeover: true,\n      notification: 'Bot disabled. Manager has taken control of the chat.'\n    }\n  }];\n}\n\nif (messageText && messageText.toLowerCase() === '/bot on') {\n  // Manager returns control to bot\n  return [{\n    json: {\n      ...data,\n      skip: false,\n      manager_release: true,\n      notification: 'Bot enabled. AI is now responding to messages.'\n    }\n  }];\n}\n\n// Regular user message\nreturn [{\n  json: {\n    ...data,\n    skip: false\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1088,
+        48
+      ],
+      "id": "541a40ed-454d-4ce1-8bbc-e3cd31f441d5",
+      "name": "Check Manager Mode"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Handle manager commands or check status for Instagram\nINSERT INTO chat_status (session_id, manager_mode, activated_at, last_manager_message)\nVALUES (\n  'instagram_{{ $json.message.from.id }}',\n  {{ $json.manager_takeover ? 'true' : 'false' }},\n  CURRENT_TIMESTAMP,\n  CURRENT_TIMESTAMP\n)\nON CONFLICT (session_id) \nDO UPDATE SET \n  manager_mode = \n    CASE \n      WHEN {{ $json.manager_takeover ? 'true' : 'false' }} THEN true\n      WHEN {{ $json.manager_release ? 'true' : 'false' }} THEN false\n      ELSE chat_status.manager_mode\n    END,\n  last_manager_message = CURRENT_TIMESTAMP\nRETURNING manager_mode;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -704,
+        80
+      ],
+      "id": "503daf75-83cc-45f1-913e-280041ab0ca4",
+      "name": "Update Manager Status",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Manager Status for Instagram\nconst inputs = $input.all();\nconst checkData = $('Check Manager Mode').all()[0].json;\nconst pgData = inputs[0]?.json;\n\n// If it was a takeover or release command\nif (checkData.manager_takeover || checkData.manager_release) {\n  return [{\n    json: {\n      ...checkData,\n      skip: true,\n      skip_reason: 'Manager command processed'\n    }\n  }];\n}\n\n// Check manager_mode status\nconst managerMode = pgData?.manager_mode;\n\nif (managerMode === true || managerMode === 'true' || managerMode === 't') {\n  return [{\n    json: {\n      ...checkData,\n      skip: true,\n      skip_reason: 'Manager mode is active'\n    }\n  }];\n}\n\n// Manager not active\nreturn [{\n  json: {\n    ...checkData,\n    skip: false\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -496,
+        80
+      ],
+      "id": "b7f102d1-8f5e-4661-b3ae-1ca01dde3419",
+      "name": "Process Manager Status"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.verification }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    },
+                    "id": "verification-check"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Verification"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "skip-check",
+                    "leftValue": "={{ $json.skip }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Skip"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message.voice }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "object",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "id": "voice-check"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Voice"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "text-check",
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Text"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -288,
+        16
+      ],
+      "id": "164ab4f4-a0eb-4556-8fef-dc2d044c16ca",
+      "name": "Message Switch"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.challenge }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -80,
+        -240
+      ],
+      "id": "85d4749a-1ff0-46a2-98ba-8f8bea8ca43c",
+      "name": "Webhook Verification"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.message.voice.file_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -48,
+        -32
+      ],
+      "id": "55811d3f-9a0f-4991-ae94-0a7ae665a5e9",
+      "name": "Download Voice"
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.6,
+      "position": [
+        144,
+        -240
+      ],
+      "id": "00244beb-2791-4d24-97b3-c7875ecef4d7",
+      "name": "Transcribe",
+      "credentials": {
+        "openAiApi": {
+          "id": "vp6LDk9EYrV3plgd",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Language Detection for Instagram (Updated - No Language Selection)\nconst input = $input.all();\nlet messageText = '';\nlet userId = '';\nlet username = '';\n\nconsole.log('=== INSTAGRAM LANGUAGE DETECTION ===');\n\nif (input && input.length > 0) {\n  const item = input[0].json;\n  \n  if (item.message) {\n    messageText = item.message.text || '';\n    userId = item.message.from?.id || '';\n    username = item.message.from?.username || '';\n  }\n  \n  // For transcribed voice\n  if (item.text && !messageText) {\n    messageText = item.text;\n  }\n}\n\n// Language detection function\nfunction detectLanguageFromText(text) {\n  if (!text || typeof text !== 'string' || text.length < 2) {\n    return 'en';\n  }\n  \n  const lowerText = text.toLowerCase().trim();\n  let scores = { 'en': 0, 'ru': 0 };\n  \n  const russianChars = /[а-яё]/g;\n  const russianMatches = lowerText.match(russianChars);\n  if (russianMatches) {\n    scores.ru += russianMatches.length * 3;\n  }\n  \n  const onlyLatin = /^[a-z\\s\\.,!?'\"]+$/;\n  if (onlyLatin.test(lowerText)) {\n    scores.en += 5;\n  }\n  \n  const commonRussianWords = [\n    'привет', 'пока', 'да', 'нет', 'хорошо', 'спасибо',\n    'что', 'где', 'когда', 'как', 'почему', 'кто'\n  ];\n  \n  const commonEnglishWords = [\n    'hello', 'hi', 'yes', 'no', 'ok', 'thanks',\n    'the', 'and', 'or', 'but', 'in', 'on', 'at'\n  ];\n  \n  const words = lowerText.split(/\\s+/);\n  words.forEach(word => {\n    const cleanWord = word.replace(/[.,!?'\"]/g, '');\n    if (commonEnglishWords.includes(cleanWord)) scores.en += 10;\n    if (commonRussianWords.includes(cleanWord)) scores.ru += 10;\n  });\n  \n  return scores.ru > scores.en ? 'ru' : 'en';\n}\n\nconst detectedLanguage = detectLanguageFromText(messageText);\n\nconsole.log('Detected language:', detectedLanguage);\n\n// Extract contact info\nconst contactData = {\n  session_id: userId,  // Without instagram_ prefix\n  platform: 'instagram',\n  platform_user_id: userId,\n  platform_username: username,\n  instagram: username ? `@${username}` : null,\n  extracted_from: 'instagram_profile',\n  confidence_score: 65\n};\n\nreturn input.map(item => ({\n  json: {\n    ...item.json,\n    detected_language: detectedLanguage,\n    original_text: messageText,\n    text: messageText,\n    contact_data: contactData,\n    session_id: userId,  // Without prefix\n    detection_timestamp: new Date().toISOString()\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        752,
+        96
+      ],
+      "id": "4e0fcd0a-9797-473d-b504-fa36884cbb2c",
+      "name": "Language Detection"
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v23.0/{{ $json.message.from.id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "username,name"
+            },
+            {
+              "name": "access_token",
+              "value": "=EAAZAtONZApCwoBPa5p7sH6BTvfe4FswROGE7o9dfM20OtIFD1clChU2OftMVMiQGYowrKKZCYc8ZCied44JHkZCku2PYdNQmH0gGgltdAwwyumWv0PMjB9h0b4A115tAdZBM0ZAwQ9nr1PXkV4Pdc5rHbysVV2ibd2jX6zWdva11GlrPCaDThJbkf1CEb7QvrNXjxomRafxywZDZD"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        944,
+        -144
+      ],
+      "id": "8be89e67-a505-444d-9e73-32414e8c1cb8",
+      "name": "Get IG Profile",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process Instagram profile\nconst profileData = items[0].json;\nconst languageData = $('Language Detection').item.json;\n\nif (!profileData || profileData.error) {\n  console.log('No profile data available');\n  // Возвращаем базовые данные без профиля\n  return [{json: {\n    ...languageData.contact_data,\n    session_id: `instagram_${languageData.contact_data.platform_user_id}`,\n    platform_first_name: null,\n    platform_last_name: null,\n    platform_full_name: null,\n    full_name: null,\n    instagram: null, // Добавляем поле instagram\n    platform_metadata: null\n  }}];\n}\n\n// Parse name into first and last if available\nlet firstName = null;\nlet lastName = null;\nif (profileData.name) {\n  const nameParts = profileData.name.split(' ');\n  firstName = nameParts[0] || null;\n  lastName = nameParts.slice(1).join(' ') || null;\n}\n\n// Формируем Instagram handle\nconst instagramHandle = profileData.username ? `@${profileData.username}` : null;\n\n// Enrich contact data with profile info\nconst enrichedContact = {\n  ...languageData.contact_data,\n  session_id: `instagram_${languageData.contact_data.platform_user_id}`, // Add prefix\n  platform_username: profileData.username || languageData.contact_data.platform_username,\n  platform_first_name: firstName,\n  platform_last_name: lastName,\n  platform_full_name: profileData.name || null,\n  full_name: profileData.name || null,\n  instagram: instagramHandle, // Сохраняем Instagram handle в основное поле\n  platform_metadata: {\n    profile_picture: profileData.profile_picture_url,\n    followers_count: profileData.followers_count,\n    instagram_handle: instagramHandle // Дублируем в metadata для совместимости\n  }\n};\n\nreturn [{json: enrichedContact}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        -144
+      ],
+      "id": "195ce789-c311-4f54-ad9e-91633f157423",
+      "name": "Process IG Profile"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO user_contact_data (\n    session_id,\n    platform,\n    platform_user_id,\n    platform_username,\n    platform_first_name,\n    platform_last_name,\n    full_name,\n    instagram,\n    platform_metadata,\n    extracted_from,\n    confidence_score,\n    last_updated,\n    created_at\n) VALUES (\n    '{{ $json.session_id }}',\n    '{{ $json.platform }}',\n    '{{ $json.platform_user_id }}',\n    {{ $json.platform_username ? \"'\" + $json.platform_username + \"'\" : 'NULL' }},\n    {{ $json.platform_first_name ? \"'\" + $json.platform_first_name + \"'\" : 'NULL' }},\n    {{ $json.platform_last_name ? \"'\" + $json.platform_last_name + \"'\" : 'NULL' }},\n    {{ $json.full_name ? \"'\" + $json.full_name + \"'\" : 'NULL' }},\n    {{ $json.instagram ? \"'\" + $json.instagram + \"'\" : 'NULL' }},\n    {{ $json.platform_metadata ? \"'\" + JSON.stringify($json.platform_metadata) + \"'::jsonb\" : 'NULL' }},\n    '{{ $json.extracted_from }}',\n    {{ $json.confidence_score }},\n    CURRENT_TIMESTAMP,\n    CURRENT_TIMESTAMP\n)\nON CONFLICT (session_id)\nDO UPDATE SET\n    -- Платформенные данные всегда обновляем\n    platform_username = COALESCE(EXCLUDED.platform_username, user_contact_data.platform_username),\n    platform_metadata = EXCLUDED.platform_metadata,\n    \n    -- Instagram: заполняем если пусто ИЛИ обновляем если confidence выше\n    instagram = CASE\n        WHEN user_contact_data.instagram IS NULL OR user_contact_data.instagram = '' \n        THEN EXCLUDED.instagram\n        WHEN EXCLUDED.confidence_score >= user_contact_data.confidence_score \n        THEN COALESCE(EXCLUDED.instagram, user_contact_data.instagram)\n        ELSE user_contact_data.instagram\n    END,\n    \n    -- Имена: заполняем если пусто ИЛИ обновляем если confidence выше\n    platform_first_name = CASE\n        WHEN user_contact_data.platform_first_name IS NULL \n        THEN EXCLUDED.platform_first_name\n        WHEN EXCLUDED.confidence_score >= user_contact_data.confidence_score \n        THEN COALESCE(EXCLUDED.platform_first_name, user_contact_data.platform_first_name)\n        ELSE user_contact_data.platform_first_name\n    END,\n    \n    platform_last_name = CASE\n        WHEN user_contact_data.platform_last_name IS NULL \n        THEN EXCLUDED.platform_last_name\n        WHEN EXCLUDED.confidence_score >= user_contact_data.confidence_score \n        THEN COALESCE(EXCLUDED.platform_last_name, user_contact_data.platform_last_name)\n        ELSE user_contact_data.platform_last_name\n    END,\n    \n    full_name = CASE\n        WHEN user_contact_data.full_name IS NULL \n        THEN EXCLUDED.full_name\n        WHEN EXCLUDED.confidence_score >= user_contact_data.confidence_score \n        THEN COALESCE(EXCLUDED.full_name, user_contact_data.full_name)\n        ELSE user_contact_data.full_name\n    END,\n    \n    -- Другие контактные поля: заполняем если пусто ИЛИ обновляем если confidence выше\n    telegram = CASE\n        WHEN user_contact_data.telegram IS NULL \n        THEN EXCLUDED.telegram\n        WHEN EXCLUDED.confidence_score >= user_contact_data.confidence_score \n        THEN COALESCE(EXCLUDED.telegram, user_contact_data.telegram)\n        ELSE user_contact_data.telegram\n    END,\n    \n    whatsapp = CASE\n        WHEN user_contact_data.whatsapp IS NULL \n        THEN EXCLUDED.whatsapp\n        WHEN EXCLUDED.confidence_score >= user_contact_data.confidence_score \n        THEN COALESCE(EXCLUDED.whatsapp, user_contact_data.whatsapp)\n        ELSE user_contact_data.whatsapp\n    END,\n    \n    phone = CASE\n        WHEN user_contact_data.phone IS NULL \n        THEN EXCLUDED.phone\n        WHEN EXCLUDED.confidence_score >= user_contact_data.confidence_score \n        THEN COALESCE(EXCLUDED.phone, user_contact_data.phone)\n        ELSE user_contact_data.phone\n    END,\n    \n    email = CASE\n        WHEN user_contact_data.email IS NULL \n        THEN EXCLUDED.email\n        WHEN EXCLUDED.confidence_score >= user_contact_data.confidence_score \n        THEN COALESCE(EXCLUDED.email, user_contact_data.email)\n        ELSE user_contact_data.email\n    END,\n    \n    -- Сохраняем максимальный confidence_score\n    confidence_score = GREATEST(user_contact_data.confidence_score, EXCLUDED.confidence_score),\n    last_updated = CURRENT_TIMESTAMP\nRETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1296,
+        -144
+      ],
+      "id": "eb5ccb56-156d-4e73-9e89-d3c792625071",
+      "name": "Save IG Profile",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/ai-core-api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "apiKey",
+              "value": "24fs-$r4d-defd-77ds-7eds"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"platform\": \"instagram\",\n  \"message_text\": {{ JSON.stringify($json.text || 'test message') }},\n  \"user_id\": {{ JSON.stringify($json.message.from.id || 'unknown') }},\n  \"user_name\": {{ JSON.stringify($json.message.from.username || 'Instagram User') }},\n  \"chat_id\": {{ JSON.stringify($json.session_id) }},\n  \"language\": {{ JSON.stringify($json.detected_language || 'en') }},\n  \"is_story_reply\": {{ JSON.stringify($json.story_reply || false) }},\n  \"story_id\": {{ JSON.stringify($json.story_id || '') }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        944,
+        96
+      ],
+      "id": "2fa410f0-1d74-4d0e-8da6-884ac2e1cc26",
+      "name": "Send to AI Core",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Response Handler for Instagram\nconst input = $input.all();\nconst coreResponse = input[0];\nconst languageData = $('Language Detection').item.json;\nconst userId = languageData.message?.from?.id || '';\n\nlet responseData = {};\n\nif (coreResponse.binary && coreResponse.binary.data) {\n  // Voice response - Instagram doesn't support direct voice messages via API\n  responseData = {\n    json: {\n      user_id: userId,\n      response_text: \"🎤 [Voice messages are not supported in Instagram Direct API]\",\n      is_voice: false\n    }\n  };\n} else if (coreResponse.json) {\n  let responseText = coreResponse.json.response_text || \n                     coreResponse.json.response || \n                     coreResponse.json.text || \n                     'Error: No response';\n  \n  // Clean up HTML tags and formatting\n  responseText = responseText\n    .replace(/<b>/g, '') // убираем жирный текст\n    .replace(/<\\/b>/g, '')\n    .replace(/<br>/g, '\\n')\n    .replace(/<[^>]*>/g, '') // удаляем все остальные HTML теги\n    .replace(/\\[Name\\],?\\s*/g, '')\n    .replace(/\\[Имя\\],?\\s*/g, '')\n    .replace(/\\n\\n+/g, '\\n') // заменяем множественные переносы на одинарные\n    .replace(/\\n\\s*\\n/g, '\\n') // убираем пустые строки с пробелами\n    .replace(/\\*\\s+/g, '• ') // заменяем * на точки для списков\n    .replace(/\\n•/g, '\\n• ') // нормализуем списки\n    .trim();\n  \n  // Instagram имеет лимит 1000 символов\n  if (responseText.length > 950) {\n    responseText = responseText.substring(0, 947) + '...';\n  }\n  \n  responseData = {\n    json: {\n      user_id: userId,\n      response_text: responseText,\n      is_voice: false\n    }\n  };\n}\n\nreturn [responseData];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        96
+      ],
+      "id": "5cee495b-de14-4b84-9374-2c23b5d41a1c",
+      "name": "Response Handler"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v23.0/me/messages",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "=EAAZAtONZApCwoBPa5p7sH6BTvfe4FswROGE7o9dfM20OtIFD1clChU2OftMVMiQGYowrKKZCYc8ZCied44JHkZCku2PYdNQmH0gGgltdAwwyumWv0PMjB9h0b4A115tAdZBM0ZAwQ9nr1PXkV4Pdc5rHbysVV2ibd2jX6zWdva11GlrPCaDThJbkf1CEb7QvrNXjxomRafxywZDZD"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"recipient\": {\n    \"id\": {{ JSON.stringify($json.user_id) }}\n  },\n  \"message\": {\n    \"text\": {{ JSON.stringify($json.response_text) }}\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1296,
+        96
+      ],
+      "id": "25d9b4d3-6167-4ed7-8cea-9c3e4f47b447",
+      "name": "Send IG Reply"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Monitoring data for Instagram\nconst igData = items[0].json;\nconst from = igData.message?.from || {};\n\n// ВАЖНО: Не отправляем в мониторинг эхо-сообщения и пустые данные\nif (igData.skip === true || igData.message?.is_echo === true) {\n  console.log('Skipping monitoring for echo/skip message');\n  return [{json: {skip_monitoring: true}}];\n}\n\n// Проверяем, что есть реальный ID пользователя\nif (!from.id || from.id === 'unknown') {\n  console.log('No valid user ID, skipping monitoring');\n  return [{json: {skip_monitoring: true}}];\n}\n\nconst monitoringData = {\n  sessionId: `instagram_${from.id}`,\n  userId: from.id,\n  userName: from.username || from.name || 'Instagram User',\n  configName: 'defaultConfig',\n  platform: 'instagram',\n  sessionDuration: 0,\n  eventType: 'message',\n  messageCount: 1,\n  messageType: igData.message?.voice ? 'voice' : (igData.message?.photo ? 'photo' : (igData.message?.video ? 'video' : 'text')),\n  currentLanguage: 'en',\n  isMinimized: false,\n  userAgent: 'Instagram Direct API',\n  screenResolution: '',\n  language: 'unknown',\n  timezone: '',\n  referrer: '',\n  currentUrl: '',\n  domain: 'instagram.com',\n  isStoryReply: igData.story_reply || false,\n  storyId: igData.story_id || null,\n  geo: {\n    ip: 'Instagram',\n    country: 'Unknown',\n    city: 'Unknown',\n    region: 'Unknown',\n    latitude: null,\n    longitude: null\n  }\n};\n\nconsole.log('Monitoring data prepared:', monitoringData);\n\nreturn [{json: monitoringData}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -944,
+        -112
+      ],
+      "id": "a8863e97-450b-4b7a-8bcb-f592a861d9ae",
+      "name": "Monitoring Data"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.cryptomator.pro/webhook/chat-monitoring",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -528,
+        -176
+      ],
+      "id": "a314188c-edf9-4403-9e4a-c736dc2d8a55",
+      "name": "Send Monitoring"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1472,
+        96
+      ],
+      "id": "3d611b7c-13ee-4c41-9f7a-78038361f1b0",
+      "name": "Webhook Response"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e045bad2-3803-49aa-91b1-b1acf67c6a51",
+              "leftValue": "={{ $json.skip_monitoring }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -752,
+        -144
+      ],
+      "id": "a361bb6d-8e89-4e14-bb70-340d7cb0ea48",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e045bad2-3803-49aa-91b1-b1acf67c6a51",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -912,
+        96
+      ],
+      "id": "769b1bcf-3f59-4e25-8cab-ae58b9e23715",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-pro",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-pro"
+        },
+        "inputType": "binary",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        288,
+        -32
+      ],
+      "id": "797217d5-2c5d-425c-9187-bdb106b4e546",
+      "name": "Transcribe a recording",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "abo0BDHSJPM0pgRU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Изменяем MIME type с video/mp4 на audio/mp4\nconst input = items[0];\nconst binary = input.binary?.data;\n\nif (!binary) {\n  throw new Error('No binary data');\n}\n\n// Создаем новый объект с измененным MIME type\nconst modifiedBinary = {\n  ...binary,\n  mimeType: 'audio/mp4',  // Меняем с video/mp4 на audio/mp4\n  fileExtension: 'mp4'\n};\n\nreturn [{\n  json: input.json,\n  binary: {\n    data: modifiedBinary\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        -32
+      ],
+      "id": "3e2591ce-4386-4e6b-9375-2870513ca5c1",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Объединяем транскрибированный текст с оригинальными данными\nconst transcription = items[0].json;\nconst originalData = $('Message Switch').item.json;\n\n// Извлекаем текст из ответа Gemini\nlet transcribedText = '';\nif (transcription.content?.parts?.[0]?.text) {\n  transcribedText = transcription.content.parts[0].text;\n} else if (transcription[0]?.content?.parts?.[0]?.text) {\n  transcribedText = transcription[0].content.parts[0].text;\n} else if (typeof transcription === 'string') {\n  transcribedText = transcription;\n}\n\n// Очищаем текст от лишних символов\ntranscribedText = transcribedText\n  .replace(/\\[buzzer\\]/g, '')\n  .replace(/\\n+/g, ' ')\n  .trim();\n\nconsole.log('Transcribed text:', transcribedText);\n\n// Возвращаем полные данные для Language Detection\nreturn [{\n  json: {\n    ...originalData,\n    message: {\n      ...originalData.message,\n      text: transcribedText,  // Добавляем транскрибированный текст\n      original_voice: originalData.message.voice,  // Сохраняем оригинальные voice данные\n      transcribed: true\n    },\n    text: transcribedText,  // Дублируем для совместимости\n    transcribed_from_voice: true\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        -32
+      ],
+      "id": "4c7c0b1c-fb99-48e1-9740-754444ad2ae4",
+      "name": "Merge Transcription Data"
+    },
+    {
+      "parameters": {
+        "path": "manager-toggle",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "65af73ea-c660-4b59-9c1b-dc5f77a4ab85",
+      "name": "Toggle Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1504,
+        288
+      ],
+      "webhookId": "34243404-1581-4066-a88e-82f0dac1811d"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success: true, manager_mode: $json[0].manager_mode}) }}",
+        "options": {}
+      },
+      "id": "d11e91d1-0bdb-4af1-8569-a86df36a9c08",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -1104,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO chat_status (session_id, manager_mode, activated_at, last_manager_message)\nVALUES (\n    '{{ $json.body.session_id }}',\n    {{ $json.body.manager_mode }},\n    CURRENT_TIMESTAMP,\n    CURRENT_TIMESTAMP\n)\nON CONFLICT (session_id) \nDO UPDATE SET \n    manager_mode = {{ $json.body.manager_mode }},\n    last_manager_message = CASE \n        WHEN {{ $json.body.manager_mode }} = true \n        THEN CURRENT_TIMESTAMP \n        ELSE chat_status.last_manager_message \n    END\nRETURNING *;",
+        "options": {}
+      },
+      "id": "e198eb04-27cc-401e-bff1-7f06bc765311",
+      "name": "Update Manager Status1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -1312,
+        288
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Instagram Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Instagram Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Instagram Webhook GET": {
+      "main": [
+        [
+          {
+            "node": "Parse Instagram Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Instagram Data": {
+      "main": [
+        [
+          {
+            "node": "Check Manager Mode",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Monitoring Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Manager Mode": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Manager Status": {
+      "main": [
+        [
+          {
+            "node": "Process Manager Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Manager Status": {
+      "main": [
+        [
+          {
+            "node": "Message Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message Switch": {
+      "main": [
+        [
+          {
+            "node": "Webhook Verification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [],
+        [
+          {
+            "node": "Download Voice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Language Detection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Voice": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe": {
+      "main": [
+        []
+      ]
+    },
+    "Language Detection": {
+      "main": [
+        [
+          {
+            "node": "Get IG Profile",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send to AI Core",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get IG Profile": {
+      "main": [
+        [
+          {
+            "node": "Process IG Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process IG Profile": {
+      "main": [
+        [
+          {
+            "node": "Save IG Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to AI Core": {
+      "main": [
+        [
+          {
+            "node": "Response Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Handler": {
+      "main": [
+        [
+          {
+            "node": "Send IG Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send IG Reply": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monitoring Data": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Send Monitoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Update Manager Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe a recording": {
+      "main": [
+        [
+          {
+            "node": "Merge Transcription Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Transcribe a recording",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Transcription Data": {
+      "main": [
+        [
+          {
+            "node": "Language Detection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Toggle Webhook": {
+      "main": [
+        [
+          {
+            "node": "Update Manager Status1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Manager Status1": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "249efe9e-71e8-4b21-8f35-6666f2126f66",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "5FXnHgQgoXlvY9Jv",
+  "tags": []
+}

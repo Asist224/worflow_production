@@ -1,0 +1,689 @@
+{
+  "name": "📧 Email System Coordinator [Production]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# ⚙️ НАСТРОЙКА WORKFLOW\n\n---\n\n## Перед использованием:\n\n### 1. Откройте узел «⚙️ CONFIG»\nНастройте все параметры:\n\n| Параметр | Описание |\n|----------|----------|\n| `company_domain` | Домен вашей компании |\n| `company_name` | Название компании |\n| `company_email` | Email поддержки |\n| `api_key` | Ваш API ключ |\n| `webhook_base_url` | URL вашего n8n |\n| `table_*` | Названия таблиц БД |\n\n---\n\n### 2. Подключите Credentials\n\n**Gmail OAuth2** → узел «Get Recent Emails»\n\n**PostgreSQL** → все SQL узлы:\n• Check Processed Emails\n• Log Email Processing\n• Save Conversation\n• Save to Email Monitoring\n• Update Metrics After Analysis\n\n---\n\n### 3. Sub-workflows\n\nУбедитесь что существуют:\n• `/webhook/extract-email-contact`\n• `/webhook/analyze-email-dialog`\n\n---\n\n### 4. Активация\n\nНажмите **Active** в правом верхнем углу.\nWorkflow запускается каждые 10 минут.",
+        "height": 1244,
+        "width": 480,
+        "color": 6
+      },
+      "id": "966a9474-7f47-417f-aa55-60131d164119",
+      "name": "📋 ИНСТРУКЦИЯ",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -528,
+        -256
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"company_domain\": \"your-company.com\",\n  \"company_name\": \"Your Company\",\n  \"company_email\": \"support@your-company.com\",\n  \"api_key\": \"YOUR-API-KEY-CHANGE-ME\",\n  \"webhook_base_url\": \"https://your-n8n.com\",\n  \n  \"table_processing_log\": \"email_processing_log\",\n  \"table_conversations\": \"gmail_conversations\",\n  \"table_monitoring\": \"email_monitoring\",\n  \"table_analysis\": \"email_dialog_analysis\"\n}",
+        "options": {}
+      },
+      "id": "e773bbc5-a17b-486c-85ff-e93bfe7b817b",
+      "name": "⚙️ CONFIG",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        144,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "simple": false,
+        "filters": {
+          "q": "=newer_than:5d -from:noreply -from:no-reply -from:donotreply -from:notification"
+        },
+        "options": {}
+      },
+      "id": "51eef9f8-a34f-4cb6-a378-adc3530066fa",
+      "name": "📥Get Recent Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        304,
+        -48
+      ],
+      "webhookId": "92e92da3-2b91-46e4-b567-e8a64ffded96",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ev0cwU3ZEXqPZ9wU",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📧 EXTRACT EMAIL DATA\n// Настройки берутся из узла CONFIG автоматически\n// ═══════════════════════════════════════════════════════════════\n\n// Получаем конфигурацию\nconst config = $('⚙️ CONFIG').item.json;\nconst COMPANY_DOMAIN = config.company_domain;\n\n// Получаем все email из последней проверки\nconst emails = $input.all();\nconst processedEmails = [];\nconst logs = [];\n\nlogs.push(`Получено ${emails.length} писем для обработки`);\n\n// Функция для очистки и форматирования текста email\nfunction cleanEmailText(text) {\n  if (!text) return '';\n  \n  // СНАЧАЛА удаляем ВСЕ строки с датами и именами\n  text = text.replace(/^.*\\d{1,2}\\s+(янв|фев|мар|апр|мая|июн|июл|авг|сен|окт|ноя|дек)\\w*\\.?\\s+\\d{4}\\s+г\\.\\s+в\\s+\\d{1,2}:\\d{2}.*$/gmi, '');\n  text = text.replace(/^.*\\d{1,2}\\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\w*\\s+\\d{4}\\s+at\\s+\\d{1,2}:\\d{2}.*$/gmi, '');\n  \n  // Удаляем строки с днями недели\n  text = text.replace(/^.*(Пн|Вт|Ср|Чт|Пт|Сб|Вс|пн|вт|ср|чт|пт|сб|вс|Mon|Tue|Wed|Thu|Fri|Sat|Sun),\\s+\\d{1,2}\\s+.*$/gmi, '');\n  \n  // Удаляем цитирование Gmail\n  text = text.replace(/^>+.*$/gm, '');\n  \n  // Удаляем email адреса и имена с двоеточием\n  text = text.replace(/^.*[A-Za-z\\s]+\\s*<[^>]+@[^>]+>.*:$/gm, '');\n  text = text.replace(/^.*Cryptomator Team.*:$/gmi, '');\n  text = text.replace(/^.*CityBike.*:$/gmi, '');\n  \n  // Удаляем строки с \"написал(а):\" или \"wrote:\"\n  text = text.replace(/^.*\\s+(написал[а]?|wrote|пишет|writes).*:.*$/gmi, '');\n  \n  // Удаляем квадратные скобки и их содержимое\n  text = text.replace(/\\[([^\\]]*)\\]/g, '$1'); // Оставляем содержимое без скобок\n  text = text.replace(/\\[\"/g, ''); // Удаляем открывающую скобку с кавычкой\n  text = text.replace(/\"\\]/g, ''); // Удаляем закрывающую скобку с кавычкой\n  text = text.replace(/\\[|\\]/g, ''); // Удаляем оставшиеся квадратные скобки\n  \n  // Удаляем фигурные скобки\n  text = text.replace(/\\{|\\}/g, '');\n  \n  // Удаляем двойные кавычки в начале и конце строк\n  text = text.replace(/^\"|\"$/gm, '');\n  \n  // Удаляем подписи и разделители\n  text = text.replace(/^(-{3,}|_{3,}|\\*{3,})[\\s\\S]*$/m, '');\n  \n  // Удаляем контактную информацию с эмодзи\n  text = text.replace(/📧.*$/gm, '');\n  text = text.replace(/💬.*$/gm, '');\n  text = text.replace(/🌐.*$/gm, '');\n  text = text.replace(/\\|/g, '');\n  \n  // Удаляем URL и email\n  text = text.replace(/https?:\\/\\/[^\\s]+/g, '');\n  text = text.replace(/www\\.[^\\s]+/g, '');\n  text = text.replace(/[^\\s]+@[^\\s]+\\.[^\\s]+/g, '');\n  \n  // Удаляем подписи\n  text = text.replace(/(С уважением|С наилучшими пожеланиями|Best regards|Sincerely|Regards|Надеюсь.*полезн\\w*)[\\s\\S]*$/im, '');\n  text = text.replace(/^.*(Команда|Team)\\s+\\w+.*$/gmi, '');\n  \n  // ФОРМАТИРОВАНИЕ\n  \n  // Удаляем одиночные звездочки\n  text = text.replace(/^\\*\\s*/gm, '');\n  text = text.replace(/\\s*\\*\\s*/g, ' ');\n  \n  // Сначала объединяем весь текст в одну строку\n  text = text.replace(/\\n+/g, ' ');\n  \n  // Убираем множественные пробелы\n  text = text.replace(/\\s{2,}/g, ' ');\n  \n  // Список эмодзи для форматирования\n  const emojiList = ['⭐', '💰', '🔥', '🟢', '🟡', '🔵', '✅', '❌', '📧', '💬', '🌐', '🚀', '📊', '💯', '⚡', '🔐', '📈', '🎯', '🎨', '📌', '💡', '🎁', '🏆', '🔔', '📢', '💼', '📝', '🔑', '💳', '🎪', '🎲', '🎮', '👍', '👎', '💜', '❤️', '🧡', '💛', '💚', '💙', '🤍', '🖤', '🤎'];\n  \n  // Добавляем одинарный перенос строки перед эмодзи\n  emojiList.forEach(emoji => {\n    text = text.replace(new RegExp(`\\\\s*${emoji}`, 'g'), `\\n${emoji}`);\n  });\n  \n  // Обрабатываем списки с тире - одинарный перенос\n  text = text.replace(/\\s*-\\s+/g, '\\n• ');\n  \n  // Добавляем перенос после двоеточия, если за ним идет список\n  text = text.replace(/:\\s*([⭐💰🔥🟢🟡🔵✅❌📧💬🌐🚀📊💯⚡🔐📈])/g, ':\\n$1');\n  \n  // Добавляем перенос после точки, если следующее предложение начинается с заглавной буквы\n  text = text.replace(/\\.\\s+([А-ЯA-Z])/g, '.\\n$1');\n  \n  // Убираем перенос в самом начале текста\n  text = text.replace(/^\\n+/, '');\n  \n  // Убираем множественные переносы строк (больше двух подряд)\n  text = text.replace(/\\n{3,}/g, '\\n\\n');\n  \n  // Убираем пробелы перед знаками препинания\n  text = text.replace(/\\s+([,.;:!?])/g, '$1');\n  \n  // Добавляем пробел после точки, запятой и двоеточия, если его нет\n  text = text.replace(/([.,:])([А-ЯA-Zа-яa-z])/g, '$1 $2');\n  \n  // Финальная очистка\n  text = text.trim();\n  \n  return text;\n}\n\nfor (const item of emails) {\n  const email = item.json;\n  \n  // Извлекаем данные из структуры\n  let from = '';\n  let to = '';\n  let fromName = '';\n  let toName = '';\n  \n  if (email.from && email.from.value && email.from.value[0]) {\n    from = email.from.value[0].address || '';\n    fromName = email.from.value[0].name || '';\n  } else if (email.From) {\n    from = email.From;\n  }\n  \n  if (email.to && email.to.value && email.to.value[0]) {\n    to = email.to.value[0].address || '';\n    toName = email.to.value[0].name || '';\n  } else if (email.To) {\n    to = email.To;\n  }\n  \n  const subject = email.subject || email.Subject || '';\n  const messageId = email.id || '';\n  const threadId = email.threadId || '';\n  const labelIds = email.labelIds || email.labels || [];\n  const snippet = email.snippet || '';\n  \n  // Получаем и очищаем текст\n  let body = email.text || email.textAsHtml || snippet || '';\n  body = cleanEmailText(body);\n  \n  // Если после очистки текст пустой, используем snippet\n  if (!body || body.length < 10) {\n    body = cleanEmailText(snippet);\n  }\n  \n  // Проверяем, является ли это отправленным письмом\n  const isSent = labelIds.some(label => \n    label === 'SENT' || \n    (typeof label === 'object' && label.id === 'SENT')\n  );\n  \n  // Проверяем UNREAD\n  const isUnread = labelIds.some(label => \n    label === 'UNREAD' || \n    (typeof label === 'object' && label.id === 'UNREAD')\n  );\n  \n  logs.push(`Обработка: From: ${from}, To: ${to}, Subject: ${subject}`);\n  \n  if (!from && !to) {\n    logs.push(`ПРОПУЩЕНО: нет данных отправителя и получателя`);\n    continue;\n  }\n  \n  // Определяем email клиента и направление\n  let clientEmail = '';\n  let clientName = '';\n  let direction = '';\n  \n  if (isSent || from.includes(COMPANY_DOMAIN)) {\n    direction = 'outgoing';\n    clientEmail = to.toLowerCase().trim();\n    clientName = toName || to.split('@')[0];\n  } else {\n    direction = 'incoming';\n    clientEmail = from.toLowerCase().trim();\n    clientName = fromName || from.split('@')[0];\n  }\n  \n  // Фильтруем нежелательные email\n  const skipPatterns = [\n    'noreply', 'no-reply', 'donotreply', 'notification',\n    'mailer-daemon', 'postmaster', 'abuse@'\n  ];\n  \n  const shouldSkip = skipPatterns.some(pattern => \n    clientEmail.includes(pattern)\n  );\n  \n  if (shouldSkip) {\n    logs.push(`ПРОПУЩЕНО: ${clientEmail} содержит запрещенный паттерн`);\n    continue;\n  }\n  \n  if (!clientEmail || clientEmail === '') {\n    logs.push(`ПРОПУЩЕНО: не удалось извлечь email клиента`);\n    continue;\n  }\n  \n  // Определяем язык\n  const hasRussian = /[а-яА-ЯёЁ]/.test(body + subject);\n  const language = hasRussian ? 'ru' : 'en';\n  \n  processedEmails.push({\n    gmailId: messageId,\n    threadId: threadId,\n    email: clientEmail,\n    senderName: clientName,\n    subject: subject || 'No subject',\n    body: body.substring(0, 5000),\n    snippet: snippet,\n    direction: direction,\n    isUnread: isUnread,\n    language: language,\n    labelIds: labelIds,\n    date: email.date || new Date(parseInt(email.internalDate || Date.now())).toISOString(),\n    timestamp: email.date || new Date(parseInt(email.internalDate || Date.now())).toISOString()\n  });\n  \n  logs.push(`ДОБАВЛЕНО: ${clientEmail} (${direction})`);\n}\n\nlogs.push(`ИТОГО: Обработано ${processedEmails.length} из ${emails.length}`);\n\nif (processedEmails.length === 0) {\n  return [{\n    json: {\n      error: 'Нет писем для обработки',\n      logs: logs,\n      totalEmails: emails.length\n    }\n  }];\n}\n\nreturn processedEmails.map(e => ({json: e}));"
+      },
+      "id": "cb8e671f-4a88-4556-884e-d57974752132",
+      "name": "📋Extract Email Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "3cb91292-d974-4ac2-b009-72d3d12776a6",
+      "name": "⏰Check Every 10 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -16,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 📋 Таблица: {{ $('⚙️ CONFIG').item.json.table_processing_log }}\n-- ═══════════════════════════════════════════════════════════════\n\nSELECT \n    '{{ $json.gmailId }}' as gmail_id,\n    '{{ $json.threadId }}' as thread_id,\n    '{{ $json.email }}' as email,\n    '{{ $json.senderName }}' as sender_name,\n    '{{ $json.subject.replace(/'/g, \"''\") }}' as subject,\n    '{{ $json.direction }}' as direction,\n    {{ $json.isUnread }} as is_unread,\n    CASE \n        WHEN EXISTS (\n            SELECT 1 FROM {{ $('⚙️ CONFIG').item.json.table_processing_log }} \n            WHERE gmail_message_id = '{{ $json.gmailId }}'\n        ) THEN true \n        ELSE false \n    END as is_processed",
+        "options": {}
+      },
+      "id": "502bf55c-5ae1-4e55-8f3c-9e6e1baee5b2",
+      "name": "🔍Check Processed Emails",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        688,
+        -48
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем ВСЕ результаты проверки\nconst processedChecks = $input.all();\nconst allEmails = $items('📋Extract Email Data');\nconst restoredEmails = [];\n\n// Обрабатываем каждую проверенную запись\nfor (const check of processedChecks) {\n  const processedCheck = check.json;\n  \n  // Находим соответствующий email из Extract Email Data\n  const emailData = allEmails.find(item => \n    item.json.gmailId === processedCheck.gmail_id\n  );\n  \n  if (emailData) {\n    restoredEmails.push({\n      json: {\n        ...emailData.json,\n        is_processed: processedCheck.is_processed\n      }\n    });\n  }\n}\n\n// Возвращаем ВСЕ восстановленные письма\nreturn restoredEmails;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        -48
+      ],
+      "id": "dfa84a3e-c9b5-4724-9ac6-1c208762dae3",
+      "name": "🔄Restore Email Data1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.is_processed }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              },
+              "id": "2629f11f-26d2-4107-b1c4-e3700f10f239"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "09d407c6-5f24-48c8-982c-a3ab516d0108",
+      "name": "❓Is New Email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 📋 Таблица: {{ $('⚙️ CONFIG').item.json.table_processing_log }}\n-- ═══════════════════════════════════════════════════════════════\n\nINSERT INTO {{ $('⚙️ CONFIG').item.json.table_processing_log }} (\n    gmail_message_id,\n    thread_id,\n    email_from,\n    email_to,\n    subject,\n    direction,\n    is_unread,\n    processed_at\n) VALUES (\n    '{{ $json.gmailId }}',\n    '{{ $json.threadId }}',\n    '{{ $json.email }}',\n    '{{ $('⚙️ CONFIG').item.json.company_email }}',\n    '{{ $json.subject.replace(/'/g, \"''\") }}',\n    '{{ $json.direction }}',\n    {{ $json.isUnread }},\n    NOW()\n)\nON CONFLICT (gmail_message_id) \nDO UPDATE SET \n    processed_at = NOW(),\n    is_unread = EXCLUDED.is_unread\nRETURNING *;",
+        "options": {}
+      },
+      "id": "2e733ae9-e511-46b8-8e65-1ff5db98ebda",
+      "name": "📝 Log Email Processing",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1296,
+        -64
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем все данные из Log Email Processing\nconst logItems = $input.all();\nconst restoredEmails = $items('🔄Restore Email Data1');\n\nconst result = [];\n\n// Обрабатываем каждую запись\nfor (const logItem of logItems) {\n    const logData = logItem.json;\n    \n    // Находим соответствующее письмо\n    const email = restoredEmails.find(item => \n        item.json.gmailId === logData.gmail_message_id\n    );\n    \n    if (email) {\n        result.push({\n            json: email.json\n        });\n    }\n}\n\nreturn result;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        256
+      ],
+      "id": "3fded5e6-7363-4fed-877c-2b193f780ddd",
+      "name": "🔄 Restore for Save"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем все данные из узла Code с полной информацией о письмах\nconst allEmails = $input.all();\nconst results = [];\n\nfor (const item of allEmails) {\n    const emailData = item.json;\n    \n    results.push({\n        json: {\n            ...emailData, // Сохраняем все данные из Code\n            // Дополнительные поля для Save Conversation\n            direction: emailData.direction || 'incoming',\n            originalBody: emailData.body || emailData.snippet || '',\n            emailContent: '', // Пока пусто, заполнится при ответе\n            leadScore: 0, // Обновится после анализа\n            intent: 'unknown',\n            urgency: 'medium'\n        }\n    });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        256
+      ],
+      "id": "87dfede5-eeec-42dc-8b28-246092e2e7de",
+      "name": "📦Prepare Save Data"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 📋 Таблица: {{ $('⚙️ CONFIG').item.json.table_conversations }}\n-- ═══════════════════════════════════════════════════════════════\n\nBEGIN;\n-- Сохраняем переписку по email клиента\nINSERT INTO {{ $('⚙️ CONFIG').item.json.table_conversations }} (\n    email,\n    thread_id, \n    subject,\n    messages,\n    status,\n    lead_score,\n    language,\n    message_count,\n    created_at\n) VALUES (\n    '{{ $json.email }}',\n    '{{ $json.threadId }}',\n    '{{ $json.subject.replace(/'/g, \"''\") }}',\n    jsonb_build_array(\n        jsonb_build_object(\n            'type', '{{ $json.direction }}',\n            'content', '{{ ($json.body || $json.snippet || \"\").replace(/'/g, \"''\").substring(0, 5000) }}',\n            'date', '{{ $json.date }}',\n            'sender', '{{ $json.direction === \"incoming\" ? $json.senderName : $('⚙️ CONFIG').item.json.company_name }}',\n            'thread_id', '{{ $json.threadId }}',\n            'gmail_id', '{{ $json.gmailId }}'\n        )\n    ),\n    'active',\n    {{ $json.leadScore || 0 }},\n    '{{ $json.language }}',\n    1,\n    NOW()\n)\nON CONFLICT (email) DO UPDATE SET\n    messages = \n        CASE\n            WHEN NOT EXISTS (\n                SELECT 1 FROM jsonb_array_elements(COALESCE({{ $('⚙️ CONFIG').item.json.table_conversations }}.messages, '[]'::jsonb)) elem\n                WHERE elem->>'gmail_id' = '{{ $json.gmailId }}'\n            )\n            THEN (\n                SELECT jsonb_agg(elem ORDER BY (elem->>'date')::timestamp ASC)\n                FROM (\n                    SELECT elem FROM jsonb_array_elements(COALESCE({{ $('⚙️ CONFIG').item.json.table_conversations }}.messages, '[]'::jsonb)) elem\n                    UNION ALL\n                    SELECT jsonb_build_object(\n                        'type', '{{ $json.direction }}',\n                        'content', '{{ ($json.body || $json.snippet || \"\").replace(/'/g, \"''\").substring(0, 5000) }}',\n                        'date', '{{ $json.date }}',\n                        'sender', '{{ $json.direction === \"incoming\" ? $json.senderName : $('⚙️ CONFIG').item.json.company_name }}',\n                        'thread_id', '{{ $json.threadId }}',\n                        'gmail_id', '{{ $json.gmailId }}'\n                    )\n                ) AS all_messages(elem)\n            )\n            ELSE {{ $('⚙️ CONFIG').item.json.table_conversations }}.messages\n        END,\n    message_count = \n        CASE\n            WHEN NOT EXISTS (\n                SELECT 1 FROM jsonb_array_elements(COALESCE({{ $('⚙️ CONFIG').item.json.table_conversations }}.messages, '[]'::jsonb)) elem\n                WHERE elem->>'gmail_id' = '{{ $json.gmailId }}'\n            )\n            THEN COALESCE({{ $('⚙️ CONFIG').item.json.table_conversations }}.message_count, 0) + 1\n            ELSE {{ $('⚙️ CONFIG').item.json.table_conversations }}.message_count\n        END,\n    lead_score = GREATEST({{ $('⚙️ CONFIG').item.json.table_conversations }}.lead_score, {{ $json.leadScore || 0 }}),\n    status = 'active',\n    thread_id = '{{ $json.threadId }}',\n    subject = '{{ $json.subject.replace(/'/g, \"''\") }}',\n    updated_at = NOW();\nCOMMIT;",
+        "options": {}
+      },
+      "id": "46a6083c-65df-4a66-ba01-81a162dc3882",
+      "name": "💾Save Conversation",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        560,
+        256
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Восстанавливаем оригинальные данные для Save to Email Monitoring\nconst originalEmails = $items('🔄 Restore for Save');\nconst savedConversations = $input.all();\nconst results = [];\n\n// Возвращаем оригинальные данные из Code для Email Monitoring\nfor (const email of originalEmails) {\n    results.push({\n        json: email.json\n    });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        768,
+        256
+      ],
+      "id": "75b95d25-38df-4e05-b0ef-c883e0d45548",
+      "name": "🔄Restore Email Data for Monitoring"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 📋 Таблицы: \n--    {{ $('⚙️ CONFIG').item.json.table_monitoring }}\n--    {{ $('⚙️ CONFIG').item.json.table_conversations }}\n-- ═══════════════════════════════════════════════════════════════\n\nINSERT INTO {{ $('⚙️ CONFIG').item.json.table_monitoring }} (\n    record_id,\n    record_timestamp,\n    email,\n    thread_id,\n    user_name,\n    timestamp,\n    first_contact_time,\n    last_activity_time,\n    event_type,\n    message_count,\n    subject,\n    language,\n    intent,\n    urgency,\n    status,\n    last_reply_from\n) VALUES (\n    'email_{{ $json.email }}_{{ Date.now() }}',\n    NOW(),\n    '{{ $json.email }}',\n    '{{ $json.threadId }}',\n    '{{ $json.senderName }}',\n    '{{ $json.timestamp }}',\n    '{{ $json.timestamp }}',\n    '{{ $json.timestamp }}',\n    'new_email',\n    (SELECT COALESCE(message_count, 1) FROM {{ $('⚙️ CONFIG').item.json.table_conversations }} WHERE email = '{{ $json.email }}' LIMIT 1),\n    '{{ $json.subject.replace(/'/g, \"''\") }}',\n    '{{ $json.language }}',\n    'unknown',\n    'medium',\n    '{{ $json.isUnread ? \"unread\" : \"active\" }}',\n    '{{ $json.direction === \"incoming\" ? \"client\" : \"company\" }}'\n)\nON CONFLICT (email) DO UPDATE SET\n    user_name = EXCLUDED.user_name,\n    thread_id = EXCLUDED.thread_id,\n    subject = EXCLUDED.subject,\n    language = EXCLUDED.language,\n    status = EXCLUDED.status,\n    last_reply_from = EXCLUDED.last_reply_from,\n    message_count = (\n        SELECT COALESCE(message_count, {{ $('⚙️ CONFIG').item.json.table_monitoring }}.message_count) \n        FROM {{ $('⚙️ CONFIG').item.json.table_conversations }} \n        WHERE email = '{{ $json.email }}' \n        LIMIT 1\n    ),\n    last_activity_time = GREATEST(\n        {{ $('⚙️ CONFIG').item.json.table_monitoring }}.last_activity_time::timestamp,\n        '{{ $json.timestamp }}'::timestamp\n    ),\n    first_contact_time = LEAST(\n        {{ $('⚙️ CONFIG').item.json.table_monitoring }}.first_contact_time::timestamp,\n        '{{ $json.timestamp }}'::timestamp\n    ),\n    updated_at = NOW()\nRETURNING *;",
+        "options": {}
+      },
+      "id": "9738de52-2208-466e-86eb-9fb7cc09ac80",
+      "name": "📊Save to Email Monitoring",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        960,
+        256
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем ВСЕ данные из узла Code\nconst allCodeData = $items('🔄 Restore for Save');\nconst monitoringResult = $json;\n\n// Создаем Map для хранения уникальных email\nconst uniqueEmails = new Map();\n\n// Обрабатываем каждое письмо\nfor (const item of allCodeData) {\n    const email = item.json.email;\n    \n    // Если email еще не добавлен или текущая запись новее\n    if (!uniqueEmails.has(email) || \n        new Date(item.json.date) > new Date(uniqueEmails.get(email).date)) {\n        uniqueEmails.set(email, {\n            email: email,\n            senderName: item.json.senderName,\n            language: item.json.language || 'ru',\n            date: item.json.date,\n            timestamp: item.json.timestamp || item.json.date\n        });\n    }\n}\n\n// Преобразуем Map в массив для возврата\nconst result = [];\nfor (const emailData of uniqueEmails.values()) {\n    result.push({\n        json: emailData\n    });\n}\n\nreturn result;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1168,
+        256
+      ],
+      "id": "6d87ee24-fb0d-42cc-96e5-b960522d63a3",
+      "name": "📤Pass Monitoring Data"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        144,
+        480
+      ],
+      "id": "bd76cf1c-ad79-4a13-bfb0-136d2a30f96f",
+      "name": "🔁Loop Over Items"
+    },
+    {
+      "parameters": {
+        "amount": 1
+      },
+      "id": "94869f2e-fdd5-4962-8a8b-d4cf24b58093",
+      "name": "⏳Wait 1 sec",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        352,
+        496
+      ],
+      "webhookId": "wait-1-webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('⚙️ CONFIG').item.json.webhook_base_url }}/webhook/extract-email-contact",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "apiKey",
+              "value": "={{ $('⚙️ CONFIG').item.json.api_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"email\": \"{{ $json.email }}\",\n  \"type\": \"single\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        544,
+        496
+      ],
+      "id": "3dab3992-489f-4125-8a3a-c391d0e348a1",
+      "name": "📞Call Extract Contacts"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Передаем данные дальше после извлечения контактов\nconst extractResponse = $json; // Ответ от Call Extract Contacts\nconst currentData = $items('⏳Wait 1 sec')[0].json; // Данные текущего элемента из цикла\n\nreturn [{\n  json: {\n    ...currentData, // Все данные текущего элемента\n    extractStatus: extractResponse.status || 'completed',\n    extractMessage: extractResponse.message || 'Contacts extracted'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        752,
+        496
+      ],
+      "id": "3b78388c-c13a-44bb-b4d5-bbaf698cf218",
+      "name": "📤 Pass Result"
+    },
+    {
+      "parameters": {
+        "amount": 2
+      },
+      "id": "4a54dcd0-d0cd-4aa6-8979-83a055d01313",
+      "name": "⏳Wait 2 sec",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        928,
+        496
+      ],
+      "webhookId": "wait-2-webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('⚙️ CONFIG').item.json.webhook_base_url }}/webhook/analyze-email-dialog",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "apiKey",
+              "value": "={{ $('⚙️ CONFIG').item.json.api_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"email\": \"{{ $json.email }}\",\n  \"language\": \"{{ $json.language }}\",\n  \"type\": \"single\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1104,
+        496
+      ],
+      "id": "e208f8b3-ff00-46a3-b0df-de50e45f0bb2",
+      "name": "🧠Call Analyze Dialog"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 📋 Таблицы:\n--    {{ $('⚙️ CONFIG').item.json.table_monitoring }}\n--    {{ $('⚙️ CONFIG').item.json.table_analysis }}\n-- ═══════════════════════════════════════════════════════════════\n\nUPDATE {{ $('⚙️ CONFIG').item.json.table_monitoring }} em\nSET \n    urgency = CASE \n        WHEN (SELECT lead_scoring->>'temperature' \n              FROM {{ $('⚙️ CONFIG').item.json.table_analysis }} \n              WHERE email = em.email \n              ORDER BY created_at DESC LIMIT 1) = 'hot' THEN 'high'\n        WHEN (SELECT lead_scoring->>'temperature' \n              FROM {{ $('⚙️ CONFIG').item.json.table_analysis }} \n              WHERE email = em.email \n              ORDER BY created_at DESC LIMIT 1) = 'warm' THEN 'medium'\n        ELSE 'low'\n    END,\n    updated_at = NOW()\nWHERE em.email = '{{ $items('Pass Monitoring Data')[0].json.email }}';\n\nSELECT 'Updated' as status;",
+        "options": {}
+      },
+      "id": "4e9f17ca-f964-4521-8b21-bd6fa07652bc",
+      "name": "📈Update Metrics After Analysis",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1296,
+        496
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Завершаем обработку\nconst currentData = $json; // Данные от предыдущего узла (Update Metrics After Analysis)\n\nreturn [{\n  json: {\n    status: 'processing_completed',\n    email: currentData.email || 'unknown',\n    processed: true,\n    completedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        496
+      ],
+      "id": "7ff13fe4-f3ab-4e33-b92f-9db7e5f23da5",
+      "name": "✅Complete Outgoing"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "⚙️ CONFIG": {
+      "main": [
+        [
+          {
+            "node": "📥Get Recent Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📥Get Recent Emails": {
+      "main": [
+        [
+          {
+            "node": "📋Extract Email Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📋Extract Email Data": {
+      "main": [
+        [
+          {
+            "node": "🔍Check Processed Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⏰Check Every 10 Minutes": {
+      "main": [
+        [
+          {
+            "node": "⚙️ CONFIG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔍Check Processed Emails": {
+      "main": [
+        [
+          {
+            "node": "🔄Restore Email Data1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔄Restore Email Data1": {
+      "main": [
+        [
+          {
+            "node": "❓Is New Email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓Is New Email?": {
+      "main": [
+        [
+          {
+            "node": "📝 Log Email Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📝 Log Email Processing": {
+      "main": [
+        [
+          {
+            "node": "🔄 Restore for Save",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔄 Restore for Save": {
+      "main": [
+        [
+          {
+            "node": "📦Prepare Save Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📦Prepare Save Data": {
+      "main": [
+        [
+          {
+            "node": "💾Save Conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💾Save Conversation": {
+      "main": [
+        [
+          {
+            "node": "🔄Restore Email Data for Monitoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔄Restore Email Data for Monitoring": {
+      "main": [
+        [
+          {
+            "node": "📊Save to Email Monitoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊Save to Email Monitoring": {
+      "main": [
+        [
+          {
+            "node": "📤Pass Monitoring Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📤Pass Monitoring Data": {
+      "main": [
+        [
+          {
+            "node": "🔁Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔁Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "⏳Wait 1 sec",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⏳Wait 1 sec": {
+      "main": [
+        [
+          {
+            "node": "📞Call Extract Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📞Call Extract Contacts": {
+      "main": [
+        [
+          {
+            "node": "📤 Pass Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📤 Pass Result": {
+      "main": [
+        [
+          {
+            "node": "⏳Wait 2 sec",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⏳Wait 2 sec": {
+      "main": [
+        [
+          {
+            "node": "🧠Call Analyze Dialog",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧠Call Analyze Dialog": {
+      "main": [
+        [
+          {
+            "node": "📈Update Metrics After Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📈Update Metrics After Analysis": {
+      "main": [
+        [
+          {
+            "node": "✅Complete Outgoing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✅Complete Outgoing": {
+      "main": [
+        [
+          {
+            "node": "🔁Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "e757c233-c30b-47fb-9bea-d9c79d2f8dbb",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "QtELtcLpm0G1lSXS",
+  "tags": []
+}

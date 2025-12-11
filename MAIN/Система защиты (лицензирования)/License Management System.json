@@ -1,0 +1,518 @@
+{
+  "name": "License Management System",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM clients ORDER BY created_at DESC",
+        "options": {}
+      },
+      "id": "0e3f3681-638b-461b-8834-8984053d5e91",
+      "name": "GET - List All Clients",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        128,
+        -16
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: true, \n  clients: $input.all().map(item => item.json),\n  total: $input.all().length\n}) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, OPTIONS, GET"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "id": "5c7d8f99-44d0-4a90-bc5a-754d6e3c5834",
+      "name": "Response - GET Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        336,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Генерация уникального client_id и данных БЕЗ crypto модуля\nconst body = $input.item.json.body || {};\n\n// Валидация входных данных\nif (!body.name || !body.email) {\n  return [{\n    json: {\n      error: true,\n      message: 'Name and email are required'\n    }\n  }];\n}\n\n// Генерация client_id\nconst randomPart = Math.random().toString(36).substring(2, 8).toUpperCase() + \n                   Math.random().toString(36).substring(2, 8).toUpperCase();\nconst clientId = `CLIENT_${randomPart}`;\n\n// Генерация случайного пароля для клиента\nconst generatePassword = () => {\n  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';\n  let password = '';\n  for (let i = 0; i < 16; i++) {\n    password += chars.charAt(Math.floor(Math.random() * chars.length));\n  }\n  return password;\n};\nconst clientPassword = generatePassword();\n\n// Обработка allowed_domains\nlet allowedDomains = body.allowed_domains || [];\nif (typeof allowedDomains === 'string') {\n  allowedDomains = allowedDomains.split(',').map(d => d.trim()).filter(d => d);\n}\n\n// Обработка features\nlet features = body.features || ['webchat', 'monitoring', 'database_management'];\nif (typeof features === 'string') {\n  features = features.split(',').map(f => f.trim()).filter(f => f);\n}\n\n// Обработка expires_at\nlet expiresAt = null;\nif (body.expires_at) {\n  expiresAt = new Date(body.expires_at).toISOString();\n}\n\n// Max domains\nconst maxDomains = body.max_domains ? parseInt(body.max_domains) : 3;\n\n// Генерируем строку для хеширования в PostgreSQL\nconst timestamp = Date.now().toString();\nconst licenseString = `${clientId}_CRYPTOMATOR_SECRET_KEY_2024_${timestamp}`;\n\nreturn [{\n  json: {\n    client_id: clientId,\n    license_string: licenseString, // Будем хешировать в PostgreSQL\n    name: body.name,\n    email: body.email,\n    allowed_domains: allowedDomains,\n    status: body.status || 'active',\n    features: features,\n    expires_at: expiresAt,\n    max_domains: maxDomains,\n    plain_password: clientPassword // Для отправки клиенту\n  }\n}];"
+      },
+      "id": "c1ffaaf6-03c4-4378-99bc-4dc3e6d60db5",
+      "name": "POST - Prepare Client Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO clients (\n  client_id,\n  license_key,\n  name,\n  email,\n  password_hash,\n  allowed_domains,\n  status,\n  features,\n  expires_at,\n  max_domains,\n  created_at,\n  updated_at\n)\nVALUES (\n  '{{ $json.client_id }}',\n  CONCAT('lic_', ENCODE(DIGEST('{{ $json.license_string }}', 'sha256'), 'hex')),\n  '{{ $json.name }}',\n  '{{ $json.email }}',\n  crypt('{{ $json.plain_password }}', gen_salt('bf')),\n  {{ $json.allowed_domains.length > 0 ? \"ARRAY[\" + $json.allowed_domains.map(d => \"'\" + d + \"'\").join(',') + \"]::text[]\" : \"ARRAY[]::text[]\" }},\n  '{{ $json.status }}',\n  ARRAY[{{ $json.features.map(f => \"'\" + f + \"'\").join(',') }}]::text[],\n  {{ $json.expires_at ? \"'\" + $json.expires_at + \"'\" : 'NULL' }},\n  {{ $json.max_domains }},\n  NOW(),\n  NOW()\n)\nRETURNING \n  client_id, \n  license_key, \n  name, \n  email, \n  status,\n  max_domains;",
+        "options": {}
+      },
+      "id": "c0b0066e-8183-4f69-bbbf-07d6bd737486",
+      "name": "POST - Insert Client to DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        432,
+        208
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ \n  JSON.stringify({\n    success: true, \n    message: 'Client created successfully', \n    client_id: $json.client_id,\n    license_key: $json.license_key,\n    email: $json.email,\n    name: $json.name,\n    password: $('POST - Prepare Client Data').first().json.plain_password,\n    status: $json.status,\n    note: 'IMPORTANT: Save the password - it will not be shown again!'\n  }) \n}}",
+        "options": {
+          "responseCode": 201,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, OPTIONS, GET"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "id": "c5698932-f9f4-4057-8b71-c030de7af101",
+      "name": "Response - POST Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        640,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получение client_id из query параметров\nconst params = $input.item.json.query || {};\nconst clientId = params.client_id;\n\nif (!clientId) {\n  return [{\n    json: {\n      error: true,\n      message: 'client_id query parameter is required'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    client_id: clientId\n  }\n}];"
+      },
+      "id": "79c65ce8-239d-40f9-9e1c-3cf47986fb8e",
+      "name": "DELETE - Get Client ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM clients \nWHERE client_id = '{{ $json.client_id }}' \nRETURNING *;",
+        "options": {}
+      },
+      "id": "10cc790b-bc03-492e-8627-d8e12de9c039",
+      "name": "DELETE - Remove Client from DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        480,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success: true, message: 'Client deleted successfully'}) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, OPTIONS, GET"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "id": "00a37c6c-ad84-41e2-b862-914b66c1ab29",
+      "name": "Response - DELETE Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Обработка UPDATE запроса - обновляем только переданные поля\nconst body = $input.item.json.body || {};\nconst clientId = body.client_id;\n\n// Валидация client_id\nif (!clientId) {\n  return [{\n    json: {\n      error: true,\n      message: 'client_id is required'\n    }\n  }];\n}\n\n// Формируем объект только с переданными полями\nconst updateData = {\n  client_id: clientId\n};\n\n// Добавляем только те поля которые были переданы\nif (body.name !== undefined) updateData.name = body.name;\nif (body.email !== undefined) updateData.email = body.email;\nif (body.status !== undefined) updateData.status = body.status;\nif (body.max_domains !== undefined) updateData.max_domains = parseInt(body.max_domains);\n\nif (body.expires_at !== undefined) {\n  updateData.expires_at = new Date(body.expires_at).toISOString();\n}\n\n// Обработка allowed_domains\nif (body.allowed_domains !== undefined) {\n  let allowedDomains = body.allowed_domains;\n  if (typeof allowedDomains === 'string') {\n    allowedDomains = allowedDomains.split(',').map(d => d.trim()).filter(d => d);\n  }\n  updateData.allowed_domains = allowedDomains;\n}\n\n// Обработка features\nif (body.features !== undefined) {\n  let features = body.features;\n  if (typeof features === 'string') {\n    features = features.split(',').map(f => f.trim()).filter(f => f);\n  }\n  updateData.features = features;\n}\n\nreturn [{\n  json: updateData\n}];"
+      },
+      "id": "16258e53-c9db-4ec5-8065-c01f1829727e",
+      "name": "PUT - Prepare Update Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE clients \nSET \n  {{ $json.name ? \"name = '\" + $json.name + \"',\" : \"\" }}\n  {{ $json.email ? \"email = '\" + $json.email + \"',\" : \"\" }}\n  {{ $json.status ? \"status = '\" + $json.status + \"',\" : \"\" }}\n  {{ $json.max_domains ? \"max_domains = \" + $json.max_domains + \",\" : \"\" }}\n  {{ $json.allowed_domains ? \"allowed_domains = ARRAY[\" + $json.allowed_domains.map(d => \"'\" + d + \"'\").join(',') + \"]::text[],\" : \"\" }}\n  {{ $json.features ? \"features = ARRAY[\" + $json.features.map(f => \"'\" + f + \"'\").join(',') + \"]::text[],\" : \"\" }}\n  {{ $json.expires_at ? \"expires_at = '\" + $json.expires_at + \"',\" : \"\" }}\n  updated_at = NOW()\nWHERE client_id = '{{ $json.client_id }}'\nRETURNING client_id, name, email, status, expires_at, max_domains;",
+        "options": {}
+      },
+      "id": "3703bc9d-7efc-4898-a402-af579aa7e751",
+      "name": "PUT - Update Client in DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        480,
+        608
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success: true, message: 'Client updated successfully'}) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, OPTIONS, GET"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "id": "f9616eb2-931d-4c66-ac5a-d191065d194d",
+      "name": "Response - PUT Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success: false, error: $json.error || $json.message || 'Unknown error'}) }}",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "bf5d7f1d-701d-4120-8ca7-98b88d16415a",
+      "name": "Response - Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "path": "api/clients",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b082394b-dc4a-441c-a7dc-73351a34d181",
+      "name": "Webhook - Client Management_GET",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -112,
+        -16
+      ],
+      "webhookId": "client-management-webhook"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api/clients",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "5cab2f36-2a25-4931-a4c9-b31871778c13",
+      "name": "Webhook - Client Management_Post",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -112,
+        208
+      ],
+      "webhookId": "client-management-webhook"
+    },
+    {
+      "parameters": {
+        "httpMethod": "PUT",
+        "path": "api/clients",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "0a90cbf5-8edf-4ad6-a295-eaf1c5d4381e",
+      "name": "Webhook - Client Management_PUT",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -96,
+        608
+      ],
+      "webhookId": "client-management-webhook"
+    },
+    {
+      "parameters": {
+        "httpMethod": "DELETE",
+        "path": "api/clients",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "0231f3d6-6e2b-4865-a7ab-8754103f26ac",
+      "name": "Webhook - Client Management_DELET",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -112,
+        400
+      ],
+      "webhookId": "client-management-webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "GET - List All Clients": {
+      "main": [
+        [
+          {
+            "node": "Response - GET Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST - Prepare Client Data": {
+      "main": [
+        [
+          {
+            "node": "POST - Insert Client to DB",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Response - Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST - Insert Client to DB": {
+      "main": [
+        [
+          {
+            "node": "Response - POST Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DELETE - Get Client ID": {
+      "main": [
+        [
+          {
+            "node": "DELETE - Remove Client from DB",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Response - Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DELETE - Remove Client from DB": {
+      "main": [
+        [
+          {
+            "node": "Response - DELETE Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PUT - Prepare Update Data": {
+      "main": [
+        [
+          {
+            "node": "PUT - Update Client in DB",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Response - Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PUT - Update Client in DB": {
+      "main": [
+        [
+          {
+            "node": "Response - PUT Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Client Management_GET": {
+      "main": [
+        [
+          {
+            "node": "GET - List All Clients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Client Management_Post": {
+      "main": [
+        [
+          {
+            "node": "POST - Prepare Client Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Client Management_PUT": {
+      "main": [
+        [
+          {
+            "node": "PUT - Prepare Update Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Client Management_DELET": {
+      "main": [
+        [
+          {
+            "node": "DELETE - Get Client ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "51bfc6a6-a5c2-4cb5-86e4-07052f2f8ac3",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "f3GZ48vTAYNCHxdu",
+  "tags": []
+}

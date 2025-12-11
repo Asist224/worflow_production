@@ -1,0 +1,670 @@
+{
+  "name": "Admin User Management",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "admin/users",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "de185ffd-6a2f-4e0b-b4c3-1a24655a519a",
+      "name": "Webhook - Admin Users",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1072,
+        224
+      ],
+      "webhookId": "admin-users-management"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Извлечение и валидация запроса\nconst body = $input.first().json.body || {};\nconst action = body.action; // create, list, update, delete\nconst authHeader = $input.first().json.headers?.authorization;\n\nif (!authHeader || !authHeader.startsWith('Bearer ')) {\n    throw new Error('Missing or invalid authorization header');\n}\n\nconst token = authHeader.substring(7).trim();\n\nreturn [{\n    json: {\n        action: action,\n        token: token,\n        requestData: body,\n        // Добавляем payload.role для прохождения проверки Is Admin?\n        payload: {\n            role: 'admin'\n        }\n    }\n}];\n"
+      },
+      "id": "59063f20-8f97-4db6-bfef-8791bead926f",
+      "name": "Extract Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "is-admin",
+              "leftValue": "={{ $json.payload.role }}",
+              "rightValue": "admin",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2e3f4e4b-a3bd-4ce9-8fd6-eb8b32f816bd",
+      "name": "Is Admin?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -688,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n    json: {\n        success: false,\n        error: 'Access denied. Admin role required.'\n    }\n}];"
+      },
+      "id": "55eddbd1-2fd6-41ca-adc1-6cec0e8d0685",
+      "name": "Access Denied",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 403,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "45928d80-4dc0-46c2-bf5b-7d1f3a2e6811",
+      "name": "Response Forbidden",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        48,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Валидация данных для создания пользователя\nconst requestData = $('Extract Request').first().json.requestData;\nconst username = requestData.username;\nconst password = requestData.password;\nconst email = requestData.email || '';\nconst role = requestData.role || 'viewer';\nconst fullName = requestData.fullName || '';\n\n// Проверки\nif (!username || username.length < 3) {\n    throw new Error('Username must be at least 3 characters');\n}\n\nif (!password || password.length < 6) {\n    throw new Error('Password must be at least 6 characters');\n}\n\nif (!['admin', 'manager', 'viewer'].includes(role)) {\n    throw new Error('Invalid role. Must be: admin, manager, or viewer');\n}\n\nreturn [{\n    json: {\n        username: username.toLowerCase().trim(),\n        password: password,\n        email: email.trim(),\n        role: role,\n        fullName: fullName.trim()\n    }\n}];"
+      },
+      "id": "60b754f0-21be-4162-a0f7-aec8855dedfb",
+      "name": "Validate Create User",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO auth_users (username, password_hash, email, role, full_name, is_active)\nVALUES (\n    '{{ $json.username }}',\n    crypt('{{ $json.password }}', gen_salt('bf')),\n    '{{ $json.email }}',\n    '{{ $json.role }}',\n    '{{ $json.fullName }}',\n    true\n)\nRETURNING id, username, email, role, full_name, created_at;",
+        "options": {}
+      },
+      "id": "ecc97fce-79e5-49f9-a9c1-74cd9a3fc53f",
+      "name": "Create User in DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        48,
+        -144
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const userData = $input.first().json;\n\nreturn [{\n    json: {\n        success: true,\n        message: 'User created successfully',\n        user: {\n            id: userData.id,\n            username: userData.username,\n            email: userData.email,\n            role: userData.role,\n            fullName: userData.full_name,\n            createdAt: userData.created_at\n        }\n    }\n}];"
+      },
+      "id": "da21c643-9102-4619-86df-264dab605ab6",
+      "name": "Format Create Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "983c1bc1-d9c2-4229-8b77-112e4290b610",
+      "name": "Response Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        896,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, username, email, role, full_name, created_at, last_login, is_active\nFROM auth_users\nORDER BY created_at DESC;",
+        "options": {}
+      },
+      "id": "2c39aebb-e222-476b-9778-06f7c9039033",
+      "name": "List Users from DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -176,
+        48
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const users = $input.all().map(item => ({\n    id: item.json.id,\n    username: item.json.username,\n    email: item.json.email,\n    role: item.json.role,\n    fullName: item.json.full_name,\n    createdAt: item.json.created_at,\n    lastLogin: item.json.last_login,\n    isActive: item.json.is_active\n}));\n\nreturn [{\n    json: {\n        success: true,\n        count: users.length,\n        users: users\n    }\n}];"
+      },
+      "id": "8e83f829-6014-4530-911c-4ce9301e5417",
+      "name": "Format List Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        48,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Валидация данных для обновления\nconst requestData = $('Extract Request').first().json.requestData;\nconst userId = requestData.userId;\nconst updates = {};\n\nif (!userId) {\n    throw new Error('userId is required');\n}\n\nif (requestData.newPassword) {\n    if (requestData.newPassword.length < 6) {\n        throw new Error('Password must be at least 6 characters');\n    }\n    updates.password = requestData.newPassword;\n}\n\nif (requestData.email !== undefined) {\n    updates.email = requestData.email.trim();\n}\n\nif (requestData.role) {\n    if (!['admin', 'manager', 'viewer'].includes(requestData.role)) {\n        throw new Error('Invalid role');\n    }\n    updates.role = requestData.role;\n}\n\nif (requestData.fullName !== undefined) {\n    updates.fullName = requestData.fullName.trim();\n}\n\nif (requestData.isActive !== undefined) {\n    updates.isActive = requestData.isActive;\n}\n\nreturn [{\n    json: {\n        userId: userId,\n        updates: updates\n    }\n}];"
+      },
+      "id": "4752fe84-6d05-4dd0-925b-2ecbabcc9e53",
+      "name": "Validate Update User",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const userId = $json.userId;\nconst updates = $json.updates;\n\nlet setClauses = [];\n\nif (updates.password) {\n    setClauses.push(`password_hash = crypt('${updates.password}', gen_salt('bf'))`);\n}\n\nif (updates.email !== undefined) {\n    setClauses.push(`email = '${updates.email}'`);\n}\n\nif (updates.role) {\n    setClauses.push(`role = '${updates.role}'`);\n}\n\nif (updates.fullName !== undefined) {\n    setClauses.push(`full_name = '${updates.fullName}'`);\n}\n\nif (updates.isActive !== undefined) {\n    setClauses.push(`is_active = ${updates.isActive}`);\n}\n\nif (setClauses.length === 0) {\n    throw new Error('No fields to update');\n}\n\nconst query = `\nUPDATE auth_users\nSET ${setClauses.join(', ')}\nWHERE id = '${userId}'\nRETURNING id, username, email, role, full_name, is_active;\n`;\n\nreturn [{\n    json: {\n        query: query\n    }\n}];"
+      },
+      "id": "fd04f6e4-9e3d-4f6a-98d2-9371d736a7b7",
+      "name": "Build Update Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        48,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.query }}",
+        "options": {}
+      },
+      "id": "eda4913f-c68a-4413-adf6-23e8ce729353",
+      "name": "Update User in DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        256,
+        224
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const userData = $input.first().json;\n\nreturn [{\n    json: {\n        success: true,\n        message: 'User updated successfully',\n        user: {\n            id: userData.id,\n            username: userData.username,\n            email: userData.email,\n            role: userData.role,\n            fullName: userData.full_name,\n            isActive: userData.is_active\n        }\n    }\n}];"
+      },
+      "id": "b7f37703-1983-44c6-b3dc-6024cb15eff0",
+      "name": "Format Update Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const requestData = $('Extract Request').first().json.requestData;\nconst userId = requestData.userId;\n\nif (!userId) {\n    throw new Error('userId is required');\n}\n\nreturn [{\n    json: {\n        userId: userId\n    }\n}];"
+      },
+      "id": "cb8842d3-defe-40d1-ba6f-6379bf8ce2d1",
+      "name": "Validate Delete User",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM auth_users WHERE id = '{{ $json.userId }}' RETURNING username;",
+        "options": {}
+      },
+      "id": "84bac521-d699-4b38-a348-e82b453cee1e",
+      "name": "Delete User from DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        32,
+        432
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "I3pncOwnyKZ5gwoO",
+          "name": "Postgres_gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const deletedUser = $input.first().json;\n\nreturn [{\n    json: {\n        success: true,\n        message: `User '${deletedUser.username}' deleted successfully`\n    }\n}];"
+      },
+      "id": "4757c808-3b66-4d15-99c6-4f1da5c3d2cd",
+      "name": "Format Delete Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Extract Request').first().json.action }}",
+                    "rightValue": "create",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "1700e3fc-50fe-40a2-a163-eae1dfe49d41"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Create User"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "ee5fc431-835f-4898-b487-6c0ce3445528",
+                    "leftValue": "={{ $('Extract Request').first().json.action }}",
+                    "rightValue": "list",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "List Users"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "55690110-94d7-46cd-8e39-55db17c81ae7",
+                    "leftValue": "={{ $('Extract Request').first().json.action }}",
+                    "rightValue": "update",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Update User"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "7a0aa181-19dc-46ea-a368-573e3cb47c29",
+                    "leftValue": "={{ $('Extract Request').first().json.action }}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Delete User"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "75f29c49-0a2f-452f-ac82-0107f232efb0",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -448,
+        128
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Admin Users": {
+      "main": [
+        [
+          {
+            "node": "Extract Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Request": {
+      "main": [
+        [
+          {
+            "node": "Is Admin?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Admin?": {
+      "main": [
+        [
+          {
+            "node": "Route Action",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Access Denied",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Access Denied": {
+      "main": [
+        [
+          {
+            "node": "Response Forbidden",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Create User": {
+      "main": [
+        [
+          {
+            "node": "Create User in DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create User in DB": {
+      "main": [
+        [
+          {
+            "node": "Format Create Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Create Response": {
+      "main": [
+        [
+          {
+            "node": "Response Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Users from DB": {
+      "main": [
+        [
+          {
+            "node": "Format List Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format List Response": {
+      "main": [
+        [
+          {
+            "node": "Response Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Update User": {
+      "main": [
+        [
+          {
+            "node": "Build Update Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Update Query": {
+      "main": [
+        [
+          {
+            "node": "Update User in DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update User in DB": {
+      "main": [
+        [
+          {
+            "node": "Format Update Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Update Response": {
+      "main": [
+        [
+          {
+            "node": "Response Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Delete User": {
+      "main": [
+        [
+          {
+            "node": "Delete User from DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete User from DB": {
+      "main": [
+        [
+          {
+            "node": "Format Delete Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Delete Response": {
+      "main": [
+        [
+          {
+            "node": "Response Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Action": {
+      "main": [
+        [
+          {
+            "node": "Validate Create User",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "List Users from DB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Validate Update User",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Validate Delete User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "6e9bc943-fe15-46ab-b841-bc6686ecde2e",
+  "meta": {
+    "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
+  },
+  "id": "jZIn6UaZroHXTcRU",
+  "tags": []
+}
