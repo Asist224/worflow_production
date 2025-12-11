@@ -6,7 +6,7 @@
 -- • Основная система (35 таблиц) - AI агенты, чаты, email, CRM
 -- • Административная часть (6 таблиц) - управление клиентами, аутентификация
 -- 
--- ИТОГО: 41 ТАБЛИЦА + 7 ФУНКЦИЙ + 13 ТРИГГЕРОВ + 83 ИНДЕКСА
+-- ИТОГО: 42 ТАБЛИЦА + 7 ФУНКЦИЙ + 13 ТРИГГЕРОВ + 83 ИНДЕКСА
 --
 -- ИСПОЛЬЗОВАНИЕ:
 -- 1. Создайте новую базу данных PostgreSQL
@@ -139,6 +139,20 @@ $function$
 --   - PRIMARY KEY
 --   - UNIQUE constraints
 -- ============================================================================
+
+-- Создать упрощённую таблицу auto_contact_extraction_settings
+CREATE TABLE auto_contact_extraction_settings (
+    id SERIAL PRIMARY KEY,
+    enabled BOOLEAN DEFAULT false,
+    last_check TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Вставить начальные настройки
+INSERT INTO auto_contact_extraction_settings (id, enabled)
+VALUES (1, false)
+ON CONFLICT (id) DO NOTHING;
 
 -- Таблица: ai_analysis_temp
 CREATE TABLE IF NOT EXISTS ai_analysis_temp (
