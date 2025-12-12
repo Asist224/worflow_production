@@ -1,0 +1,434 @@
+{
+  "name": "🔗 Bitrix24 Integration [Production EN]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🔗 Bitrix24 Integration with AI Comment Generator\n\n### 📋 Description\nIntegration with Bitrix24 CRM with automatic AI comment generation.\n\n---\n\n### ⚙️ CONFIG\n\n| Parameter | Description |\n|-----------|-------------|\n| `api_key` | API key |\n| `bitrix_domain` | Bitrix24 domain |\n| `pipeline_id` | Pipeline ID |\n| `pipeline_name` | Pipeline name |\n| `default_manager_id` | Default manager ID |\n| `default_currency` | Default currency |\n| `telegram_chat_id` | Telegram chat ID for notifications |\n| `send_telegram_for_hot` | Send Telegram for hot leads |\n| `table_*` | Database table names |\n| `stages` | Pipeline stages |\n| `stage_mapping` | Temperature → stage mapping |\n\n---\n\n### 📥 Endpoint\n\n```json\nPOST /webhook/send-to-crm?apiKey=KEY\n{\"sessionId\": \"xxx\"}\n```\n\n---\n\n### 🔄 Logic\n1. Get session data\n2. Generate AI comment (Gemini)\n3. Create/update contact\n4. Create deal\n5. Telegram notification (for hot leads)",
+        "height": 700,
+        "width": 420,
+        "color": 5
+      },
+      "id": "sticky-note-main",
+      "name": "📝 Instructions",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-5800, -400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "bitrix-domain", "name": "bitrix_domain", "value": "your-domain.bitrix24.com", "type": "string"},
+            {"id": "pipeline-id", "name": "pipeline_id", "value": "0", "type": "string"},
+            {"id": "pipeline-name", "name": "pipeline_name", "value": "Sales", "type": "string"},
+            {"id": "default-manager", "name": "default_manager_id", "value": 1, "type": "number"},
+            {"id": "default-currency", "name": "default_currency", "value": "USD", "type": "string"},
+            {"id": "timezone", "name": "timezone", "value": "+03:00", "type": "string"},
+            {"id": "telegram-chat", "name": "telegram_chat_id", "value": "", "type": "string"},
+            {"id": "telegram-hot", "name": "send_telegram_for_hot", "value": true, "type": "boolean"},
+            {"id": "table-monitoring", "name": "table_webchat_monitoring", "value": "webchat_monitoring", "type": "string"},
+            {"id": "table-contacts", "name": "table_user_contact_data", "value": "user_contact_data", "type": "string"},
+            {"id": "table-analysis", "name": "table_dialog_analysis", "value": "dialog_analysis", "type": "string"},
+            {"id": "table-history-ru", "name": "table_chat_history_ru", "value": "n8n_chat_histories_ru", "type": "string"},
+            {"id": "table-history-en", "name": "table_chat_history_en", "value": "n8n_chat_histories_en", "type": "string"},
+            {"id": "table-crm-sent", "name": "table_crm_sent_leads", "value": "crm_sent_leads", "type": "string"},
+            {"id": "table-integration", "name": "table_integration_logs", "value": "integration_logs", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-main",
+      "name": "⚙️ CONFIG",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-5200, -144]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "send-to-crm",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "92e3f4d4-c49a-4985-b540-19c168442a48",
+      "name": "🌐 Webhook: Send to CRM",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-5504, -144],
+      "webhookId": "bitrix-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Security Check\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Send to CRM').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) { delete staticData.rateLimits[ip]; }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }]; }\nif (providedKey !== API_KEY) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }]; }\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-5008, -144],
+      "id": "sec-main",
+      "name": "🔐 Security Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth-condition", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-4832, -144],
+      "id": "auth-check",
+      "name": "❓ Auth Check"
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json.error }}", "options": {"responseCode": "={{ $json.error.status }}"}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-4632, 16],
+      "id": "err-auth",
+      "name": "❌ Error Response (Auth)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// ⚙️ Set Client Configuration\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG').first().json;\n\nconst CLIENT_CONFIG = {\n  clientName: 'YOUR_PROJECT_NAME',\n  bitrixDomain: config.bitrix_domain,\n  pipelineId: config.pipeline_id,\n  pipelineName: config.pipeline_name,\n  \n  // Pipeline stages - configure for your pipeline\n  stages: [\n    { id: 'C0:NEW', name: 'NEW', sort: 10 },\n    { id: 'C0:PREPARATION', name: 'PREPARATION', sort: 20 },\n    { id: 'C0:PREPAYMENT_INVOICE', name: 'PREPAYMENT_INVOICE', sort: 30 },\n    { id: 'C0:EXECUTING', name: 'In progress', sort: 40 },\n    { id: 'C0:FINAL_INVOICE', name: 'Final invoice', sort: 50 }\n  ],\n  \n  // Lead temperature to stage mapping\n  stageMapping: {\n    hot: 'C0:PREPAYMENT_INVOICE',\n    warm: 'C0:PREPARATION',\n    cold: 'C0:NEW'\n  },\n  \n  defaultManagerId: config.default_manager_id,\n  defaultCurrency: config.default_currency,\n  timezone: config.timezone,\n  sendTelegramForHot: config.send_telegram_for_hot,\n  telegramChatId: config.telegram_chat_id,\n  \n  closeDays: {\n    hot: 14,\n    warm: 30,\n    cold: 60\n  }\n};\n\nreturn [{\n  json: {\n    ...items[0].json,\n    CLIENT_CONFIG: CLIENT_CONFIG,\n    pipelineId: CLIENT_CONFIG.pipelineId\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-4632, -144],
+      "id": "set-config",
+      "name": "⚙️ Set Client Config"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  wm.session_id,\n  wm.platform,\n  wm.message_count,\n  ucd.full_name,\n  ucd.first_name,\n  ucd.last_name,\n  ucd.phone,\n  ucd.email,\n  ucd.telegram,\n  ucd.whatsapp,\n  ucd.company,\n  ucd.position,\n  ucd.location,\n  da.emotional_tone,\n  da.customer_needs,\n  da.recommendations,\n  da.lead_scoring,\n  da.bant_qualification,\n  da.extracted_entities\nFROM {{ $('⚙️ CONFIG').first().json.table_webchat_monitoring }} wm\nLEFT JOIN {{ $('⚙️ CONFIG').first().json.table_user_contact_data }} ucd ON wm.session_id = ucd.session_id\nLEFT JOIN {{ $('⚙️ CONFIG').first().json.table_dialog_analysis }} da ON wm.session_id = da.session_id\nWHERE wm.session_id = '{{ $json.body.sessionId }}'\nLIMIT 1",
+        "options": {}
+      },
+      "id": "get-session",
+      "name": "🐘 Get Session Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [-4424, -144],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  CASE \n    WHEN message::json->>'type' = 'human' THEN 'human'\n    WHEN message::json->>'type' = 'ai' THEN 'ai'\n    ELSE 'system'\n  END as message_type,\n  COALESCE(\n    message::json->>'content',\n    message::json->>'text'\n  ) as content,\n  created_at\nFROM (\n  SELECT * FROM {{ $('⚙️ CONFIG').first().json.table_chat_history_ru }} WHERE session_id = '{{ $('🐘 Get Session Data').item.json.session_id }}'\n  UNION ALL\n  SELECT * FROM {{ $('⚙️ CONFIG').first().json.table_chat_history_en }} WHERE session_id = '{{ $('🐘 Get Session Data').item.json.session_id }}'\n) all_messages\nWHERE message IS NOT NULL\nORDER BY created_at ASC",
+        "options": {}
+      },
+      "id": "get-history",
+      "name": "🐘 Get Dialog History",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [-4216, -144],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔄 Merge All Data\n// ═══════════════════════════════════════════════════════════════\n\nconst webhook = $('⚙️ Set Client Config').first().json;\nconst sessionData = $('🐘 Get Session Data').first().json;\nconst dialogHistory = $('🐘 Get Dialog History').all().map(item => item.json);\n\nconst CLIENT_CONFIG = webhook.CLIENT_CONFIG;\nconst stages = CLIENT_CONFIG.stages || [];\nconst pipelines = [{\n  ID: CLIENT_CONFIG.pipelineId,\n  NAME: CLIENT_CONFIG.pipelineName\n}];\n\nreturn [{\n  json: {\n    webhook: webhook,\n    sessionData: sessionData,\n    dialogHistory: dialogHistory,\n    pipelines: pipelines,\n    stages: stages,\n    CLIENT_CONFIG: CLIENT_CONFIG\n  }\n}];"
+      },
+      "id": "merge-data",
+      "name": "🔄 Merge All Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-4008, -144]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📊 Format Data for CRM\n// ═══════════════════════════════════════════════════════════════\n\nconst CLIENT_CONFIG = items[0].json.CLIENT_CONFIG || {\n  clientName: 'Default',\n  pipelineId: '0',\n  stageMapping: { hot: 'NEW', warm: 'NEW', cold: 'NEW' }\n};\n\nconst startTime = Date.now();\nconst mergedData = items[0].json;\nconst requestData = mergedData.webhook;\nconst sessionId = requestData.body?.sessionId || requestData.sessionId || null;\nconst sessionData = mergedData.sessionData;\nconst dialogHistory = mergedData.dialogHistory;\nconst stages = mergedData.stages;\n\nlet leadScoring = {};\nlet bant = {};\nlet entities = {};\nlet customerNeeds = [];\nlet recommendations = [];\nlet emotionalTone = {};\n\ntry {\n  leadScoring = sessionData.lead_scoring ? \n    (typeof sessionData.lead_scoring === 'string' ? \n      JSON.parse(sessionData.lead_scoring) : sessionData.lead_scoring) : {};\n  \n  if (sessionData.bant_qualification) {\n    bant = typeof sessionData.bant_qualification === 'string' ? \n      JSON.parse(sessionData.bant_qualification) : sessionData.bant_qualification;\n  }\n  \n  if (sessionData.extracted_entities) {\n    entities = typeof sessionData.extracted_entities === 'string' ? \n      JSON.parse(sessionData.extracted_entities) : sessionData.extracted_entities;\n  }\n  \n  customerNeeds = sessionData.customer_needs ? \n    (typeof sessionData.customer_needs === 'string' ? \n      JSON.parse(sessionData.customer_needs) : sessionData.customer_needs) : [];\n  \n  recommendations = sessionData.recommendations ? \n    (typeof sessionData.recommendations === 'string' ? \n      JSON.parse(sessionData.recommendations) : sessionData.recommendations) : [];\n      \n  emotionalTone = sessionData.emotional_tone ?\n    (typeof sessionData.emotional_tone === 'string' ?\n      JSON.parse(sessionData.emotional_tone) : sessionData.emotional_tone) : {};\n} catch (e) {}\n\nconst validateEmail = (email) => {\n  if (!email) return { valid: false, value: null };\n  const regex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\n  return { valid: regex.test(email), value: email };\n};\n\nconst validatePhone = (phone) => {\n  if (!phone) return { valid: false, value: null };\n  const cleaned = phone.replace(/[^\\d+]/g, '');\n  return { valid: cleaned.length >= 10, value: cleaned };\n};\n\nconst emailData = entities?.contacts?.email?.value ? \n  validateEmail(entities.contacts.email.value) : validateEmail(sessionData.email);\n  \nconst phoneData = entities?.contacts?.phone?.value ? \n  validatePhone(entities.contacts.phone.value) : validatePhone(sessionData.phone);\n  \nconst firstName = entities?.person?.firstName || sessionData.first_name || '';\nconst lastName = entities?.person?.lastName || sessionData.last_name || '';\nconst fullName = entities?.person?.fullName || sessionData.full_name || \n  `${firstName} ${lastName}`.trim() || 'Chat Customer';\nconst companyName = entities?.organization?.companyName || sessionData.company || '';\nconst position = entities?.organization?.position || sessionData.position || '';\n\nconst leadScore = leadScoring?.score || 0;\nconst leadTemp = leadScoring?.temperature || 'cold';\nconst bantTotal = bant?.totalScore || 0;\n\nfunction determineStage(leadTemp, stages, config) {\n  const customStageId = config.stageMapping[leadTemp];\n  if (customStageId) {\n    const found = stages.find(s => s.id === customStageId);\n    if (found) {\n      return { stageId: found.id, stageName: found.name, method: 'custom' };\n    }\n  }\n  const activeStages = stages.filter(s => !s.name.toLowerCase().includes('won') && !s.name.toLowerCase().includes('lost')).sort((a, b) => (a.sort || 0) - (b.sort || 0));\n  return { stageId: activeStages[0]?.id || 'NEW', stageName: activeStages[0]?.name || 'New', method: 'fallback' };\n}\n\nconst stageResult = determineStage(leadTemp, stages, CLIENT_CONFIG);\n\nconst closeDays = CLIENT_CONFIG.closeDays?.[leadTemp] || 60;\nconst closeDate = new Date();\ncloseDate.setDate(closeDate.getDate() + closeDays);\nconst closeDateISO = closeDate.toISOString().replace('Z', CLIENT_CONFIG.timezone || '+03:00');\n\nconst phoneArray = phoneData.valid ? [{ VALUE: phoneData.value, VALUE_TYPE: 'WORK' }] : [];\nconst emailArray = emailData.valid ? [{ VALUE: emailData.value, VALUE_TYPE: 'WORK' }] : [];\n\nconst aiCommentInput = {\n  leadScore: leadScore,\n  leadTemperature: leadTemp,\n  bantTotal: bantTotal,\n  bantQualified: bant?.qualified || false,\n  bant: bant,\n  customerProfile: {\n    name: fullName,\n    company: companyName,\n    position: position,\n    email: emailData.value,\n    phone: phoneData.value\n  },\n  customerNeeds: customerNeeds,\n  emotionalTone: emotionalTone,\n  recommendations: recommendations,\n  dialogHistory: dialogHistory.map(msg => ({\n    role: msg.message_type,\n    content: msg.content?.substring(0, 200) || ''\n  })),\n  messageCount: sessionData.message_count || dialogHistory.length,\n  platform: sessionData.platform || 'webchat',\n  stageName: stageResult.stageName\n};\n\nreturn [{\n  json: {\n    clientName: CLIENT_CONFIG.clientName,\n    sessionId: sessionId,\n    leadScore: leadScore,\n    leadTemperature: leadTemp,\n    bantScore: bantTotal,\n    bantQualified: bant?.qualified || false,\n    stageId: stageResult.stageId,\n    stageName: stageResult.stageName,\n    pipelineId: CLIENT_CONFIG.pipelineId,\n    isHotLead: leadScore >= 70,\n    responsibleUserId: CLIENT_CONFIG.defaultManagerId,\n    bitrixDomain: CLIENT_CONFIG.bitrixDomain,\n    sendTelegram: CLIENT_CONFIG.sendTelegramForHot && leadScore >= 70,\n    telegramChatId: CLIENT_CONFIG.telegramChatId,\n    contact: {\n      NAME: firstName || fullName,\n      LAST_NAME: lastName,\n      PHONE: phoneArray,\n      EMAIL: emailArray,\n      POST: position,\n      SOURCE_ID: 'WEB',\n      COMMENTS: `AI Agent. Score: ${leadScore}`\n    },\n    deal: {\n      TITLE: `🤖 ${fullName} | Score: ${leadScore}${companyName ? ' | ' + companyName : ''}`,\n      CATEGORY_ID: CLIENT_CONFIG.pipelineId,\n      STAGE_ID: stageResult.stageId,\n      CURRENCY_ID: CLIENT_CONFIG.defaultCurrency || 'USD',\n      OPPORTUNITY: 0,\n      CLOSEDATE: closeDateISO,\n      SOURCE_ID: 'WEB',\n      ASSIGNED_BY_ID: CLIENT_CONFIG.defaultManagerId,\n      COMMENTS: `🤖 AI Lead Score: ${leadScore}\\n🎯 Temperature: ${leadTemp}\\n📊 BANT: ${bantTotal}/70`\n    },\n    searchData: {\n      ...(phoneData.valid && { phone: phoneData.value }),\n      ...(emailData.valid && { email: emailData.value })\n    },\n    validation: {\n      hasEmail: emailData.valid,\n      hasPhone: phoneData.valid,\n      hasName: !!fullName,\n      isValid: emailData.valid || phoneData.valid,\n      missingFields: [!emailData.valid && !phoneData.valid ? 'contact' : null, !fullName ? 'name' : null].filter(Boolean)\n    },\n    aiCommentInput: aiCommentInput,\n    startTime: startTime,\n    CLIENT_CONFIG: CLIENT_CONFIG\n  }\n}];"
+      },
+      "id": "format-data",
+      "name": "📊 Format Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-3800, -144]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=# TASK: Generate an optimal CRM comment\n\nYou are an expert in lead analysis and CRM comment creation. Create a structured, informative, and actionable comment for the sales manager.\n\n## PRINCIPLES:\n- Comment should be 250-400 words\n- Focus on ACTIONS for the manager\n- Highlight KEY INSIGHTS\n- Use emojis for visualization\n- Be specific\n\n## INPUT DATA:\n\n### Lead Qualification:\n- Lead Score: {{ $json.aiCommentInput.leadScore }}/100\n- Temperature: {{ $json.aiCommentInput.leadTemperature }}\n- BANT Score: {{ $json.aiCommentInput.bantTotal }}/70\n\n### Customer:\n- Name: {{ $json.aiCommentInput.customerProfile.name }}\n- Company: {{ $json.aiCommentInput.customerProfile.company || 'Not specified' }}\n- Email: {{ $json.aiCommentInput.customerProfile.email }}\n- Phone: {{ $json.aiCommentInput.customerProfile.phone || 'None' }}\n\n### Needs:\n{{ JSON.stringify($json.aiCommentInput.customerNeeds) }}\n\n### Dialog:\nTotal Messages: {{ $json.aiCommentInput.messageCount }}\n\n### Context:\n- Platform: {{ $json.aiCommentInput.platform }}\n- Stage: {{ $json.aiCommentInput.stageName }}",
+        "options": {
+          "systemMessage": "You are an expert in lead analysis and CRM. Create structured, actionable comments for sales managers. Use emojis, be specific, focus on actions. Comment should be 250-400 words.\n\nStructure:\n🎯 EXECUTIVE SUMMARY\n📊 QUALIFICATION\n💡 KEY INSIGHTS\n👤 CUSTOMER PROFILE\n🚀 NEXT STEPS\n⚠️ IMPORTANT NOTES"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [-3592, -144],
+      "id": "ai-comment",
+      "name": "🤖 Generate AI Comment"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [-3624, 48],
+      "id": "gemini-model",
+      "name": "🧠 Google Gemini",
+      "credentials": {"googlePalmApi": {"id": "YOUR_GEMINI_CREDENTIAL_ID", "name": "Google Gemini(PaLM) Api account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📝 Process AI Comment\n// ═══════════════════════════════════════════════════════════════\n\nconst formattedData = $('📊 Format Data').first().json;\nconst agentResponse = $('🤖 Generate AI Comment').first().json;\n\nlet aiComment = agentResponse.output || agentResponse.text || agentResponse.response || JSON.stringify(agentResponse);\naiComment = aiComment.replace(/```[\\s\\S]*?```/g, '').replace(/```/g, '').replace(/`{1,2}([^`]+)`{1,2}/g, '$1').trim();\n\nformattedData.deal.COMMENTS = `--- EXECUTIVE SUMMARY ---\\nLead Score: ${formattedData.leadScore}/100 (${formattedData.leadTemperature.toUpperCase()})\\nBANT: ${formattedData.bantScore}/70\\n\\n--- FULL ANALYSIS ---\\nSee Timeline for complete AI-generated insights.`;\nformattedData.generatedComment = aiComment;\n\nreturn [{ json: formattedData }];"
+      },
+      "id": "update-deal",
+      "name": "📝 Update Deal with AI Comment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-3288, -144]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1},
+          "conditions": [{"leftValue": "={{ $json.validation.isValid }}", "rightValue": true, "operator": {"type": "boolean", "operation": "equals"}, "id": "valid-check"}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "validate-data",
+      "name": "❓ Validate Data",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-3096, -144]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"error\": \"Validation error\",\n  \"message\": \"Invalid data: {{ $json.validation.missingFields.join(', ') }}\"\n}",
+        "options": {"responseCode": 400}
+      },
+      "id": "err-validation",
+      "name": "❌ Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-2888, 16]
+    },
+    {
+      "parameters": {
+        "resource": "crm.contact",
+        "operation": "list",
+        "parameters": {
+          "filter": {
+            "property": [
+              {"field": "PHONE", "value": "={{ $json.searchData.phone }}"},
+              {"field": "EMAIL", "value": "={{ $json.searchData.email }}"}
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-bitrix.bitrix",
+      "typeVersion": 1,
+      "position": [-2888, -144],
+      "id": "list-contacts",
+      "name": "🔍 List Contacts",
+      "credentials": {"bitrixOAuth2Api": {"id": "YOUR_BITRIX_CREDENTIAL_ID", "name": "Bitrix account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// ✅ Check Contact Existence\n// ═══════════════════════════════════════════════════════════════\n\nconst searchResult = $('🔍 List Contacts').first().json;\nconst formattedData = $('📝 Update Deal with AI Comment').first().json;\nconst contacts = searchResult.result || [];\n\nlet contactId = null;\nlet contactExists = false;\n\nif (contacts.length > 0) {\n  contactId = contacts[0].ID;\n  contactExists = true;\n}\n\nreturn [{\n  json: {\n    contactExists: contactExists,\n    contactId: contactId,\n    formattedData: formattedData\n  }\n}];"
+      },
+      "id": "check-contact",
+      "name": "✅ Check Contact",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-2680, -144]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1},
+          "conditions": [{"leftValue": "={{ $json.contactExists }}", "rightValue": true, "operator": {"type": "boolean", "operation": "equals"}, "id": "exists-check"}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-contact-exists",
+      "name": "❓ If Contact Exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-2488, -144]
+    },
+    {
+      "parameters": {
+        "resource": "crm.contact",
+        "operation": "update",
+        "id": "={{ $json.contactId }}",
+        "fields": {
+          "values": [
+            {"name": "NAME", "value": "={{ $json.formattedData.contact.NAME }}"},
+            {"name": "LAST_NAME", "value": "={{ $json.formattedData.contact.LAST_NAME }}"},
+            {"name": "PHONE", "value": "={{ $json.formattedData.contact.PHONE }}"},
+            {"name": "EMAIL", "value": "={{ $json.formattedData.contact.EMAIL }}"},
+            {"name": "POST", "value": "={{ $json.formattedData.contact.POST }}"}
+          ]
+        }
+      },
+      "id": "update-contact",
+      "name": "📝 Update Contact",
+      "type": "n8n-nodes-bitrix.bitrix",
+      "typeVersion": 1,
+      "position": [-2280, -240],
+      "credentials": {"bitrixOAuth2Api": {"id": "YOUR_BITRIX_CREDENTIAL_ID", "name": "Bitrix account"}}
+    },
+    {
+      "parameters": {
+        "resource": "crm.contact",
+        "fields": {
+          "values": [
+            {"name": "NAME", "value": "={{ $json.formattedData.contact.NAME }}"},
+            {"name": "LAST_NAME", "value": "={{ $json.formattedData.contact.LAST_NAME }}"},
+            {"name": "PHONE", "value": "={{ $json.formattedData.contact.PHONE }}"},
+            {"name": "EMAIL", "value": "={{ $json.formattedData.contact.EMAIL }}"},
+            {"name": "POST", "value": "={{ $json.formattedData.contact.POST }}"},
+            {"name": "SOURCE_ID", "value": "WEB"},
+            {"name": "COMMENTS", "value": "={{ $json.formattedData.contact.COMMENTS }}"}
+          ]
+        }
+      },
+      "id": "create-contact",
+      "name": "➕ Create Contact",
+      "type": "n8n-nodes-bitrix.bitrix",
+      "typeVersion": 1,
+      "position": [-2280, -48],
+      "credentials": {"bitrixOAuth2Api": {"id": "YOUR_BITRIX_CREDENTIAL_ID", "name": "Bitrix account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔄 Merge Contact Results\n// ═══════════════════════════════════════════════════════════════\n\nlet contactId;\nlet action;\n\ntry {\n  const updateResult = $('📝 Update Contact').first()?.json;\n  if (updateResult) {\n    contactId = $('✅ Check Contact').first().json.contactId;\n    action = 'updated';\n  }\n} catch (e) {}\n\ntry {\n  const createResult = $('➕ Create Contact').first()?.json;\n  if (createResult && !contactId) {\n    contactId = createResult.result;\n    action = 'created';\n  }\n} catch (e) {}\n\nconst checkData = $('✅ Check Contact').first().json;\n\nreturn [{\n  json: {\n    contactId: contactId,\n    action: action,\n    formattedData: checkData.formattedData\n  }\n}];"
+      },
+      "id": "merge-contact",
+      "name": "🔄 Merge Contact Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-2072, -144]
+    },
+    {
+      "parameters": {
+        "fields": {
+          "values": [
+            {"name": "TITLE", "value": "={{ $json.formattedData.deal.TITLE }}"},
+            {"name": "CATEGORY_ID", "value": "={{ $json.formattedData.deal.CATEGORY_ID }}"},
+            {"name": "CONTACT_IDS", "value": "={{ [Number($json.contactId)] }}"},
+            {"name": "STAGE_ID", "value": "={{ $json.formattedData.deal.STAGE_ID }}"},
+            {"name": "CURRENCY_ID", "value": "={{ $json.formattedData.deal.CURRENCY_ID }}"},
+            {"name": "OPPORTUNITY", "value": "={{ $json.formattedData.deal.OPPORTUNITY }}"},
+            {"name": "CLOSEDATE", "value": "={{ $json.formattedData.deal.CLOSEDATE }}"},
+            {"name": "COMMENTS", "value": "={{ $json.formattedData.deal.COMMENTS }}"},
+            {"name": "SOURCE_ID", "value": "WEB"},
+            {"name": "ASSIGNED_BY_ID", "value": "={{ $json.formattedData.deal.ASSIGNED_BY_ID }}"}
+          ]
+        }
+      },
+      "id": "create-deal",
+      "name": "➕ Create Deal",
+      "type": "n8n-nodes-bitrix.bitrix",
+      "typeVersion": 1,
+      "position": [-1864, -144],
+      "credentials": {"bitrixOAuth2Api": {"id": "YOUR_BITRIX_CREDENTIAL_ID", "name": "Bitrix account"}},
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"error\": \"CRM error\",\n  \"message\": \"Failed to create deal in Bitrix24\"\n}",
+        "options": {"responseCode": 500}
+      },
+      "id": "err-crm",
+      "name": "❌ CRM Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-1656, 16]
+    },
+    {
+      "parameters": {
+        "resource": "custom",
+        "apiMethod": "crm.timeline.comment.add",
+        "inputType": "json",
+        "jsonBody": "={\n  \"fields\": {\n    \"ENTITY_ID\": {{ $('➕ Create Deal').first().json.result }},\n    \"ENTITY_TYPE\": \"deal\",\n    \"COMMENT\": {{ JSON.stringify($('🔄 Merge Contact Result').first().json.formattedData.generatedComment) }}\n  }\n}"
+      },
+      "type": "n8n-nodes-bitrix.bitrix",
+      "typeVersion": 1,
+      "position": [-1656, -144],
+      "id": "add-comment",
+      "name": "💬 Add AI Comment to Timeline",
+      "credentials": {"bitrixOAuth2Api": {"id": "YOUR_BITRIX_CREDENTIAL_ID", "name": "Bitrix account"}},
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📤 Prepare Final Response\n// ═══════════════════════════════════════════════════════════════\n\nconst createDealResult = $('➕ Create Deal').first().json;\nconst mergeContactResult = $('🔄 Merge Contact Result').first().json;\nconst dealId = createDealResult?.result || null;\nconst bitrixDomain = mergeContactResult.formattedData.bitrixDomain;\n\nreturn [{\n  json: {\n    success: true,\n    dealId: dealId,\n    contactId: mergeContactResult.contactId,\n    contactAction: mergeContactResult.action,\n    leadScore: mergeContactResult.formattedData.leadScore,\n    leadTemperature: mergeContactResult.formattedData.leadTemperature,\n    stageName: mergeContactResult.formattedData.stageName,\n    bitrixUrl: `https://${bitrixDomain}/crm/deal/details/${dealId}/`,\n    formattedData: mergeContactResult.formattedData\n  }\n}];"
+      },
+      "id": "prepare-response",
+      "name": "📤 Prepare Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1448, -144]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO {{ $('⚙️ CONFIG').first().json.table_crm_sent_leads }} (\n  session_id,\n  crm_type,\n  crm_lead_id,\n  lead_score,\n  lead_temperature,\n  sent_at,\n  webhook_url\n) VALUES (\n  '{{ $json.formattedData.sessionId }}',\n  'bitrix24',\n  '{{ $json.dealId }}',\n  {{ $json.leadScore }},\n  '{{ $json.leadTemperature }}',\n  NOW(),\n  '{{ $json.bitrixUrl }}'\n)\nON CONFLICT (session_id) \nDO UPDATE SET\n  crm_lead_id = EXCLUDED.crm_lead_id,\n  lead_score = EXCLUDED.lead_score,\n  lead_temperature = EXCLUDED.lead_temperature,\n  sent_at = EXCLUDED.sent_at,\n  webhook_url = EXCLUDED.webhook_url;",
+        "options": {}
+      },
+      "id": "save-log",
+      "name": "🐘 Save CRM Log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [-1240, -144],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}},
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"sessionId\": $json.formattedData.sessionId,\n  \"dealId\": $json.dealId,\n  \"contactId\": $json.contactId,\n  \"contactAction\": $json.contactAction,\n  \"leadScore\": $json.leadScore,\n  \"leadTemperature\": $json.leadTemperature,\n  \"stageName\": $json.stageName,\n  \"bitrixUrl\": $json.bitrixUrl,\n  \"message\": \"Successfully sent to CRM\"\n} }}",
+        "options": {"responseCode": 200}
+      },
+      "id": "response-success",
+      "name": "✅ Response Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-1032, -144]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "🌐 Webhook: Send to CRM": {"main": [[{"node": "⚙️ CONFIG", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG": {"main": [[{"node": "🔐 Security Check", "type": "main", "index": 0}]]},
+    "🔐 Security Check": {"main": [[{"node": "❓ Auth Check", "type": "main", "index": 0}]]},
+    "❓ Auth Check": {"main": [[{"node": "⚙️ Set Client Config", "type": "main", "index": 0}], [{"node": "❌ Error Response (Auth)", "type": "main", "index": 0}]]},
+    "⚙️ Set Client Config": {"main": [[{"node": "🐘 Get Session Data", "type": "main", "index": 0}]]},
+    "🐘 Get Session Data": {"main": [[{"node": "🐘 Get Dialog History", "type": "main", "index": 0}]]},
+    "🐘 Get Dialog History": {"main": [[{"node": "🔄 Merge All Data", "type": "main", "index": 0}]]},
+    "🔄 Merge All Data": {"main": [[{"node": "📊 Format Data", "type": "main", "index": 0}]]},
+    "📊 Format Data": {"main": [[{"node": "🤖 Generate AI Comment", "type": "main", "index": 0}]]},
+    "🤖 Generate AI Comment": {"main": [[{"node": "📝 Update Deal with AI Comment", "type": "main", "index": 0}]]},
+    "📝 Update Deal with AI Comment": {"main": [[{"node": "❓ Validate Data", "type": "main", "index": 0}]]},
+    "❓ Validate Data": {"main": [[{"node": "🔍 List Contacts", "type": "main", "index": 0}], [{"node": "❌ Validation Error", "type": "main", "index": 0}]]},
+    "🔍 List Contacts": {"main": [[{"node": "✅ Check Contact", "type": "main", "index": 0}]]},
+    "✅ Check Contact": {"main": [[{"node": "❓ If Contact Exists", "type": "main", "index": 0}]]},
+    "❓ If Contact Exists": {"main": [[{"node": "📝 Update Contact", "type": "main", "index": 0}], [{"node": "➕ Create Contact", "type": "main", "index": 0}]]},
+    "📝 Update Contact": {"main": [[{"node": "🔄 Merge Contact Result", "type": "main", "index": 0}]]},
+    "➕ Create Contact": {"main": [[{"node": "🔄 Merge Contact Result", "type": "main", "index": 0}]]},
+    "🔄 Merge Contact Result": {"main": [[{"node": "➕ Create Deal", "type": "main", "index": 0}]]},
+    "➕ Create Deal": {"main": [[{"node": "💬 Add AI Comment to Timeline", "type": "main", "index": 0}], [{"node": "❌ CRM Error", "type": "main", "index": 0}]]},
+    "💬 Add AI Comment to Timeline": {"main": [[{"node": "📤 Prepare Response", "type": "main", "index": 0}]]},
+    "📤 Prepare Response": {"main": [[{"node": "🐘 Save CRM Log", "type": "main", "index": 0}]]},
+    "🐘 Save CRM Log": {"main": [[{"node": "✅ Response Success", "type": "main", "index": 0}]]},
+    "🧠 Google Gemini": {"ai_languageModel": [[{"node": "🤖 Generate AI Comment", "type": "ai_languageModel", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "production-en-v1",
+  "meta": {"templateCredsSetupCompleted": true, "instanceId": "production-template"},
+  "id": "bitrix24-integration-en",
+  "tags": []
+}
