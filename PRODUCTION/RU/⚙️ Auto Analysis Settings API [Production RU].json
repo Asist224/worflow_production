@@ -1,0 +1,510 @@
+{
+  "name": "⚙️ Auto Analysis Settings API [Production RU]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## ⚙️ Auto Analysis Settings API\n\n### 📋 Описание\nAPI для управления настройками автоматического анализа диалогов.\n\n**Эндпоинты:**\n- `POST /auto-analysis-settings` - сохранить настройки\n- `GET /auto-analysis-settings` - получить текущие настройки\n\n---\n\n### ⚙️ Настройка\n\n#### 1. CONFIG: Save Settings\n| Параметр | Описание |\n|----------|----------|\n| `api_key` | API ключ для аутентификации |\n| `rate_limit_window_ms` | Окно rate limiting (мс) |\n| `rate_limit_max_requests` | Макс. запросов в окне |\n| `table_settings` | Таблица настроек автоанализа |\n\n#### 2. CONFIG: Get Settings\nАналогичные параметры для GET запросов.\n\n---\n\n### 🔐 Безопасность\n- API Key аутентификация (header, body или query)\n- Rate limiting по IP\n\n---\n\n### 📥 Примеры запросов\n\n**Сохранить настройки (POST):**\n```json\nPOST /webhook/auto-analysis-settings?apiKey=YOUR_KEY\n{\n  \"enabled\": true,\n  \"delay_minutes\": 15\n}\n```\n\n**Получить настройки (GET):**\n```\nGET /webhook/auto-analysis-settings?apiKey=YOUR_KEY\n```",
+        "height": 660,
+        "width": 420,
+        "color": 5
+      },
+      "id": "sticky-note-main",
+      "name": "📝 Инструкция",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -680,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "api-key",
+              "name": "api_key",
+              "value": "YOUR_API_KEY_HERE",
+              "type": "string"
+            },
+            {
+              "id": "rate-window",
+              "name": "rate_limit_window_ms",
+              "value": 60000,
+              "type": "number"
+            },
+            {
+              "id": "rate-max",
+              "name": "rate_limit_max_requests",
+              "value": 60,
+              "type": "number"
+            },
+            {
+              "id": "table-settings",
+              "name": "table_settings",
+              "value": "auto_analysis_settings",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-save",
+      "name": "⚙️ CONFIG: Save Settings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -80,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "api-key-get",
+              "name": "api_key",
+              "value": "YOUR_API_KEY_HERE",
+              "type": "string"
+            },
+            {
+              "id": "rate-window-get",
+              "name": "rate_limit_window_ms",
+              "value": 60000,
+              "type": "number"
+            },
+            {
+              "id": "rate-max-get",
+              "name": "rate_limit_max_requests",
+              "value": 60,
+              "type": "number"
+            },
+            {
+              "id": "table-settings-get",
+              "name": "table_settings",
+              "value": "auto_analysis_settings",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-get",
+      "name": "⚙️ CONFIG: Get Settings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -80,
+        592
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "auto-analysis-settings",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "975b87b4-55c9-42e9-a26f-a5b57bbf97e7",
+      "name": "🌐 Webhook: Save Settings",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        208
+      ],
+      "webhookId": "auto-analysis-settings-webhook"
+    },
+    {
+      "parameters": {
+        "path": "auto-analysis-settings",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "5f25f944-3bed-4227-8004-1281135f31ce",
+      "name": "🌐 Webhook: Get Settings",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        592
+      ],
+      "webhookId": "get-auto-analysis-settings-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📥 Извлечение данных из запроса на сохранение\n// ═══════════════════════════════════════════════════════════════\n\nconst data = items[0].json.body || items[0].json;\n\nreturn [{\n    json: {\n        enabled: data.enabled,\n        delay_minutes: data.delay_minutes || data.delayMinutes || 30\n    }\n}];"
+      },
+      "id": "6262370d-ead5-4a74-a888-fd533372f9ce",
+      "name": "📥 Process Save Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 💾 Обновление настроек автоанализа\n-- ═══════════════════════════════════════════════════════════════\n\nUPDATE {{ $('⚙️ CONFIG: Save Settings').first().json.table_settings }} \nSET enabled = {{ $json.enabled }}, \n    delay_minutes = {{ $json.delay_minutes }}, \n    updated_at = NOW() \nWHERE id = 1 \nRETURNING *;",
+        "options": {}
+      },
+      "id": "a5aecf6a-a071-41b4-af59-f97a7954721d",
+      "name": "🐘 Update Settings",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        576,
+        160
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 📤 Получение текущих настроек\n-- ═══════════════════════════════════════════════════════════════\n\nSELECT * FROM {{ $('⚙️ CONFIG: Get Settings').first().json.table_settings }} LIMIT 1;",
+        "options": {}
+      },
+      "id": "ef1bc2fc-c083-4acc-bb75-b683836d6db3",
+      "name": "🐘 Get Settings",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        400,
+        512
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"status\": \"success\",\n  \"message\": \"Настройки автоанализа обновлены\",\n  \"data\": $json\n} }}",
+        "options": {}
+      },
+      "id": "3faceade-7a11-4942-a7dd-ce66fc7d12e0",
+      "name": "✅ Respond Save Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        736,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"status\": \"success\",\n  \"data\": [$json]\n} }}",
+        "options": {}
+      },
+      "id": "6cd99a60-a9c8-4302-adfb-8321fd97e6d8",
+      "name": "✅ Respond Get Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        560,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Проверка безопасности: API KEY + RATE LIMITING\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Save Settings').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Save Settings').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        208
+      ],
+      "id": "990ffe5b-ebfb-4de9-b90a-428710adc3eb",
+      "name": "🔐 Security Check (Save)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        240,
+        208
+      ],
+      "id": "00b6e0bd-9347-4d0f-8b81-caf0eb136e69",
+      "name": "❓ Auth Check (Save)"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        400,
+        320
+      ],
+      "id": "ae25dd62-727b-4c72-bc59-bb02440568d3",
+      "name": "❌ Error Response (Save)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Проверка безопасности: API KEY + RATE LIMITING\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Get Settings').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Get Settings').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        592
+      ],
+      "id": "1a054891-9045-475b-b0fd-3272e894a4ac",
+      "name": "🔐 Security Check (Get)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        240,
+        592
+      ],
+      "id": "841eabb9-d662-4c05-9c78-b15e76cdf952",
+      "name": "❓ Auth Check (Get)"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        400,
+        688
+      ],
+      "id": "bfcfba8f-844a-431b-aabb-8db40d28369c",
+      "name": "❌ Error Response (Get)"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "🌐 Webhook: Save Settings": {
+      "main": [
+        [
+          {
+            "node": "⚙️ CONFIG: Save Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ CONFIG: Save Settings": {
+      "main": [
+        [
+          {
+            "node": "🔐 Security Check (Save)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📥 Process Save Data": {
+      "main": [
+        [
+          {
+            "node": "🐘 Update Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🐘 Update Settings": {
+      "main": [
+        [
+          {
+            "node": "✅ Respond Save Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🌐 Webhook: Get Settings": {
+      "main": [
+        [
+          {
+            "node": "⚙️ CONFIG: Get Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🐘 Get Settings": {
+      "main": [
+        [
+          {
+            "node": "✅ Respond Get Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔐 Security Check (Save)": {
+      "main": [
+        [
+          {
+            "node": "❓ Auth Check (Save)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓ Auth Check (Save)": {
+      "main": [
+        [
+          {
+            "node": "📥 Process Save Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "❌ Error Response (Save)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ CONFIG: Get Settings": {
+      "main": [
+        [
+          {
+            "node": "🔐 Security Check (Get)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔐 Security Check (Get)": {
+      "main": [
+        [
+          {
+            "node": "❓ Auth Check (Get)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓ Auth Check (Get)": {
+      "main": [
+        [
+          {
+            "node": "🐘 Get Settings",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "❌ Error Response (Get)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "production-ru-v1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "production-template"
+  },
+  "id": "auto-analysis-settings-api-ru",
+  "tags": []
+}
