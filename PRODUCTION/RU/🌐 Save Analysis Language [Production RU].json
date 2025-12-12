@@ -1,0 +1,227 @@
+{
+  "name": "🌐 Save Analysis Language [Production RU]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🌐 Save Analysis Language\n\n### 📋 Описание\nAPI для управления языком анализа.\n\n---\n\n### ⚙️ CONFIG\n\n| Параметр | Описание |\n|----------|----------|\n| `api_key` | API ключ |\n| `table_settings` | Таблица настроек |\n\n---\n\n### 📥 Эндпоинты\n\n**Сохранить язык:**\n```json\nPOST /webhook/save-analysis-language?apiKey=KEY\n{\"language\": \"ru\", \"updatedBy\": \"user\"}\n```\n\n**Получить язык:**\n```\nGET /webhook/get-analysis-language?apiKey=KEY\n```",
+        "height": 380,
+        "width": 340,
+        "color": 5
+      },
+      "id": "sticky-note-main",
+      "name": "📝 Инструкция",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-880, -400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-settings", "name": "table_analysis_language_settings", "value": "analysis_language_settings", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-save",
+      "name": "⚙️ CONFIG: Save",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-448, -208]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-settings", "name": "table_analysis_language_settings", "value": "analysis_language_settings", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-get",
+      "name": "⚙️ CONFIG: Get",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-416, 112]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "save-analysis-language",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "a447b302-8901-4622-a2a1-3b3cee78478c",
+      "name": "🌐 Webhook: Save",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-640, -208],
+      "webhookId": "save-analysis-language-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Проверка безопасности\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Save').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Save').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) { delete staticData.rateLimits[ip]; }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }]; }\nif (providedKey !== API_KEY) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }]; }\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-256, -208],
+      "id": "3a02bfda-ee23-4785-964d-10def7e9c53f",
+      "name": "🔐 Security Check (Save)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth-condition", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-80, -208],
+      "id": "11a87be3-9966-45d0-a4d2-64e8654d9787",
+      "name": "❓ Auth Check (Save)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📥 Обработка запроса\n// ═══════════════════════════════════════════════════════════════\n\nconst requestData = items[0].json.body || items[0].json;\nconst language = requestData.language || 'ru';\nconst updatedBy = requestData.updatedBy || 'monitoring_ui';\n\nconst supportedLanguages = ['ru', 'en', 'es', 'fr', 'de', 'it', 'pt', 'zh', 'ja', 'ko', 'ua'];\n\nif (!supportedLanguages.includes(language)) {\n    return [{ json: { error: true, message: `Unsupported language: ${language}`, supportedLanguages: supportedLanguages } }];\n}\n\nreturn [{ json: { language: language, updatedBy: updatedBy, timestamp: new Date().toISOString() } }];"
+      },
+      "id": "5baad175-b70a-4c38-be21-2f3bcad0a74e",
+      "name": "📥 Process Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [112, -208]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE {{ $('⚙️ CONFIG: Save').first().json.table_analysis_language_settings }} SET language_code = '{{ $json.language }}', updated_at = CURRENT_TIMESTAMP, updated_by = '{{ $json.updatedBy }}' WHERE id = 1 RETURNING *;",
+        "options": {}
+      },
+      "id": "1cff38c1-a67b-4734-84d3-1e93143a07d4",
+      "name": "🐘 Update Language",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [304, -208],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {status: 'success', message: 'Язык анализа обновлен', language: $json.language_code} }}",
+        "options": {}
+      },
+      "id": "146d6672-3403-4f26-8a1c-b4b150285b1f",
+      "name": "✅ Respond Save",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [496, -208]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json.error }}", "options": {"responseCode": "={{ $json.error.status }}"}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [112, -48],
+      "id": "526b6d87-2508-4fd9-9e4a-874a3aa2a9e3",
+      "name": "❌ Error Response (Save)"
+    },
+    {
+      "parameters": {
+        "path": "get-analysis-language",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "5030d3b2-2f64-4bec-9061-f8eb61c0a423",
+      "name": "🌐 Webhook: Get",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-608, 112],
+      "webhookId": "get-analysis-language-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Проверка безопасности\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Get').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Get').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) { delete staticData.rateLimits[ip]; }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }]; }\nif (providedKey !== API_KEY) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }]; }\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-224, 112],
+      "id": "d9bd14f6-20a3-43e2-8cf2-42874c03e478",
+      "name": "🔐 Security Check (Get)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth-condition", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-48, 112],
+      "id": "5adaa8e4-97a3-4a9f-8527-2aea55fba172",
+      "name": "❓ Auth Check (Get)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT language_code, updated_at, updated_by FROM {{ $('⚙️ CONFIG: Get').first().json.table_analysis_language_settings }} ORDER BY id DESC LIMIT 1;",
+        "options": {}
+      },
+      "id": "f59a9863-8a05-48f9-82d9-7194877ca215",
+      "name": "🐘 Get Language",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [144, 112],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {success: true, language: $json.language_code || 'ru', updatedAt: $json.updated_at, updatedBy: $json.updated_by} }}",
+        "options": {}
+      },
+      "id": "f0a68eaa-cf28-4566-bfa8-86aca3274b74",
+      "name": "✅ Respond Get",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [336, 112]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json.error }}", "options": {"responseCode": "={{ $json.error.status }}"}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [144, 272],
+      "id": "1fbded97-ed1e-49d0-ae41-e8bb61cfa4c8",
+      "name": "❌ Error Response (Get)"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "🌐 Webhook: Save": {"main": [[{"node": "⚙️ CONFIG: Save", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Save": {"main": [[{"node": "🔐 Security Check (Save)", "type": "main", "index": 0}]]},
+    "🔐 Security Check (Save)": {"main": [[{"node": "❓ Auth Check (Save)", "type": "main", "index": 0}]]},
+    "❓ Auth Check (Save)": {"main": [[{"node": "📥 Process Request", "type": "main", "index": 0}], [{"node": "❌ Error Response (Save)", "type": "main", "index": 0}]]},
+    "📥 Process Request": {"main": [[{"node": "🐘 Update Language", "type": "main", "index": 0}]]},
+    "🐘 Update Language": {"main": [[{"node": "✅ Respond Save", "type": "main", "index": 0}]]},
+    "🌐 Webhook: Get": {"main": [[{"node": "⚙️ CONFIG: Get", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Get": {"main": [[{"node": "🔐 Security Check (Get)", "type": "main", "index": 0}]]},
+    "🔐 Security Check (Get)": {"main": [[{"node": "❓ Auth Check (Get)", "type": "main", "index": 0}]]},
+    "❓ Auth Check (Get)": {"main": [[{"node": "🐘 Get Language", "type": "main", "index": 0}], [{"node": "❌ Error Response (Get)", "type": "main", "index": 0}]]},
+    "🐘 Get Language": {"main": [[{"node": "✅ Respond Get", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "production-ru-v1",
+  "meta": {"templateCredsSetupCompleted": true, "instanceId": "production-template"},
+  "id": "save-analysis-language-ru",
+  "tags": []
+}

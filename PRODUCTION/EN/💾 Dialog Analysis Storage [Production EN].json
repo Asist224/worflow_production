@@ -1,0 +1,335 @@
+{
+  "name": "💾 Dialog Analysis Storage [Production EN]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 💾 Dialog Analysis Storage\n\n### 📋 Description\nAPI for storing and retrieving dialog analyses.\n\n---\n\n### ⚙️ CONFIG\n\n| Parameter | Description |\n|-----------|-------------|\n| `api_key` | API key |\n| `table_dialog_analysis` | Analyses table |\n\n---\n\n### 📥 Endpoints\n\n**Save analysis:**\n```json\nPOST /webhook/save-analysis?apiKey=KEY\n{...analysis data...}\n```\n\n**Get analysis:**\n```\nGET /webhook/get-analysis?apiKey=KEY&session_id=xxx&type=single\n```\n\n**Get all analyses:**\n```\nGET /webhook/get-all-analysis?apiKey=KEY\n```",
+        "height": 460,
+        "width": 360,
+        "color": 5
+      },
+      "id": "sticky-note-main",
+      "name": "📝 Instructions",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-560, -500]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-analysis", "name": "table_dialog_analysis", "value": "dialog_analysis", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-save",
+      "name": "⚙️ CONFIG: Save",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [16, -256]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-analysis", "name": "table_dialog_analysis", "value": "dialog_analysis", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-get",
+      "name": "⚙️ CONFIG: Get",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [16, 16]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-analysis", "name": "table_dialog_analysis", "value": "dialog_analysis", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-get-all",
+      "name": "⚙️ CONFIG: Get All",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [16, 352]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "save-analysis",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "53d19005-e51a-4faa-8746-c2dcba4cea8e",
+      "name": "🌐 Webhook: Save",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-176, -256],
+      "webhookId": "save-analysis-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Security Check\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Save').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Save').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) { delete staticData.rateLimits[ip]; }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }]; }\nif (providedKey !== API_KEY) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }]; }\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [208, -256],
+      "id": "sec-save",
+      "name": "🔐 Security Check (Save)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth-condition", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [384, -256],
+      "id": "auth-save",
+      "name": "❓ Auth Check (Save)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📥 Prepare data for saving\n// ═══════════════════════════════════════════════════════════════\n\nconst data = items[0].json.body || items[0].json;\nreturn [{\n  json: {\n    session_id: data.sessionId,\n    user_name: data.userName,\n    analysis_type: data.analysisType,\n    language: data.language,\n    platform: data.platform,\n    emotional_tone: data.emotionalTone,\n    customer_needs: data.customerNeeds,\n    missed_opportunities: data.missedOpportunities,\n    recommendations: data.recommendations,\n    statistics: data.statistics,\n    satisfaction_percentage: data.emotionalTone?.satisfaction || 0,\n    lead_scoring: data.leadScoring\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [560, -256],
+      "id": "3d44cd98-df30-419f-b6fe-a7c69f41e019",
+      "name": "📥 Prepare Data"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO {{ $('⚙️ CONFIG: Save').first().json.table_dialog_analysis }} (\n    session_id, user_name, analysis_type, language, platform,\n    emotional_tone, customer_needs, missed_opportunities, recommendations, statistics, \n    satisfaction_percentage, lead_scoring\n) VALUES (\n    '{{ $json.session_id }}', '{{ $json.user_name }}', '{{ $json.analysis_type }}',\n    '{{ $json.language }}', '{{ $json.platform }}',\n    '{{ JSON.stringify($json.emotional_tone).replace(/'/g, \"''\") }}'::jsonb,\n    ARRAY[{{ $json.customer_needs.map(item => `'${item.replace(/'/g, \"''\")}'`).join(\", \") }}],\n    ARRAY[{{ $json.missed_opportunities.map(item => `'${item.replace(/'/g, \"''\")}'`).join(\", \") }}],\n    ARRAY[{{ $json.recommendations.map(item => `'${item.replace(/'/g, \"''\")}'`).join(\", \") }}],\n    '{{ JSON.stringify($json.statistics).replace(/'/g, \"''\") }}'::jsonb,\n    {{ $json.satisfaction_percentage || 0 }},\n    '{{ JSON.stringify($json.lead_scoring || {}).replace(/'/g, \"''\") }}'::jsonb\n)\nON CONFLICT (session_id, analysis_type) \nDO UPDATE SET\n    user_name = EXCLUDED.user_name, language = EXCLUDED.language, platform = EXCLUDED.platform,\n    emotional_tone = EXCLUDED.emotional_tone, customer_needs = EXCLUDED.customer_needs,\n    missed_opportunities = EXCLUDED.missed_opportunities, recommendations = EXCLUDED.recommendations,\n    statistics = EXCLUDED.statistics, satisfaction_percentage = EXCLUDED.satisfaction_percentage,\n    lead_scoring = EXCLUDED.lead_scoring, created_at = CURRENT_TIMESTAMP\nRETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [752, -256],
+      "id": "d715a4bb-1869-4721-93f8-fae10bebef38",
+      "name": "🐘 Save to DB",
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {status: 'success', message: 'Analysis saved'} }}",
+        "options": {}
+      },
+      "id": "0a5e890f-9c70-4b07-bbc3-f16b71e667b8",
+      "name": "✅ Respond Save",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [944, -256]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json.error }}", "options": {"responseCode": "={{ $json.error.status }}"}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [560, -96],
+      "id": "err-save",
+      "name": "❌ Error Response (Save)"
+    },
+    {
+      "parameters": {
+        "path": "get-analysis",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "486d1a70-5710-48cf-80f1-b3717f4247eb",
+      "name": "🌐 Webhook: Get",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-176, 16],
+      "webhookId": "get-analysis-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Security Check\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Get').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Get').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) { delete staticData.rateLimits[ip]; }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }]; }\nif (providedKey !== API_KEY) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }]; }\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [208, 16],
+      "id": "3e4b86de-a288-4fda-82a2-6c72c45a2a27",
+      "name": "🔐 Security Check (Get)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth-condition", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [384, 16],
+      "id": "f88d175b-7987-4b0c-b584-4ab833ffc747",
+      "name": "❓ Auth Check (Get)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM {{ $('⚙️ CONFIG: Get').first().json.table_dialog_analysis }} WHERE session_id = '{{ $json.query.session_id }}' AND analysis_type = '{{ $json.query.type || 'single' }}' ORDER BY created_at DESC LIMIT 1",
+        "options": {}
+      },
+      "id": "f550322d-cdbe-43d5-a9da-6b6967af8b8d",
+      "name": "🐘 Get Analysis",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [560, 16],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📊 Format response\n// ═══════════════════════════════════════════════════════════════\n\nconst data = items[0]?.json;\nif (!data || !data.session_id) {\n  return [{json: {found: false}}];\n}\nreturn [{\n  json: {\n    found: true,\n    sessionId: data.session_id,\n    userName: data.user_name,\n    analysisType: data.analysis_type,\n    language: data.language,\n    emotionalTone: data.emotional_tone,\n    customerNeeds: data.customer_needs,\n    missedOpportunities: data.missed_opportunities,\n    recommendations: data.recommendations,\n    statistics: data.statistics,\n    satisfactionPercentage: data.satisfaction_percentage,\n    leadScoring: data.lead_scoring,\n    bantQualification: data.bant_qualification,\n    createdAt: data.created_at\n  }\n}];"
+      },
+      "id": "f50d19ae-2a2b-4e13-a37d-7e1b1aec8b53",
+      "name": "📊 Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [752, 16]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json }}", "options": {}},
+      "id": "a0ec384f-19d1-4cbf-8ecc-9f87b2d98a7c",
+      "name": "✅ Respond Get",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [944, 16]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json.error }}", "options": {"responseCode": "={{ $json.error.status }}"}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [560, 176],
+      "id": "e50722b1-a1db-4783-9c97-a72d00cf3d90",
+      "name": "❌ Error Response (Get)"
+    },
+    {
+      "parameters": {
+        "path": "get-all-analysis",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "9930458e-d7cd-4f53-9f07-4d4321b68f5a",
+      "name": "🌐 Webhook: Get All",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-176, 352],
+      "webhookId": "get-all-analysis-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Security Check\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Get All').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Get All').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) { delete staticData.rateLimits[ip]; }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }]; }\nif (providedKey !== API_KEY) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }]; }\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [208, 352],
+      "id": "623d71dc-1ae6-414c-9690-86b67dbe15e3",
+      "name": "🔐 Security Check (Get All)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth-condition", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [384, 352],
+      "id": "357b6658-818e-4176-ace3-08126567cce1",
+      "name": "❓ Auth Check (Get All)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT DISTINCT ON (session_id) * FROM {{ $('⚙️ CONFIG: Get All').first().json.table_dialog_analysis }} WHERE analysis_type = 'single' ORDER BY session_id, created_at DESC",
+        "options": {}
+      },
+      "id": "e1c7fc06-17ff-47ba-bb60-d8f770fc8900",
+      "name": "🐘 Get All Analysis",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [560, 352],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📊 Format all analyses\n// ═══════════════════════════════════════════════════════════════\n\nconst analyses = {};\nitems.forEach(item => {\n  const data = item.json;\n  analyses[data.session_id] = {\n    emotionalTone: data.emotional_tone,\n    satisfactionPercentage: data.satisfaction_percentage,\n    leadScoring: data.lead_scoring,\n    bantQualification: data.bant_qualification,\n    createdAt: data.created_at\n  };\n});\nreturn [{json: {analyses}}];"
+      },
+      "id": "79402d0f-c4ed-423a-a840-a499b0158141",
+      "name": "📊 Format All Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [752, 352]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json }}", "options": {}},
+      "id": "b4c0400c-d610-4924-8c8e-62be8e7e6573",
+      "name": "✅ Respond Get All",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [944, 352]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json.error }}", "options": {"responseCode": "={{ $json.error.status }}"}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [560, 512],
+      "id": "99a6dd9c-097b-4842-bf4e-70c6d1da35dc",
+      "name": "❌ Error Response (Get All)"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "🌐 Webhook: Save": {"main": [[{"node": "⚙️ CONFIG: Save", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Save": {"main": [[{"node": "🔐 Security Check (Save)", "type": "main", "index": 0}]]},
+    "🔐 Security Check (Save)": {"main": [[{"node": "❓ Auth Check (Save)", "type": "main", "index": 0}]]},
+    "❓ Auth Check (Save)": {"main": [[{"node": "📥 Prepare Data", "type": "main", "index": 0}], [{"node": "❌ Error Response (Save)", "type": "main", "index": 0}]]},
+    "📥 Prepare Data": {"main": [[{"node": "🐘 Save to DB", "type": "main", "index": 0}]]},
+    "🐘 Save to DB": {"main": [[{"node": "✅ Respond Save", "type": "main", "index": 0}]]},
+    "🌐 Webhook: Get": {"main": [[{"node": "⚙️ CONFIG: Get", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Get": {"main": [[{"node": "🔐 Security Check (Get)", "type": "main", "index": 0}]]},
+    "🔐 Security Check (Get)": {"main": [[{"node": "❓ Auth Check (Get)", "type": "main", "index": 0}]]},
+    "❓ Auth Check (Get)": {"main": [[{"node": "🐘 Get Analysis", "type": "main", "index": 0}], [{"node": "❌ Error Response (Get)", "type": "main", "index": 0}]]},
+    "🐘 Get Analysis": {"main": [[{"node": "📊 Format Response", "type": "main", "index": 0}]]},
+    "📊 Format Response": {"main": [[{"node": "✅ Respond Get", "type": "main", "index": 0}]]},
+    "🌐 Webhook: Get All": {"main": [[{"node": "⚙️ CONFIG: Get All", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Get All": {"main": [[{"node": "🔐 Security Check (Get All)", "type": "main", "index": 0}]]},
+    "🔐 Security Check (Get All)": {"main": [[{"node": "❓ Auth Check (Get All)", "type": "main", "index": 0}]]},
+    "❓ Auth Check (Get All)": {"main": [[{"node": "🐘 Get All Analysis", "type": "main", "index": 0}], [{"node": "❌ Error Response (Get All)", "type": "main", "index": 0}]]},
+    "🐘 Get All Analysis": {"main": [[{"node": "📊 Format All Response", "type": "main", "index": 0}]]},
+    "📊 Format All Response": {"main": [[{"node": "✅ Respond Get All", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "production-en-v1",
+  "meta": {"templateCredsSetupCompleted": true, "instanceId": "production-template"},
+  "id": "dialog-analysis-storage-en",
+  "tags": []
+}
