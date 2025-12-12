@@ -1,0 +1,422 @@
+{
+  "name": "🔐 Auth API [Production RU]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🔐 Auth API\n\n### 📋 Описание\nAPI аутентификации для администраторов и клиентов с генерацией JWT токенов.\n\n---\n\n### ⚙️ CONFIG (Цепочка 1 - Admin Auth)\n\n| Параметр | Описание |\n|----------|----------|\n| `jwt_expires_hours` | Срок действия токена (часы) |\n| `table_admins` | Таблица администраторов |\n\n### ⚙️ CONFIG (Цепочка 2 - Client Auth)\n\n| Параметр | Описание |\n|----------|----------|\n| `jwt_expires_days` | Срок действия токена (дни) |\n| `table_clients` | Таблица клиентов |\n\n---\n\n### 🔄 Цепочки\n1. POST /admin/auth - Аутентификация админа\n2. POST /client/auth - Аутентификация клиента",
+        "height": 480,
+        "width": 400,
+        "color": 5
+      },
+      "id": "sticky-note-main",
+      "name": "📝 Инструкция",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-1600, -600]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "admin/auth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-admin-auth",
+      "name": "🌐 Webhook: POST /admin/auth",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1216, -400],
+      "webhookId": "admin-auth-webhook"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "jwt-exp", "name": "jwt_expires_hours", "value": 24, "type": "number"},
+            {"id": "table-admins", "name": "table_admins", "value": "admins", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-admin",
+      "name": "⚙️ CONFIG Admin",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1016, -400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhookData = $('🌐 Webhook: POST /admin/auth').item.json;\nconst body = webhookData.body || {};\nconst username = body.username || '';\nconst password = body.password || '';\n\nif (!username || !password) {\n  return [{\n    json: {\n      error: true,\n      message: 'Логин и пароль обязательны'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    username: username,\n    password: password,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "extract-admin",
+      "name": "📥 Извлечь данные (Admin)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-816, -400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  id,\n  username,\n  password_hash,\n  role,\n  is_active,\n  last_login\nFROM {{ $('⚙️ CONFIG Admin').first().json.table_admins }}\nWHERE username = '{{ $json.username }}'\n  AND is_active = true\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "check-admin-db",
+      "name": "🐘 Найти админа",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-616, -400],
+      "alwaysOutputData": true,
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const adminData = $input.item.json;\nconst requestData = $('📥 Извлечь данные (Admin)').item.json;\n\nif (!adminData.username) {\n  return [{\n    json: {\n      success: false,\n      message: 'Неверные учетные данные',\n      authenticated: false\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    admin_id: adminData.id,\n    username: adminData.username,\n    password_hash: adminData.password_hash,\n    role: adminData.role,\n    input_password: requestData.password\n  }\n}];"
+      },
+      "id": "prepare-admin-check",
+      "name": "🔄 Подготовить проверку (Admin)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-416, -400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  CASE \n    WHEN '{{ $json.password_hash }}' = crypt('{{ $json.input_password }}', '{{ $json.password_hash }}')\n    THEN true\n    ELSE false\n  END as password_valid;",
+        "options": {}
+      },
+      "id": "verify-admin-password",
+      "name": "🐘 Проверить пароль (Admin)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-216, -400],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const passwordCheck = $input.item.json;\nconst adminData = $('🔄 Подготовить проверку (Admin)').item.json;\n\nreturn [{\n  json: {\n    ...adminData,\n    password_valid: passwordCheck.password_valid\n  }\n}];"
+      },
+      "id": "merge-admin-results",
+      "name": "🔀 Объединить (Admin)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-16, -400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [
+            {
+              "id": "password-ok",
+              "leftValue": "={{ $json.password_valid }}",
+              "rightValue": true,
+              "operator": {"type": "boolean", "operation": "true"}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-admin-auth",
+      "name": "❓ Аутентификация OK? (Admin)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [184, -400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE {{ $('⚙️ CONFIG Admin').first().json.table_admins }} \nSET last_login = NOW()\nWHERE id = {{ $json.admin_id }}\nRETURNING id, username, role;",
+        "options": {}
+      },
+      "id": "update-admin-login",
+      "name": "🐘 Обновить last_login",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [384, -480],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "useJson": true,
+        "claimsJson": "={\n  \"admin_id\": \"{{ $('🔀 Объединить (Admin)').item.json.admin_id }}\",\n  \"username\": \"{{ $('🔀 Объединить (Admin)').item.json.username }}\",\n  \"role\": \"{{ $('🔀 Объединить (Admin)').item.json.role }}\"\n}",
+        "options": {"algorithm": "HS256"}
+      },
+      "id": "jwt-admin",
+      "name": "🔑 Генерация JWT (Admin)",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [584, -480],
+      "credentials": {"jwtAuth": {"id": "YOUR_JWT_CREDENTIAL_ID", "name": "JWT Auth"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('⚙️ CONFIG Admin').first().json;\nconst jwtToken = $input.item.json;\nconst adminData = $('🔀 Объединить (Admin)').item.json;\n\nreturn [{\n  json: {\n    success: true,\n    authenticated: true,\n    token: jwtToken.token,\n    expires_in: config.jwt_expires_hours + 'h',\n    admin: {\n      username: adminData.username,\n      role: adminData.role\n    }\n  }\n}];"
+      },
+      "id": "format-admin-response",
+      "name": "📤 Форматировать ответ (Admin)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [784, -480]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {"name": "Content-Type", "value": "application/json"},
+              {"name": "Access-Control-Allow-Origin", "value": "*"},
+              {"name": "Access-Control-Allow-Methods", "value": "POST, OPTIONS"},
+              {"name": "Access-Control-Allow-Headers", "value": "Content-Type"}
+            ]
+          }
+        }
+      },
+      "id": "response-admin-success",
+      "name": "✅ Ответ: Успех (Admin)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [984, -480]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success: false, authenticated: false, message: 'Неверные учетные данные'}) }}",
+        "options": {
+          "responseCode": 401,
+          "responseHeaders": {
+            "entries": [
+              {"name": "Content-Type", "value": "application/json"},
+              {"name": "Access-Control-Allow-Origin", "value": "*"},
+              {"name": "Access-Control-Allow-Methods", "value": "POST, OPTIONS"},
+              {"name": "Access-Control-Allow-Headers", "value": "Content-Type"}
+            ]
+          }
+        }
+      },
+      "id": "response-admin-failed",
+      "name": "❌ Ответ: Ошибка (Admin)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [384, -320]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "client/auth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-client-auth",
+      "name": "🌐 Webhook: POST /client/auth",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1216, -32],
+      "webhookId": "client-auth-webhook"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "jwt-exp", "name": "jwt_expires_days", "value": 7, "type": "number"},
+            {"id": "table-clients", "name": "table_clients", "value": "clients", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-client",
+      "name": "⚙️ CONFIG Client",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1016, -32]
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhookData = $('🌐 Webhook: POST /client/auth').item.json;\nconst body = webhookData.body || {};\nconst clientId = body.client_id || '';\nconst password = body.password || '';\n\nif (!clientId || !password) {\n  return [{\n    json: {\n      error: true,\n      message: 'Client ID и пароль обязательны'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    client_id: clientId,\n    password: password,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "extract-client",
+      "name": "📥 Извлечь данные (Client)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-816, -32]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  client_id,\n  name,\n  email,\n  password_hash,\n  license_key,\n  status,\n  allowed_domains,\n  features,\n  expires_at,\n  max_domains\nFROM {{ $('⚙️ CONFIG Client').first().json.table_clients }}\nWHERE client_id = '{{ $json.client_id }}'\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "check-client-db",
+      "name": "🐘 Найти клиента",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-616, -32],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const clientData = $input.item.json;\nconst requestData = $('📥 Извлечь данные (Client)').item.json;\n\nif (!clientData.client_id) {\n  return [{\n    json: {\n      success: false,\n      message: 'Неверные учетные данные',\n      authenticated: false\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    client_id: clientData.client_id,\n    name: clientData.name,\n    email: clientData.email,\n    license_key: clientData.license_key,\n    password_hash: clientData.password_hash,\n    status: clientData.status,\n    allowed_domains: clientData.allowed_domains,\n    features: clientData.features,\n    expires_at: clientData.expires_at,\n    max_domains: clientData.max_domains,\n    input_password: requestData.password\n  }\n}];"
+      },
+      "id": "prepare-client-check",
+      "name": "🔄 Подготовить проверку (Client)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-416, -32]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  CASE \n    WHEN '{{ $json.password_hash }}' = crypt('{{ $json.input_password }}', '{{ $json.password_hash }}')\n    THEN true\n    ELSE false\n  END as password_valid;",
+        "options": {}
+      },
+      "id": "verify-client-password",
+      "name": "🐘 Проверить пароль (Client)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-216, -32],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const passwordCheck = $input.item.json;\nconst clientData = $('🔄 Подготовить проверку (Client)').item.json;\n\nreturn [{\n  json: {\n    ...clientData,\n    password_valid: passwordCheck.password_valid\n  }\n}];"
+      },
+      "id": "merge-client-results",
+      "name": "🔀 Объединить (Client)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-16, -32]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [
+            {
+              "id": "password-ok",
+              "leftValue": "={{ $json.password_valid }}",
+              "rightValue": true,
+              "operator": {"type": "boolean", "operation": "true"}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-client-auth",
+      "name": "❓ Аутентификация OK? (Client)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [184, -32]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('⚙️ CONFIG Client').first().json;\nconst clientData = $('🔀 Объединить (Client)').item.json;\n\nconst expiresAt = Math.floor(Date.now() / 1000) + (config.jwt_expires_days * 24 * 60 * 60);\n\nreturn [{\n  json: {\n    client_id: clientData.client_id,\n    name: clientData.name,\n    email: clientData.email,\n    license_key: clientData.license_key,\n    status: clientData.status,\n    allowed_domains: clientData.allowed_domains,\n    features: clientData.features,\n    expires_at: clientData.expires_at,\n    max_domains: clientData.max_domains,\n    exp: expiresAt\n  }\n}];"
+      },
+      "id": "prepare-client-jwt",
+      "name": "🔄 Подготовить JWT (Client)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [384, -112]
+    },
+    {
+      "parameters": {
+        "claims": {},
+        "options": {"algorithm": "HS256"}
+      },
+      "id": "jwt-client",
+      "name": "🔑 Генерация JWT (Client)",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [584, -112],
+      "credentials": {"jwtAuth": {"id": "YOUR_JWT_CREDENTIAL_ID", "name": "JWT Auth"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('⚙️ CONFIG Client').first().json;\nconst jwtToken = $input.item.json;\nconst clientData = $('🔄 Подготовить JWT (Client)').item.json;\n\nreturn [{\n  json: {\n    success: true,\n    authenticated: true,\n    token: jwtToken.token,\n    expires_in: config.jwt_expires_days + 'd',\n    client: {\n      client_id: clientData.client_id,\n      name: clientData.name,\n      email: clientData.email,\n      license_key: clientData.license_key,\n      status: clientData.status,\n      allowed_domains: clientData.allowed_domains,\n      features: clientData.features,\n      expires_at: clientData.expires_at,\n      max_domains: clientData.max_domains\n    }\n  }\n}];"
+      },
+      "id": "format-client-response",
+      "name": "📤 Форматировать ответ (Client)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [784, -112]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {"name": "Content-Type", "value": "application/json"},
+              {"name": "Access-Control-Allow-Origin", "value": "*"},
+              {"name": "Access-Control-Allow-Methods", "value": "POST, OPTIONS"},
+              {"name": "Access-Control-Allow-Headers", "value": "Content-Type"}
+            ]
+          }
+        }
+      },
+      "id": "response-client-success",
+      "name": "✅ Ответ: Успех (Client)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [984, -112]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success: false, authenticated: false, message: 'Неверные учетные данные'}) }}",
+        "options": {
+          "responseCode": 401,
+          "responseHeaders": {
+            "entries": [
+              {"name": "Content-Type", "value": "application/json"},
+              {"name": "Access-Control-Allow-Origin", "value": "*"},
+              {"name": "Access-Control-Allow-Methods", "value": "POST, OPTIONS"},
+              {"name": "Access-Control-Allow-Headers", "value": "Content-Type"}
+            ]
+          }
+        }
+      },
+      "id": "response-client-failed",
+      "name": "❌ Ответ: Ошибка (Client)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [384, 48]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "🌐 Webhook: POST /admin/auth": {"main": [[{"node": "⚙️ CONFIG Admin", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG Admin": {"main": [[{"node": "📥 Извлечь данные (Admin)", "type": "main", "index": 0}]]},
+    "📥 Извлечь данные (Admin)": {"main": [[{"node": "🐘 Найти админа", "type": "main", "index": 0}]]},
+    "🐘 Найти админа": {"main": [[{"node": "🔄 Подготовить проверку (Admin)", "type": "main", "index": 0}]]},
+    "🔄 Подготовить проверку (Admin)": {"main": [[{"node": "🐘 Проверить пароль (Admin)", "type": "main", "index": 0}]]},
+    "🐘 Проверить пароль (Admin)": {"main": [[{"node": "🔀 Объединить (Admin)", "type": "main", "index": 0}]]},
+    "🔀 Объединить (Admin)": {"main": [[{"node": "❓ Аутентификация OK? (Admin)", "type": "main", "index": 0}]]},
+    "❓ Аутентификация OK? (Admin)": {"main": [[{"node": "🐘 Обновить last_login", "type": "main", "index": 0}], [{"node": "❌ Ответ: Ошибка (Admin)", "type": "main", "index": 0}]]},
+    "🐘 Обновить last_login": {"main": [[{"node": "🔑 Генерация JWT (Admin)", "type": "main", "index": 0}]]},
+    "🔑 Генерация JWT (Admin)": {"main": [[{"node": "📤 Форматировать ответ (Admin)", "type": "main", "index": 0}]]},
+    "📤 Форматировать ответ (Admin)": {"main": [[{"node": "✅ Ответ: Успех (Admin)", "type": "main", "index": 0}]]},
+    "🌐 Webhook: POST /client/auth": {"main": [[{"node": "⚙️ CONFIG Client", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG Client": {"main": [[{"node": "📥 Извлечь данные (Client)", "type": "main", "index": 0}]]},
+    "📥 Извлечь данные (Client)": {"main": [[{"node": "🐘 Найти клиента", "type": "main", "index": 0}]]},
+    "🐘 Найти клиента": {"main": [[{"node": "🔄 Подготовить проверку (Client)", "type": "main", "index": 0}]]},
+    "🔄 Подготовить проверку (Client)": {"main": [[{"node": "🐘 Проверить пароль (Client)", "type": "main", "index": 0}]]},
+    "🐘 Проверить пароль (Client)": {"main": [[{"node": "🔀 Объединить (Client)", "type": "main", "index": 0}]]},
+    "🔀 Объединить (Client)": {"main": [[{"node": "❓ Аутентификация OK? (Client)", "type": "main", "index": 0}]]},
+    "❓ Аутентификация OK? (Client)": {"main": [[{"node": "🔄 Подготовить JWT (Client)", "type": "main", "index": 0}], [{"node": "❌ Ответ: Ошибка (Client)", "type": "main", "index": 0}]]},
+    "🔄 Подготовить JWT (Client)": {"main": [[{"node": "🔑 Генерация JWT (Client)", "type": "main", "index": 0}]]},
+    "🔑 Генерация JWT (Client)": {"main": [[{"node": "📤 Форматировать ответ (Client)", "type": "main", "index": 0}]]},
+    "📤 Форматировать ответ (Client)": {"main": [[{"node": "✅ Ответ: Успех (Client)", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "production-ru-v1",
+  "meta": {"templateCredsSetupCompleted": true, "instanceId": "production-template"},
+  "id": "auth-api-ru",
+  "tags": []
+}

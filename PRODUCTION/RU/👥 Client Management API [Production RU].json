@@ -1,0 +1,342 @@
+{
+  "name": "👥 Client Management API [Production RU]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 👥 Client Management API\n\n### 📋 Описание\nCRUD API для управления клиентами и лицензиями.\n\n---\n\n### ⚙️ CONFIG\n\n| Параметр | Описание |\n|----------|----------|\n| `license_secret_key` | Секретный ключ для генерации лицензий |\n| `default_max_domains` | Макс. доменов по умолчанию |\n| `default_features` | Функции по умолчанию |\n| `table_clients` | Таблица клиентов |\n\n---\n\n### 🔄 Цепочки\n1. GET /api/clients - Список клиентов\n2. POST /api/clients - Создать клиента\n3. PUT /api/clients - Обновить клиента\n4. DELETE /api/clients - Удалить клиента",
+        "height": 460,
+        "width": 380,
+        "color": 5
+      },
+      "id": "sticky-note-main",
+      "name": "📝 Инструкция",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-500, -300]
+    },
+    {
+      "parameters": {
+        "path": "api/clients",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-get",
+      "name": "🌐 Webhook: GET /api/clients",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-112, -16],
+      "webhookId": "client-management-get"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "secret", "name": "license_secret_key", "value": "YOUR_LICENSE_SECRET_KEY", "type": "string"},
+            {"id": "max-domains", "name": "default_max_domains", "value": 3, "type": "number"},
+            {"id": "features", "name": "default_features", "value": "webchat,monitoring,database_management", "type": "string"},
+            {"id": "table", "name": "table_clients", "value": "clients", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-get",
+      "name": "⚙️ CONFIG (GET)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [88, -16]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM {{ $('⚙️ CONFIG (GET)').first().json.table_clients }} ORDER BY created_at DESC",
+        "options": {}
+      },
+      "id": "get-clients",
+      "name": "🐘 Получить клиентов",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [288, -16],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: true, \n  clients: $input.all().map(item => item.json),\n  total: $input.all().length\n}) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {"name": "Content-Type", "value": "application/json"},
+              {"name": "Access-Control-Allow-Origin", "value": "*"}
+            ]
+          }
+        }
+      },
+      "id": "response-get",
+      "name": "✅ Ответ: Список",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [488, -16]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api/clients",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-post",
+      "name": "🌐 Webhook: POST /api/clients",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-112, 208],
+      "webhookId": "client-management-post"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "secret", "name": "license_secret_key", "value": "YOUR_LICENSE_SECRET_KEY", "type": "string"},
+            {"id": "max-domains", "name": "default_max_domains", "value": 3, "type": "number"},
+            {"id": "features", "name": "default_features", "value": "webchat,monitoring,database_management", "type": "string"},
+            {"id": "table", "name": "table_clients", "value": "clients", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-post",
+      "name": "⚙️ CONFIG (POST)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [88, 208]
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('⚙️ CONFIG (POST)').first().json;\nconst webhookData = $('🌐 Webhook: POST /api/clients').item.json;\nconst body = webhookData.body || {};\n\nif (!body.name || !body.email) {\n  return [{\n    json: {\n      error: true,\n      message: 'Имя и email обязательны'\n    }\n  }];\n}\n\nconst randomPart = Math.random().toString(36).substring(2, 8).toUpperCase() + \n                   Math.random().toString(36).substring(2, 8).toUpperCase();\nconst clientId = `CLIENT_${randomPart}`;\n\nconst generatePassword = () => {\n  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';\n  let password = '';\n  for (let i = 0; i < 16; i++) {\n    password += chars.charAt(Math.floor(Math.random() * chars.length));\n  }\n  return password;\n};\nconst clientPassword = generatePassword();\n\nlet allowedDomains = body.allowed_domains || [];\nif (typeof allowedDomains === 'string') {\n  allowedDomains = allowedDomains.split(',').map(d => d.trim()).filter(d => d);\n}\n\nlet features = body.features || config.default_features.split(',');\nif (typeof features === 'string') {\n  features = features.split(',').map(f => f.trim()).filter(f => f);\n}\n\nlet expiresAt = null;\nif (body.expires_at) {\n  expiresAt = new Date(body.expires_at).toISOString();\n}\n\nconst maxDomains = body.max_domains ? parseInt(body.max_domains) : config.default_max_domains;\nconst timestamp = Date.now().toString();\nconst licenseString = `${clientId}_${config.license_secret_key}_${timestamp}`;\n\nreturn [{\n  json: {\n    client_id: clientId,\n    license_string: licenseString,\n    name: body.name,\n    email: body.email,\n    allowed_domains: allowedDomains,\n    status: body.status || 'active',\n    features: features,\n    expires_at: expiresAt,\n    max_domains: maxDomains,\n    plain_password: clientPassword\n  }\n}];"
+      },
+      "id": "prepare-post",
+      "name": "📝 Подготовить данные (POST)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [288, 208]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO {{ $('⚙️ CONFIG (POST)').first().json.table_clients }} (\n  client_id,\n  license_key,\n  name,\n  email,\n  password_hash,\n  allowed_domains,\n  status,\n  features,\n  expires_at,\n  max_domains,\n  created_at,\n  updated_at\n)\nVALUES (\n  '{{ $json.client_id }}',\n  CONCAT('lic_', ENCODE(DIGEST('{{ $json.license_string }}', 'sha256'), 'hex')),\n  '{{ $json.name }}',\n  '{{ $json.email }}',\n  crypt('{{ $json.plain_password }}', gen_salt('bf')),\n  {{ $json.allowed_domains.length > 0 ? \"ARRAY[\" + $json.allowed_domains.map(d => \"'\" + d + \"'\").join(',') + \"]::text[]\" : \"ARRAY[]::text[]\" }},\n  '{{ $json.status }}',\n  ARRAY[{{ $json.features.map(f => \"'\" + f + \"'\").join(',') }}]::text[],\n  {{ $json.expires_at ? \"'\" + $json.expires_at + \"'\" : 'NULL' }},\n  {{ $json.max_domains }},\n  NOW(),\n  NOW()\n)\nRETURNING \n  client_id, \n  license_key, \n  name, \n  email, \n  status,\n  max_domains;",
+        "options": {}
+      },
+      "id": "insert-client",
+      "name": "🐘 Создать клиента",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [488, 208],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ \n  JSON.stringify({\n    success: true, \n    message: 'Клиент создан успешно', \n    client_id: $json.client_id,\n    license_key: $json.license_key,\n    email: $json.email,\n    name: $json.name,\n    password: $('📝 Подготовить данные (POST)').first().json.plain_password,\n    status: $json.status,\n    note: 'ВАЖНО: Сохраните пароль - он больше не будет показан!'\n  }) \n}}",
+        "options": {
+          "responseCode": 201,
+          "responseHeaders": {
+            "entries": [
+              {"name": "Content-Type", "value": "application/json"},
+              {"name": "Access-Control-Allow-Origin", "value": "*"}
+            ]
+          }
+        }
+      },
+      "id": "response-post",
+      "name": "✅ Ответ: Создан",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [688, 208]
+    },
+    {
+      "parameters": {
+        "httpMethod": "PUT",
+        "path": "api/clients",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-put",
+      "name": "🌐 Webhook: PUT /api/clients",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-112, 432],
+      "webhookId": "client-management-put"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "table", "name": "table_clients", "value": "clients", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-put",
+      "name": "⚙️ CONFIG (PUT)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [88, 432]
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhookData = $('🌐 Webhook: PUT /api/clients').item.json;\nconst body = webhookData.body || {};\nconst clientId = body.client_id;\n\nif (!clientId) {\n  return [{\n    json: {\n      error: true,\n      message: 'client_id обязателен'\n    }\n  }];\n}\n\nconst updateData = { client_id: clientId };\n\nif (body.name !== undefined) updateData.name = body.name;\nif (body.email !== undefined) updateData.email = body.email;\nif (body.status !== undefined) updateData.status = body.status;\nif (body.max_domains !== undefined) updateData.max_domains = parseInt(body.max_domains);\n\nif (body.expires_at !== undefined) {\n  updateData.expires_at = new Date(body.expires_at).toISOString();\n}\n\nif (body.allowed_domains !== undefined) {\n  let allowedDomains = body.allowed_domains;\n  if (typeof allowedDomains === 'string') {\n    allowedDomains = allowedDomains.split(',').map(d => d.trim()).filter(d => d);\n  }\n  updateData.allowed_domains = allowedDomains;\n}\n\nif (body.features !== undefined) {\n  let features = body.features;\n  if (typeof features === 'string') {\n    features = features.split(',').map(f => f.trim()).filter(f => f);\n  }\n  updateData.features = features;\n}\n\nreturn [{ json: updateData }];"
+      },
+      "id": "prepare-put",
+      "name": "📝 Подготовить данные (PUT)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [288, 432]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE {{ $('⚙️ CONFIG (PUT)').first().json.table_clients }} \nSET \n  {{ $json.name ? \"name = '\" + $json.name + \"',\" : \"\" }}\n  {{ $json.email ? \"email = '\" + $json.email + \"',\" : \"\" }}\n  {{ $json.status ? \"status = '\" + $json.status + \"',\" : \"\" }}\n  {{ $json.max_domains ? \"max_domains = \" + $json.max_domains + \",\" : \"\" }}\n  {{ $json.allowed_domains ? \"allowed_domains = ARRAY[\" + $json.allowed_domains.map(d => \"'\" + d + \"'\").join(',') + \"]::text[],\" : \"\" }}\n  {{ $json.features ? \"features = ARRAY[\" + $json.features.map(f => \"'\" + f + \"'\").join(',') + \"]::text[],\" : \"\" }}\n  {{ $json.expires_at ? \"expires_at = '\" + $json.expires_at + \"',\" : \"\" }}\n  updated_at = NOW()\nWHERE client_id = '{{ $json.client_id }}'\nRETURNING client_id, name, email, status, expires_at, max_domains;",
+        "options": {}
+      },
+      "id": "update-client",
+      "name": "🐘 Обновить клиента",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [488, 432],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success: true, message: 'Клиент обновлен успешно'}) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {"name": "Content-Type", "value": "application/json"},
+              {"name": "Access-Control-Allow-Origin", "value": "*"}
+            ]
+          }
+        }
+      },
+      "id": "response-put",
+      "name": "✅ Ответ: Обновлен",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [688, 432]
+    },
+    {
+      "parameters": {
+        "httpMethod": "DELETE",
+        "path": "api/clients",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-delete",
+      "name": "🌐 Webhook: DELETE /api/clients",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-112, 656],
+      "webhookId": "client-management-delete"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "table", "name": "table_clients", "value": "clients", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-delete",
+      "name": "⚙️ CONFIG (DELETE)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [88, 656]
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhookData = $('🌐 Webhook: DELETE /api/clients').item.json;\nconst params = webhookData.query || {};\nconst clientId = params.client_id;\n\nif (!clientId) {\n  return [{\n    json: {\n      error: true,\n      message: 'Параметр client_id обязателен'\n    }\n  }];\n}\n\nreturn [{ json: { client_id: clientId } }];"
+      },
+      "id": "prepare-delete",
+      "name": "📝 Получить ID (DELETE)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [288, 656]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM {{ $('⚙️ CONFIG (DELETE)').first().json.table_clients }} \nWHERE client_id = '{{ $json.client_id }}' \nRETURNING *;",
+        "options": {}
+      },
+      "id": "delete-client",
+      "name": "🐘 Удалить клиента",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [488, 656],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success: true, message: 'Клиент удален успешно'}) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {"name": "Content-Type", "value": "application/json"},
+              {"name": "Access-Control-Allow-Origin", "value": "*"}
+            ]
+          }
+        }
+      },
+      "id": "response-delete",
+      "name": "✅ Ответ: Удален",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [688, 656]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success: false, error: $json.error || $json.message || 'Неизвестная ошибка'}) }}",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "entries": [{"name": "Content-Type", "value": "application/json"}]
+          }
+        }
+      },
+      "id": "response-error",
+      "name": "❌ Ответ: Ошибка",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [488, 880]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "🌐 Webhook: GET /api/clients": {"main": [[{"node": "⚙️ CONFIG (GET)", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG (GET)": {"main": [[{"node": "🐘 Получить клиентов", "type": "main", "index": 0}]]},
+    "🐘 Получить клиентов": {"main": [[{"node": "✅ Ответ: Список", "type": "main", "index": 0}]]},
+    "🌐 Webhook: POST /api/clients": {"main": [[{"node": "⚙️ CONFIG (POST)", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG (POST)": {"main": [[{"node": "📝 Подготовить данные (POST)", "type": "main", "index": 0}]]},
+    "📝 Подготовить данные (POST)": {"main": [[{"node": "🐘 Создать клиента", "type": "main", "index": 0}], [{"node": "❌ Ответ: Ошибка", "type": "main", "index": 0}]]},
+    "🐘 Создать клиента": {"main": [[{"node": "✅ Ответ: Создан", "type": "main", "index": 0}]]},
+    "🌐 Webhook: PUT /api/clients": {"main": [[{"node": "⚙️ CONFIG (PUT)", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG (PUT)": {"main": [[{"node": "📝 Подготовить данные (PUT)", "type": "main", "index": 0}]]},
+    "📝 Подготовить данные (PUT)": {"main": [[{"node": "🐘 Обновить клиента", "type": "main", "index": 0}], [{"node": "❌ Ответ: Ошибка", "type": "main", "index": 0}]]},
+    "🐘 Обновить клиента": {"main": [[{"node": "✅ Ответ: Обновлен", "type": "main", "index": 0}]]},
+    "🌐 Webhook: DELETE /api/clients": {"main": [[{"node": "⚙️ CONFIG (DELETE)", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG (DELETE)": {"main": [[{"node": "📝 Получить ID (DELETE)", "type": "main", "index": 0}]]},
+    "📝 Получить ID (DELETE)": {"main": [[{"node": "🐘 Удалить клиента", "type": "main", "index": 0}], [{"node": "❌ Ответ: Ошибка", "type": "main", "index": 0}]]},
+    "🐘 Удалить клиента": {"main": [[{"node": "✅ Ответ: Удален", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "production-ru-v1",
+  "meta": {"templateCredsSetupCompleted": true, "instanceId": "production-template"},
+  "id": "client-management-api-ru",
+  "tags": []
+}

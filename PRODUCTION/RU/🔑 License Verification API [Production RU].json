@@ -1,0 +1,314 @@
+{
+  "name": "🔑 License Verification API [Production RU]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🔑 License Verification API\n\n### 📋 Описание\nAPI для проверки лицензий клиентов с rate limiting и проверкой доменов.\n\n---\n\n### ⚙️ CONFIG\n\n| Параметр | Описание |\n|----------|----------|\n| `rate_limit_max_requests` | Макс. запросов в минуту |\n| `rate_limit_window_sec` | Окно rate limit (сек) |\n| `table_rate_limits` | Таблица rate limits |\n| `table_clients` | Таблица клиентов |\n\n---\n\n### 🔄 Логика работы\n1. POST /verify-license\n2. Проверка rate limit по IP\n3. Поиск лицензии в БД\n4. Проверка статуса и срока\n5. Проверка домена в allowed_domains\n6. Возврат результата",
+        "height": 480,
+        "width": 380,
+        "color": 5
+      },
+      "id": "sticky-note-main",
+      "name": "📝 Инструкция",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-3200, -100]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "verify-license",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b969120f-a80a-4ecf-a5af-fe14e67c49eb",
+      "name": "🌐 Webhook: POST /verify-license",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-2800, 32],
+      "webhookId": "verify-license-webhook"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 100, "type": "number"},
+            {"id": "rate-window", "name": "rate_limit_window_sec", "value": 60, "type": "number"},
+            {"id": "table-rate", "name": "table_rate_limits", "value": "rate_limits", "type": "string"},
+            {"id": "table-clients", "name": "table_clients", "value": "clients", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-verify",
+      "name": "⚙️ CONFIG",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-2600, 32]
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhookData = $('🌐 Webhook: POST /verify-license').item.json;\nconst body = webhookData.body || {};\nconst query = webhookData.query || {};\nconst headers = webhookData.headers || {};\n\nconst licenseKey = body.license_key || query.license_key;\nconst clientIp = headers['x-real-ip'] || headers['x-forwarded-for']?.split(',')[0]?.trim() || 'unknown';\n\nlet domain = '';\nlet source = 'unknown';\n\nconst origin = headers['origin'] || '';\nif (origin) {\n  const match = origin.match(/^https?:\\/\\/([^/:]+)/);\n  if (match) {\n    domain = match[1];\n    source = 'origin';\n  }\n}\n\nif (!domain) {\n  const referer = headers['referer'] || '';\n  if (referer) {\n    const match = referer.match(/^https?:\\/\\/([^/:]+)/);\n    if (match) {\n      domain = match[1];\n      source = 'referer';\n    }\n  }\n}\n\nif (!domain) {\n  domain = body.domain || query.domain || '';\n  source = 'body';\n}\n\nif (!licenseKey) {\n  return [{\n    json: {\n      error: true,\n      message: 'license_key обязателен',\n      valid: false\n    }\n  }];\n}\n\nif (!domain) {\n  return [{\n    json: {\n      error: true,\n      message: 'Не удалось определить домен из запроса',\n      valid: false\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    license_key: licenseKey,\n    client_ip: clientIp,\n    domain: domain,\n    timestamp: new Date().toISOString(),\n    domain_source: source\n  }\n}];"
+      },
+      "id": "72353599-7eb3-45c8-ab73-e5951cea2164",
+      "name": "📥 Извлечь данные запроса",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-2400, 32]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  COALESCE(ip_address, '{{ $json.client_ip }}') as ip_address,\n  COALESCE(request_count, 0) as request_count,\n  COALESCE(window_start, NOW()) as window_start,\n  CASE \n    WHEN window_start IS NULL THEN 1\n    WHEN window_start < NOW() - INTERVAL '{{ $('⚙️ CONFIG').first().json.rate_limit_window_sec }} seconds' THEN 1\n    WHEN request_count >= {{ $('⚙️ CONFIG').first().json.rate_limit_max_requests }} THEN -1\n    ELSE request_count + 1\n  END as new_count\nFROM (\n  SELECT * \n  FROM {{ $('⚙️ CONFIG').first().json.table_rate_limits }}\n  WHERE ip_address = '{{ $json.client_ip }}'\n    AND endpoint = 'verify-license'\n  ORDER BY window_start DESC\n  LIMIT 1\n) sub\nRIGHT JOIN (SELECT 1) dummy ON TRUE\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "7b8a489c-e29f-44ee-b39f-743c5988f4b9",
+      "name": "🐘 Проверить Rate Limit",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-2200, 32],
+      "alwaysOutputData": false,
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('⚙️ CONFIG').first().json;\nconst requestData = $('📥 Извлечь данные запроса').item.json;\nconst rateLimitResult = $input.item.json;\n\nconst newCount = rateLimitResult.new_count !== undefined ? rateLimitResult.new_count : 1;\n\nreturn [{\n  json: {\n    ...requestData,\n    rate_limit_count: newCount,\n    rate_limit_allowed: newCount > 0\n  }\n}];"
+      },
+      "id": "b7411908-edd6-4f01-8f0e-7ee7c3894470",
+      "name": "🔀 Объединить данные",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-2000, 32]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [
+            {
+              "id": "rate-ok",
+              "leftValue": "={{ $json.rate_limit_allowed }}",
+              "rightValue": true,
+              "operator": {"type": "boolean", "operation": "true"}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e7878f15-62d6-4389-88c2-9fcf9369a747",
+      "name": "❓ Rate Limit OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-1800, 32]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO {{ $('⚙️ CONFIG').first().json.table_rate_limits }} (ip_address, endpoint, request_count, window_start, created_at)\nVALUES (\n  '{{ $json.client_ip }}',\n  'verify-license',\n  1,\n  NOW(),\n  NOW()\n)\nON CONFLICT (ip_address, endpoint) \nDO UPDATE SET\n  request_count = CASE \n    WHEN {{ $('⚙️ CONFIG').first().json.table_rate_limits }}.window_start < NOW() - INTERVAL '{{ $('⚙️ CONFIG').first().json.rate_limit_window_sec }} seconds' THEN 1\n    ELSE {{ $('⚙️ CONFIG').first().json.table_rate_limits }}.request_count + 1\n  END,\n  window_start = CASE \n    WHEN {{ $('⚙️ CONFIG').first().json.table_rate_limits }}.window_start < NOW() - INTERVAL '{{ $('⚙️ CONFIG').first().json.rate_limit_window_sec }} seconds' THEN NOW()\n    ELSE {{ $('⚙️ CONFIG').first().json.table_rate_limits }}.window_start\n  END\nRETURNING ip_address, request_count, window_start;",
+        "options": {}
+      },
+      "id": "e4470f2b-c16e-4049-8a8f-4a287f211208",
+      "name": "🐘 Обновить Rate Limit",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-1560, -48],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const requestData = $('🔀 Объединить данные').item.json;\n\nreturn [{\n  json: {\n    license_key: requestData.license_key,\n    client_ip: requestData.client_ip,\n    domain: requestData.domain,\n    timestamp: requestData.timestamp\n  }\n}];"
+      },
+      "id": "1bd83828-0fe3-436f-b33c-5a78ef9e6e84",
+      "name": "🔄 Восстановить данные",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1320, -48]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  client_id,\n  name,\n  email,\n  license_key,\n  status,\n  allowed_domains,\n  features,\n  expires_at,\n  CASE \n    WHEN status != 'active' THEN 'inactive'\n    WHEN expires_at IS NOT NULL AND expires_at < NOW() THEN 'expired'\n    ELSE 'valid'\n  END as license_status\nFROM {{ $('⚙️ CONFIG').first().json.table_clients }}\nWHERE license_key = '{{ $json.license_key }}';",
+        "options": {}
+      },
+      "id": "9d4dab8f-a821-4ba3-964e-17b691a2adb6",
+      "name": "🐘 Проверить лицензию",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-1080, -48],
+      "alwaysOutputData": true,
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const requestData = $('🔄 Восстановить данные').item.json;\nconst licenseData = $input.item.json;\n\nif (!licenseData || !licenseData.license_key) {\n  return [{\n    json: {\n      ...requestData,\n      license_status: 'not_found',\n      valid: false\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    ...requestData,\n    ...licenseData\n  }\n}];"
+      },
+      "id": "33ebe4cf-dd87-4222-acc8-511059144c4c",
+      "name": "🔀 Объединить с лицензией",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-840, -48]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [
+            {
+              "id": "license-valid",
+              "leftValue": "={{ $json.license_status }}",
+              "rightValue": "valid",
+              "operator": {"type": "string", "operation": "equals"}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a14502eb-b1c4-4b37-9801-d1df2804bb3d",
+      "name": "❓ Лицензия валидна?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-600, -48]
+    },
+    {
+      "parameters": {
+        "jsCode": "const licenseData = $input.item.json;\nconst requestDomain = licenseData.domain;\nconst allowedDomains = licenseData.allowed_domains || [];\n\nif (!requestDomain) {\n  return [{\n    json: {\n      ...licenseData,\n      domain_allowed: false,\n      error: 'Домен обязателен в запросе'\n    }\n  }];\n}\n\nif (allowedDomains.length === 0) {\n  return [{\n    json: {\n      ...licenseData,\n      domain_allowed: false,\n      error: 'Для этой лицензии не настроены домены. Добавьте домены в панели клиента.'\n    }\n  }];\n}\n\nconst domainAllowed = allowedDomains.some(allowed => {\n  if (requestDomain === allowed) return true;\n  if (requestDomain.endsWith('.' + allowed)) return true;\n  return false;\n});\n\nreturn [{\n  json: {\n    ...licenseData,\n    domain_allowed: domainAllowed,\n    checked_domain: requestDomain,\n    allowed_list: allowedDomains,\n    error: domainAllowed ? null : `Домен '${requestDomain}' не в списке разрешенных`\n  }\n}];"
+      },
+      "id": "4efff621-d5e8-42d2-a474-b4b92b69ffb6",
+      "name": "🔍 Проверить домен",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-360, -128]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [
+            {
+              "id": "domain-ok",
+              "leftValue": "={{ $json.domain_allowed }}",
+              "rightValue": true,
+              "operator": {"type": "boolean", "operation": "true"}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b6f4d144-5abd-493a-9c22-23b8b8ac1d9b",
+      "name": "❓ Домен OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-120, -128]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  valid: true,\n  license_status: 'active',\n  client_id: $json.client_id,\n  features: $json.features,\n  expires_at: $json.expires_at,\n  message: 'Лицензия действительна'\n}) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {"name": "Content-Type", "value": "application/json"},
+              {"name": "Access-Control-Allow-Origin", "value": "*"},
+              {"name": "Access-Control-Allow-Methods", "value": "POST, OPTIONS, GET"},
+              {"name": "Access-Control-Allow-Headers", "value": "Content-Type"}
+            ]
+          }
+        }
+      },
+      "id": "83ebf0e4-bd5f-4b77-9f4e-60a1c37f5fcd",
+      "name": "✅ Ответ: Валидна",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [120, -208]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  valid: false,\n  error: $json.error || 'Домен не разрешен',\n  message: $json.error || ('Домен не разрешен. Разрешенные домены: ' + JSON.stringify($json.allowed_domains)),\n  request_domain: $json.checked_domain || $json.domain,\n  allowed_domains: $json.allowed_list || $json.allowed_domains\n}) }}",
+        "options": {
+          "responseCode": 403,
+          "responseHeaders": {
+            "entries": [
+              {"name": "Content-Type", "value": "application/json"},
+              {"name": "Access-Control-Allow-Origin", "value": "*"},
+              {"name": "Access-Control-Allow-Methods", "value": "POST, OPTIONS, GET"},
+              {"name": "Access-Control-Allow-Headers", "value": "Content-Type"}
+            ]
+          }
+        }
+      },
+      "id": "5971b447-5b3a-48b8-ab8e-d9da918f5d6b",
+      "name": "❌ Ответ: Домен запрещен",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [120, -48]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  valid: false,\n  license_status: $json.license_status,\n  message: $json.license_status === 'inactive' ? 'Лицензия неактивна' : $json.license_status === 'expired' ? 'Срок лицензии истек' : 'Лицензия не найдена'\n}) }}",
+        "options": {
+          "responseCode": 403,
+          "responseHeaders": {
+            "entries": [
+              {"name": "Content-Type", "value": "application/json"},
+              {"name": "Access-Control-Allow-Origin", "value": "*"}
+            ]
+          }
+        }
+      },
+      "id": "624ab938-2aa7-4c3e-8d45-2678afdd19b9",
+      "name": "❌ Ответ: Невалидна",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-360, 32]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  valid: false,\n  message: 'Превышен лимит запросов. Максимум ' + $('⚙️ CONFIG').first().json.rate_limit_max_requests + ' запросов в минуту.',\n  retry_after: $('⚙️ CONFIG').first().json.rate_limit_window_sec\n}) }}",
+        "options": {
+          "responseCode": 429,
+          "responseHeaders": {
+            "entries": [
+              {"name": "Content-Type", "value": "application/json"},
+              {"name": "Retry-After", "value": "={{ $('⚙️ CONFIG').first().json.rate_limit_window_sec }}"},
+              {"name": "Access-Control-Allow-Origin", "value": "*"}
+            ]
+          }
+        }
+      },
+      "id": "c235a69b-2b5e-438a-8e82-31be44a5d856",
+      "name": "❌ Ответ: Rate Limit",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-1560, 112]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "🌐 Webhook: POST /verify-license": {"main": [[{"node": "⚙️ CONFIG", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG": {"main": [[{"node": "📥 Извлечь данные запроса", "type": "main", "index": 0}]]},
+    "📥 Извлечь данные запроса": {"main": [[{"node": "🐘 Проверить Rate Limit", "type": "main", "index": 0}]]},
+    "🐘 Проверить Rate Limit": {"main": [[{"node": "🔀 Объединить данные", "type": "main", "index": 0}]]},
+    "🔀 Объединить данные": {"main": [[{"node": "❓ Rate Limit OK?", "type": "main", "index": 0}]]},
+    "❓ Rate Limit OK?": {"main": [[{"node": "🐘 Обновить Rate Limit", "type": "main", "index": 0}], [{"node": "❌ Ответ: Rate Limit", "type": "main", "index": 0}]]},
+    "🐘 Обновить Rate Limit": {"main": [[{"node": "🔄 Восстановить данные", "type": "main", "index": 0}]]},
+    "🔄 Восстановить данные": {"main": [[{"node": "🐘 Проверить лицензию", "type": "main", "index": 0}]]},
+    "🐘 Проверить лицензию": {"main": [[{"node": "🔀 Объединить с лицензией", "type": "main", "index": 0}]]},
+    "🔀 Объединить с лицензией": {"main": [[{"node": "❓ Лицензия валидна?", "type": "main", "index": 0}]]},
+    "❓ Лицензия валидна?": {"main": [[{"node": "🔍 Проверить домен", "type": "main", "index": 0}], [{"node": "❌ Ответ: Невалидна", "type": "main", "index": 0}]]},
+    "🔍 Проверить домен": {"main": [[{"node": "❓ Домен OK?", "type": "main", "index": 0}]]},
+    "❓ Домен OK?": {"main": [[{"node": "✅ Ответ: Валидна", "type": "main", "index": 0}], [{"node": "❌ Ответ: Домен запрещен", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "production-ru-v1",
+  "meta": {"templateCredsSetupCompleted": true, "instanceId": "production-template"},
+  "id": "license-verification-api-ru",
+  "tags": []
+}
