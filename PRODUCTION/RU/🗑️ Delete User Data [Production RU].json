@@ -1,0 +1,252 @@
+{
+  "name": "🗑️ Delete User Data [Production RU]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🗑️ Удаление данных пользователя\n\n### 📋 Описание\nAPI для полного удаления данных пользователя из всех таблиц.\n\n**Функции:**\n- Удаление по Session ID (веб-чат)\n- Удаление по Email (почта)\n\n---\n\n### ⚙️ Настройка CONFIG\n\n| Параметр | Описание |\n|----------|----------|\n| `api_key` | API ключ для аутентификации |\n| `rate_limit_window_ms` | Окно rate limiting (мс) |\n| `rate_limit_max_requests` | Макс. запросов в окне |\n| `table_*` | Имена таблиц для удаления |\n\n---\n\n### 📥 API Эндпоинты\n\n**Удаление по Session ID:**\n```json\nPOST /webhook/delete-session?apiKey=YOUR_KEY\n{\n  \"sessionId\": \"user123_chatid456\"\n}\n```\n\n**Удаление по Email:**\n```json\nPOST /webhook/delete-email?apiKey=YOUR_KEY\n{\n  \"email\": \"user@example.com\"\n}\n```",
+        "height": 580,
+        "width": 400,
+        "color": 5
+      },
+      "id": "sticky-note-main",
+      "name": "📝 Инструкция",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-1280, -400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-monitoring", "name": "table_webchat_monitoring", "value": "webchat_monitoring", "type": "string"},
+            {"id": "table-contacts", "name": "table_user_contact_data", "value": "user_contact_data", "type": "string"},
+            {"id": "table-analysis", "name": "table_dialog_analysis", "value": "dialog_analysis", "type": "string"},
+            {"id": "table-chat-ru", "name": "table_chat_histories_ru", "value": "n8n_chat_histories_ru", "type": "string"},
+            {"id": "table-chat-en", "name": "table_chat_histories_en", "value": "n8n_chat_histories_en", "type": "string"},
+            {"id": "table-highlights", "name": "table_conversation_highlights", "value": "conversation_highlights", "type": "string"},
+            {"id": "table-preferences", "name": "table_user_preferences", "value": "user_preferences", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-session",
+      "name": "⚙️ CONFIG: Delete Session",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-752, -240]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-monitoring", "name": "table_email_monitoring", "value": "email_monitoring", "type": "string"},
+            {"id": "table-contacts", "name": "table_email_contact_data", "value": "email_contact_data", "type": "string"},
+            {"id": "table-analysis", "name": "table_email_dialog_analysis", "value": "email_dialog_analysis", "type": "string"},
+            {"id": "table-followups", "name": "table_email_follow_ups", "value": "email_follow_ups", "type": "string"},
+            {"id": "table-processing", "name": "table_email_processing_log", "value": "email_processing_log", "type": "string"},
+            {"id": "table-mapping", "name": "table_email_session_mapping", "value": "email_session_mapping", "type": "string"},
+            {"id": "table-gmail", "name": "table_gmail_conversations", "value": "gmail_conversations", "type": "string"},
+            {"id": "table-tracking", "name": "table_email_tracking", "value": "email_tracking", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-email",
+      "name": "⚙️ CONFIG: Delete Email",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-752, 144]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "delete-session",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "d7b404ce-7b0a-47b5-9d92-76bc5105b8f9",
+      "name": "🌐 Webhook: Delete Session",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-944, -240],
+      "webhookId": "delete-session-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Проверка безопасности: API KEY + RATE LIMITING\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Delete Session').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Delete Session').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) { delete staticData.rateLimits[ip]; }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }]; }\nif (providedKey !== API_KEY) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }]; }\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-560, -240],
+      "id": "25ea7a51-00f3-4ab3-b073-8c584cb89ccd",
+      "name": "🔐 Security Check (Session)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth-condition", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-384, -240],
+      "id": "c21ce30e-c12c-474f-9b08-6d82c64494a3",
+      "name": "❓ Auth Check (Session)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 🗑️ Удаление всех данных сессии\n-- ═══════════════════════════════════════════════════════════════\n\nBEGIN;\nWITH session_data AS (\n  SELECT '{{ $json.body.sessionId }}' as sid,\n         SUBSTRING('{{ $json.body.sessionId }}' FROM POSITION('_' IN '{{ $json.body.sessionId }}') + 1) as cid\n),\ndeleted_monitoring AS (\n  DELETE FROM {{ $('⚙️ CONFIG: Delete Session').first().json.table_webchat_monitoring }} \n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_contacts AS (\n  DELETE FROM {{ $('⚙️ CONFIG: Delete Session').first().json.table_user_contact_data }}\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_analysis AS (\n  DELETE FROM {{ $('⚙️ CONFIG: Delete Session').first().json.table_dialog_analysis }}\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_chat_histories_ru AS (\n  DELETE FROM {{ $('⚙️ CONFIG: Delete Session').first().json.table_chat_histories_ru }}\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_chat_histories_en AS (\n  DELETE FROM {{ $('⚙️ CONFIG: Delete Session').first().json.table_chat_histories_en }}\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_highlights AS (\n  DELETE FROM {{ $('⚙️ CONFIG: Delete Session').first().json.table_conversation_highlights }}\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_preferences AS (\n  DELETE FROM {{ $('⚙️ CONFIG: Delete Session').first().json.table_user_preferences }}\n  WHERE chat_id = (SELECT cid FROM session_data)\n  RETURNING *\n)\nSELECT \n  (SELECT sid FROM session_data) as deleted_session_id,\n  (SELECT COUNT(*) FROM deleted_monitoring) as monitoring_deleted,\n  (SELECT COUNT(*) FROM deleted_contacts) as contacts_deleted,\n  (SELECT COUNT(*) FROM deleted_analysis) as analysis_deleted,\n  (SELECT COUNT(*) FROM deleted_chat_histories_ru) as chat_histories_ru_deleted,\n  (SELECT COUNT(*) FROM deleted_chat_histories_en) as chat_histories_en_deleted,\n  (SELECT COUNT(*) FROM deleted_highlights) as highlights_deleted,\n  (SELECT COUNT(*) FROM deleted_preferences) as preferences_deleted,\n  (SELECT COUNT(*) FROM deleted_monitoring) + \n  (SELECT COUNT(*) FROM deleted_contacts) + \n  (SELECT COUNT(*) FROM deleted_analysis) +\n  (SELECT COUNT(*) FROM deleted_chat_histories_ru) +\n  (SELECT COUNT(*) FROM deleted_chat_histories_en) +\n  (SELECT COUNT(*) FROM deleted_highlights) +\n  (SELECT COUNT(*) FROM deleted_preferences) as total_deleted,\n  CASE \n    WHEN (SELECT COUNT(*) FROM deleted_monitoring) + \n         (SELECT COUNT(*) FROM deleted_contacts) + \n         (SELECT COUNT(*) FROM deleted_analysis) +\n         (SELECT COUNT(*) FROM deleted_chat_histories_ru) +\n         (SELECT COUNT(*) FROM deleted_chat_histories_en) +\n         (SELECT COUNT(*) FROM deleted_highlights) +\n         (SELECT COUNT(*) FROM deleted_preferences) > 0 \n    THEN 'success'\n    ELSE 'not_found'\n  END as status;\nCOMMIT;",
+        "options": {}
+      },
+      "id": "468ff3f3-9bfc-41af-803e-55ca33ca20c9",
+      "name": "🐘 Delete Session Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [-176, -288],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📊 Обработка результата удаления\n// ═══════════════════════════════════════════════════════════════\n\nconst result = $input.item.json;\nconst deletedCount = result.total_deleted || 0;\nconst sessionId = $('🌐 Webhook: Delete Session').item.json.body.sessionId || result.deleted_session_id || '';\n\nreturn [{\n  json: {\n    session_id: sessionId,\n    deleted: deletedCount > 0,\n    deleted_count: deletedCount,\n    success: deletedCount > 0,\n    details: {\n      monitoring: result.monitoring_deleted || 0,\n      contacts: result.contacts_deleted || 0,\n      analysis: result.analysis_deleted || 0,\n      chat_ru: result.chat_histories_ru_deleted || 0,\n      chat_en: result.chat_histories_en_deleted || 0,\n      highlights: result.highlights_deleted || 0,\n      preferences: result.preferences_deleted || 0\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [16, -288],
+      "id": "7610daa2-3694-4b74-90a4-f23a2e75a17b",
+      "name": "📊 Process Result (Session)"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\"status\": $json.success ? \"success\" : \"not_found\", \"message\": $json.success ? \"Данные сессии удалены\" : \"Данные не найдены\", \"data\": $json} }}",
+        "options": {}
+      },
+      "id": "fa94494d-b1ea-4a53-bdb2-88ef290bf4ed",
+      "name": "✅ Respond (Session)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [208, -288]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json.error }}", "options": {"responseCode": "={{ $json.error.status }}"}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-176, -128],
+      "id": "dfc6eadb-b9cf-4b2b-a119-6e93910801ad",
+      "name": "❌ Error Response (Session)"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "delete-email",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "9f1bcd76-b59d-41f0-8ecf-86adf2e13551",
+      "name": "🌐 Webhook: Delete Email",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-944, 144],
+      "webhookId": "delete-email-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Проверка безопасности: API KEY + RATE LIMITING\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Delete Email').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Delete Email').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) { delete staticData.rateLimits[ip]; }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }]; }\nif (providedKey !== API_KEY) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }]; }\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-560, 144],
+      "id": "3203e5df-e98d-48af-b43d-1e55b9c82469",
+      "name": "🔐 Security Check (Email)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth-condition", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-384, 144],
+      "id": "0693960c-36b1-4050-b784-58235c6022f5",
+      "name": "❓ Auth Check (Email)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 🗑️ Удаление всех данных по email\n-- ═══════════════════════════════════════════════════════════════\n\nBEGIN;\nWITH email_data AS (\n  SELECT '{{ $json.body.email }}' as email_address\n),\ndeleted_monitoring AS (\n  DELETE FROM {{ $('⚙️ CONFIG: Delete Email').first().json.table_email_monitoring }} \n  WHERE email = (SELECT email_address FROM email_data)\n  RETURNING *\n),\ndeleted_contacts AS (\n  DELETE FROM {{ $('⚙️ CONFIG: Delete Email').first().json.table_email_contact_data }}\n  WHERE email = (SELECT email_address FROM email_data)\n  RETURNING *\n),\ndeleted_analysis AS (\n  DELETE FROM {{ $('⚙️ CONFIG: Delete Email').first().json.table_email_dialog_analysis }}\n  WHERE email = (SELECT email_address FROM email_data)\n  RETURNING *\n),\ndeleted_follow_ups AS (\n  DELETE FROM {{ $('⚙️ CONFIG: Delete Email').first().json.table_email_follow_ups }}\n  WHERE email = (SELECT email_address FROM email_data)\n  RETURNING *\n),\ndeleted_processing_log AS (\n  DELETE FROM {{ $('⚙️ CONFIG: Delete Email').first().json.table_email_processing_log }}\n  WHERE email_from = (SELECT email_address FROM email_data)\n  RETURNING *\n),\ndeleted_session_mapping AS (\n  DELETE FROM {{ $('⚙️ CONFIG: Delete Email').first().json.table_email_session_mapping }}\n  WHERE email = (SELECT email_address FROM email_data)\n  RETURNING *\n),\ndeleted_gmail_conversations AS (\n  DELETE FROM {{ $('⚙️ CONFIG: Delete Email').first().json.table_gmail_conversations }}\n  WHERE email = (SELECT email_address FROM email_data)\n  RETURNING *\n),\ndeleted_email_tracking AS (\n  DELETE FROM {{ $('⚙️ CONFIG: Delete Email').first().json.table_email_tracking }}\n  WHERE email = (SELECT email_address FROM email_data)\n  RETURNING *\n)\nSELECT \n  (SELECT email_address FROM email_data) as deleted_email,\n  (SELECT COUNT(*) FROM deleted_monitoring) as monitoring_deleted,\n  (SELECT COUNT(*) FROM deleted_contacts) as contacts_deleted,\n  (SELECT COUNT(*) FROM deleted_analysis) as analysis_deleted,\n  (SELECT COUNT(*) FROM deleted_follow_ups) as follow_ups_deleted,\n  (SELECT COUNT(*) FROM deleted_processing_log) as processing_log_deleted,\n  (SELECT COUNT(*) FROM deleted_session_mapping) as session_mapping_deleted,\n  (SELECT COUNT(*) FROM deleted_gmail_conversations) as gmail_conversations_deleted,\n  (SELECT COUNT(*) FROM deleted_email_tracking) as email_tracking_deleted,\n  (SELECT COUNT(*) FROM deleted_monitoring) + \n  (SELECT COUNT(*) FROM deleted_contacts) + \n  (SELECT COUNT(*) FROM deleted_analysis) +\n  (SELECT COUNT(*) FROM deleted_follow_ups) +\n  (SELECT COUNT(*) FROM deleted_processing_log) +\n  (SELECT COUNT(*) FROM deleted_session_mapping) +\n  (SELECT COUNT(*) FROM deleted_gmail_conversations) +\n  (SELECT COUNT(*) FROM deleted_email_tracking) as total_deleted,\n  CASE \n    WHEN (SELECT COUNT(*) FROM deleted_monitoring) + \n         (SELECT COUNT(*) FROM deleted_contacts) + \n         (SELECT COUNT(*) FROM deleted_analysis) +\n         (SELECT COUNT(*) FROM deleted_follow_ups) +\n         (SELECT COUNT(*) FROM deleted_processing_log) +\n         (SELECT COUNT(*) FROM deleted_session_mapping) +\n         (SELECT COUNT(*) FROM deleted_gmail_conversations) +\n         (SELECT COUNT(*) FROM deleted_email_tracking) > 0 \n    THEN 'success'\n    ELSE 'not_found'\n  END as status;\nCOMMIT;",
+        "options": {}
+      },
+      "id": "5bfa518f-690d-4bfa-ac8b-b6da0d41010a",
+      "name": "🐘 Delete Email Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [-176, 96],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📊 Обработка результата удаления\n// ═══════════════════════════════════════════════════════════════\n\nconst result = $input.item.json;\nconst deletedCount = result.total_deleted || 0;\nconst email = $('🌐 Webhook: Delete Email').item.json.body.email || result.deleted_email || '';\n\nreturn [{\n  json: {\n    email: email,\n    deleted: deletedCount > 0,\n    deleted_count: deletedCount,\n    success: deletedCount > 0,\n    details: {\n      monitoring: result.monitoring_deleted || 0,\n      contacts: result.contacts_deleted || 0,\n      analysis: result.analysis_deleted || 0,\n      follow_ups: result.follow_ups_deleted || 0,\n      processing_log: result.processing_log_deleted || 0,\n      session_mapping: result.session_mapping_deleted || 0,\n      gmail_conversations: result.gmail_conversations_deleted || 0,\n      email_tracking: result.email_tracking_deleted || 0\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [16, 96],
+      "id": "9aafab73-7191-4a2a-bd5d-3fde84ac114a",
+      "name": "📊 Process Result (Email)"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\"status\": $json.success ? \"success\" : \"not_found\", \"message\": $json.success ? \"Данные email удалены\" : \"Данные не найдены\", \"data\": $json} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [208, 96],
+      "id": "f1aae2e9-e88d-4b83-b3be-8b9103dde37a",
+      "name": "✅ Respond (Email)"
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json.error }}", "options": {"responseCode": "={{ $json.error.status }}"}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-176, 256],
+      "id": "abdd2b71-5c95-4d99-8c7b-7c0d31e30532",
+      "name": "❌ Error Response (Email)"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "🌐 Webhook: Delete Session": {"main": [[{"node": "⚙️ CONFIG: Delete Session", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Delete Session": {"main": [[{"node": "🔐 Security Check (Session)", "type": "main", "index": 0}]]},
+    "🔐 Security Check (Session)": {"main": [[{"node": "❓ Auth Check (Session)", "type": "main", "index": 0}]]},
+    "❓ Auth Check (Session)": {"main": [[{"node": "🐘 Delete Session Data", "type": "main", "index": 0}], [{"node": "❌ Error Response (Session)", "type": "main", "index": 0}]]},
+    "🐘 Delete Session Data": {"main": [[{"node": "📊 Process Result (Session)", "type": "main", "index": 0}]]},
+    "📊 Process Result (Session)": {"main": [[{"node": "✅ Respond (Session)", "type": "main", "index": 0}]]},
+    "🌐 Webhook: Delete Email": {"main": [[{"node": "⚙️ CONFIG: Delete Email", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Delete Email": {"main": [[{"node": "🔐 Security Check (Email)", "type": "main", "index": 0}]]},
+    "🔐 Security Check (Email)": {"main": [[{"node": "❓ Auth Check (Email)", "type": "main", "index": 0}]]},
+    "❓ Auth Check (Email)": {"main": [[{"node": "🐘 Delete Email Data", "type": "main", "index": 0}], [{"node": "❌ Error Response (Email)", "type": "main", "index": 0}]]},
+    "🐘 Delete Email Data": {"main": [[{"node": "📊 Process Result (Email)", "type": "main", "index": 0}]]},
+    "📊 Process Result (Email)": {"main": [[{"node": "✅ Respond (Email)", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "production-ru-v1",
+  "meta": {"templateCredsSetupCompleted": true, "instanceId": "production-template"},
+  "id": "delete-user-data-ru",
+  "tags": []
+}
