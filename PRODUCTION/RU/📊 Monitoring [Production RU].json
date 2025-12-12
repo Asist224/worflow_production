@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "# 📊 МОНИТОРИНГ WEBCHAT\n\n\n\n## ⚙️ НАСТРОЙКА\n\n\n\n### 1️⃣ Настройте узлы «⚙️ CONFIG»\n\nКаждый процесс имеет свой CONFIG узел.\nОткройте и настройте параметры:\n\n\n\n**🔑 Авторизация:**\n\n• `api_key` — Ваш API ключ\n\n• `rate_limit_max` — Лимит запросов/мин\n\n\n\n**🗄️ Таблицы базы данных:**\n\n• `table_monitoring` — Таблица мониторинга\n\n• `table_chat_ru` — RU диалоги\n\n• `table_chat_en` — EN диалоги\n\n• `table_contacts` — Контакты\n\n\n\n**⏱️ Временные параметры:**\n\n• `active_interval_minutes` — Интервал активности\n\n• `data_retention_days` — Хранение данных\n\n\n\n---\n\n\n\n### 2️⃣ Подключите Credentials\n\n\n\n**PostgreSQL** → все узлы с иконкой 🐘\n\n\n\n---\n\n\n\n### 3️⃣ API Endpoints\n\n\n\n| Метод | Endpoint | Описание |\n|:-----:|----------|----------|\n| POST | `/chat-monitoring` | Сохранение |\n| GET | `/chat-monitoring-data` | Дашборд |\n| GET | `/chat-dialogs` | Диалоги |\n| GET | `/server-time` | Время |\n| GET | `/get-contact-data` | Контакты |\n\n\n\n---\n\n\n\n### 4️⃣ Авторизация запросов\n\n\n\nПередайте API ключ одним из способов:\n\n• Header: `x-api-key: ВАШ_КЛЮЧ`\n\n• Query: `?apiKey=ВАШ_КЛЮЧ`\n\n• Body: `{\"apiKey\": \"ВАШ_КЛЮЧ\"}`\n\n\n\n---\n\n\n\n### 5️⃣ Активация\n\n\n\nНажмите **Active** ↗️ в правом верхнем углу",
+        "content": "# 📊 МОНИТОРИНГ WEBCHAT\n\n\n\n## ⚙️ НАСТРОЙКА\n\n\n\n### 1️⃣ Настройте узлы «⚙️ CONFIG»\n\nКаждый процесс имеет свой CONFIG узел.\nОткройте и настройте параметры:\n\n\n\n**🔑 Авторизация:**\n\n• `api_key` — Ваш API ключ\n\n• `rate_limit_max` — Лимит запросов/мин\n\n\n\n**🗄️ Таблицы базы данных:**\n\n• `table_monitoring` — Таблица мониторинга\n\n• `table_chat_ru` — RU диалоги\n\n• `table_chat_en` — EN диалоги\n\n• `table_contacts` — Контакты\n\n\n\n**⏱️ Временные параметры:**\n\n• `active_interval_minutes` — Интервал активности\n\n• `data_retention_days` — Хранение данных\n\n\n\n---\n\n\n\n### 2️⃣ Подключите Credentials\n\n\n\n**PostgreSQL** → все узлы с иконкой 🐘\n\n\n\n---\n\n\n\n### 3️⃣ API Endpoints\n\n\n\n| Метод | Endpoint | Описание |\n|:-----:|----------|----------|\n| POST | `/chat-monitoring` | Сохранение |\n| GET | `/chat-monitoring-data` | Дашборд |\n| GET | `/chat-dialogs` | Диалоги |\n| GET | `/server-time` | Время |\n| GET | `/real-message-count` | Счётчик |\n| GET | `/get-contact-data` | Контакты |\n\n\n\n---\n\n\n\n### 4️⃣ Авторизация запросов\n\n\n\nПередайте API ключ одним из способов:\n\n• Header: `x-api-key: ВАШ_КЛЮЧ`\n\n• Query: `?apiKey=ВАШ_КЛЮЧ`\n\n• Body: `{\"apiKey\": \"ВАШ_КЛЮЧ\"}`\n\n\n\n---\n\n\n\n### 5️⃣ Активация\n\n\n\nНажмите **Active** ↗️ в правом верхнем углу",
         "height": 1180,
         "width": 380,
         "color": 6
@@ -747,6 +747,139 @@
         760,
         1144
       ]
+    },
+    {
+      "parameters": {
+        "path": "real-message-count",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "webhook-message-count",
+      "name": "🌐 Webhook: Message Count",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -440,
+        1520
+      ],
+      "webhookId": "real-message-count-webhook"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"api_key\": \"YOUR-API-KEY-CHANGE-ME\",\n  \"rate_limit_window_ms\": 60000,\n  \"rate_limit_max\": 60,\n  \n  \"table_monitoring\": \"webchat_monitoring\",\n  \"table_chat_ru\": \"n8n_chat_histories_ru\",\n  \"table_chat_en\": \"n8n_chat_histories_en\",\n  \"table_contacts\": \"user_contact_data\",\n  \n  \"active_interval_minutes\": 5,\n  \"data_retention_days\": 30\n}",
+        "options": {}
+      },
+      "id": "config-message-count",
+      "name": "⚙️ CONFIG 6",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -240,
+        1520
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 SECURITY CHECK: API KEY + RATE LIMITING\n// Настройки берутся из узла CONFIG\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG 6').item.json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -40,
+        1520
+      ],
+      "id": "security-check-6",
+      "name": "🔐 Security Check 6"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        160,
+        1520
+      ],
+      "id": "auth-check-6",
+      "name": "❓ Auth OK? 6"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        360,
+        1680
+      ],
+      "id": "error-response-6",
+      "name": "❌ Error Response 6"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 🔢 Получение реального количества сообщений\n-- Таблицы: {{ $('⚙️ CONFIG 6').item.json.table_monitoring }},\n--          {{ $('⚙️ CONFIG 6').item.json.table_chat_ru }},\n--          {{ $('⚙️ CONFIG 6').item.json.table_chat_en }}\n-- ═══════════════════════════════════════════════════════════════\n\nWITH message_counts AS (\n    SELECT \n        session_id,\n        COUNT(*) as real_messages\n    FROM (\n        SELECT session_id FROM {{ $('⚙️ CONFIG 6').item.json.table_chat_ru }}\n        UNION ALL\n        SELECT session_id FROM {{ $('⚙️ CONFIG 6').item.json.table_chat_en }}\n    ) all_messages\n    GROUP BY session_id\n)\nSELECT \n    wm.session_id,\n    COALESCE(mc.real_messages, 0) as message_count\nFROM {{ $('⚙️ CONFIG 6').item.json.table_monitoring }} wm\nLEFT JOIN message_counts mc ON wm.session_id = mc.session_id\nWHERE wm.session_id IN (\n    SELECT DISTINCT session_id \n    FROM {{ $('⚙️ CONFIG 6').item.json.table_monitoring }} \n    WHERE last_activity_time > NOW() - INTERVAL '24 hours'\n);",
+        "options": {}
+      },
+      "id": "get-message-count",
+      "name": "🐘 Get Message Count",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        360,
+        1504
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "response-message-count",
+      "name": "✅ Response Message Count",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        560,
+        1504
+      ]
     }
   ],
   "pinData": {},
@@ -1110,6 +1243,68 @@
         [
           {
             "node": "✅ Response Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🌐 Webhook: Message Count": {
+      "main": [
+        [
+          {
+            "node": "⚙️ CONFIG 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ CONFIG 6": {
+      "main": [
+        [
+          {
+            "node": "🔐 Security Check 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔐 Security Check 6": {
+      "main": [
+        [
+          {
+            "node": "❓ Auth OK? 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓ Auth OK? 6": {
+      "main": [
+        [
+          {
+            "node": "🐘 Get Message Count",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "❌ Error Response 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🐘 Get Message Count": {
+      "main": [
+        [
+          {
+            "node": "✅ Response Message Count",
             "type": "main",
             "index": 0
           }
