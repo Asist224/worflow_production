@@ -47,7 +47,7 @@
     {
       "parameters": {
         "mode": "raw",
-        "jsonOutput": "={\n  \"api_key\": \"YOUR-API-KEY-CHANGE-ME\",\n  \"rate_limit_window_ms\": 60000,\n  \"rate_limit_max\": 60,\n  \n  \"table_monitoring\": \"webchat_monitoring\",\n  \"table_chat_ru\": \"n8n_chat_histories_ru\",\n  \"table_chat_en\": \"n8n_chat_histories_en\",\n  \"table_contacts\": \"user_contact_data\",\n  \n  \"active_interval_minutes\": 5,\n  \"data_retention_days\": 30\n}",
+        "jsonOutput": "={\n  \"api_key\": \"YOUR-API-KEY-CHANGE-ME\",\n  \"rate_limit_window_ms\": 60000,\n  \"rate_limit_max\": 60,\n  \"table_monitoring\": \"webchat_monitoring\"\n}",
         "options": {}
       },
       "id": "config-save-activity",
@@ -193,7 +193,7 @@
     {
       "parameters": {
         "mode": "raw",
-        "jsonOutput": "={\n  \"api_key\": \"YOUR-API-KEY-CHANGE-ME\",\n  \"rate_limit_window_ms\": 60000,\n  \"rate_limit_max\": 60,\n  \n  \"table_monitoring\": \"webchat_monitoring\",\n  \"table_chat_ru\": \"n8n_chat_histories_ru\",\n  \"table_chat_en\": \"n8n_chat_histories_en\",\n  \"table_contacts\": \"user_contact_data\",\n  \n  \"active_interval_minutes\": 5,\n  \"data_retention_days\": 30\n}",
+        "jsonOutput": "={\n  \"api_key\": \"YOUR-API-KEY-CHANGE-ME\",\n  \"rate_limit_window_ms\": 60000,\n  \"rate_limit_max\": 60,\n  \"table_monitoring\": \"webchat_monitoring\",\n  \"table_chat_ru\": \"n8n_chat_histories_ru\",\n  \"table_chat_en\": \"n8n_chat_histories_en\",\n  \"active_interval_minutes\": 5,\n  \"data_retention_days\": 30\n}",
         "options": {}
       },
       "id": "config-get-data",
@@ -339,7 +339,7 @@
     {
       "parameters": {
         "mode": "raw",
-        "jsonOutput": "={\n  \"api_key\": \"YOUR-API-KEY-CHANGE-ME\",\n  \"rate_limit_window_ms\": 60000,\n  \"rate_limit_max\": 60,\n  \n  \"table_monitoring\": \"webchat_monitoring\",\n  \"table_chat_ru\": \"n8n_chat_histories_ru\",\n  \"table_chat_en\": \"n8n_chat_histories_en\",\n  \"table_contacts\": \"user_contact_data\",\n  \n  \"active_interval_minutes\": 5,\n  \"data_retention_days\": 30\n}",
+        "jsonOutput": "={\n  \"api_key\": \"YOUR-API-KEY-CHANGE-ME\",\n  \"rate_limit_window_ms\": 60000,\n  \"rate_limit_max\": 60,\n  \"table_chat_ru\": \"n8n_chat_histories_ru\",\n  \"table_chat_en\": \"n8n_chat_histories_en\"\n}",
         "options": {}
       },
       "id": "config-get-dialogs",
@@ -498,7 +498,7 @@
     {
       "parameters": {
         "mode": "raw",
-        "jsonOutput": "={\n  \"api_key\": \"YOUR-API-KEY-CHANGE-ME\",\n  \"rate_limit_window_ms\": 60000,\n  \"rate_limit_max\": 60,\n  \n  \"table_monitoring\": \"webchat_monitoring\",\n  \"table_chat_ru\": \"n8n_chat_histories_ru\",\n  \"table_chat_en\": \"n8n_chat_histories_en\",\n  \"table_contacts\": \"user_contact_data\",\n  \n  \"active_interval_minutes\": 5,\n  \"data_retention_days\": 30\n}",
+        "jsonOutput": "={\n  \"api_key\": \"YOUR-API-KEY-CHANGE-ME\",\n  \"rate_limit_window_ms\": 60000,\n  \"rate_limit_max\": 60\n}",
         "options": {}
       },
       "id": "config-server-time",
@@ -623,7 +623,7 @@
     {
       "parameters": {
         "mode": "raw",
-        "jsonOutput": "={\n  \"api_key\": \"YOUR-API-KEY-CHANGE-ME\",\n  \"rate_limit_window_ms\": 60000,\n  \"rate_limit_max\": 60,\n  \n  \"table_monitoring\": \"webchat_monitoring\",\n  \"table_chat_ru\": \"n8n_chat_histories_ru\",\n  \"table_chat_en\": \"n8n_chat_histories_en\",\n  \"table_contacts\": \"user_contact_data\",\n  \n  \"active_interval_minutes\": 5,\n  \"data_retention_days\": 30\n}",
+        "jsonOutput": "={\n  \"api_key\": \"YOUR-API-KEY-CHANGE-ME\",\n  \"rate_limit_window_ms\": 60000,\n  \"rate_limit_max\": 60,\n  \"table_contacts\": \"user_contact_data\",\n  \"table_monitoring\": \"webchat_monitoring\",\n  \"data_retention_days\": 30\n}",
         "options": {}
       },
       "id": "config-get-contacts",
@@ -769,7 +769,7 @@
     {
       "parameters": {
         "mode": "raw",
-        "jsonOutput": "={\n  \"api_key\": \"YOUR-API-KEY-CHANGE-ME\",\n  \"rate_limit_window_ms\": 60000,\n  \"rate_limit_max\": 60,\n  \n  \"table_monitoring\": \"webchat_monitoring\",\n  \"table_chat_ru\": \"n8n_chat_histories_ru\",\n  \"table_chat_en\": \"n8n_chat_histories_en\",\n  \"table_contacts\": \"user_contact_data\",\n  \n  \"active_interval_minutes\": 5,\n  \"data_retention_days\": 30\n}",
+        "jsonOutput": "={\n  \"table_monitoring\": \"webchat_monitoring\",\n  \"table_chat_ru\": \"n8n_chat_histories_ru\",\n  \"table_chat_en\": \"n8n_chat_histories_en\"\n}",
         "options": {}
       },
       "id": "config-message-count",
