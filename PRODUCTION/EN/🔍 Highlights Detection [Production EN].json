@@ -1,0 +1,405 @@
+{
+  "name": "🔍 Highlights Detection [Production EN]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🔍 Highlights Detection\n\n### 📋 Description\nAI detection of key moments in conversations:\n- 💰 PRICING - price mentions\n- ❌ OBJECTION - objections\n- ✅ BUYING_SIGNAL - buying signals\n\n---\n\n### ⚙️ CONFIG Setup\n\n| Parameter | Description |\n|-----------|-------------|\n| `api_key` | API key for authentication |\n| `gemini_model` | Gemini model |\n| `table_*` | Table names |\n\n---\n\n### 📥 API Endpoints\n\n**Analyze dialog:**\n```json\nPOST /webhook/detect-highlights?apiKey=YOUR_KEY\n{\n  \"sessionId\": \"user123_chat456\",\n  \"userName\": \"John\",\n  \"language\": \"en\"\n}\n```\n\n**Get highlights:**\n```\nGET /webhook/get-highlights?apiKey=YOUR_KEY&sessionId=user123_chat456\n```",
+        "height": 520,
+        "width": 380,
+        "color": 5
+      },
+      "id": "sticky-note-main",
+      "name": "📝 Instructions",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-2400, -400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-highlights", "name": "table_conversation_highlights", "value": "conversation_highlights", "type": "string"},
+            {"id": "table-chat-ru", "name": "table_chat_histories_ru", "value": "n8n_chat_histories_ru", "type": "string"},
+            {"id": "table-chat-en", "name": "table_chat_histories_en", "value": "n8n_chat_histories_en", "type": "string"},
+            {"id": "table-language", "name": "table_analysis_language_settings", "value": "analysis_language_settings", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-detect",
+      "name": "⚙️ CONFIG: Detect",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1888, -144]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-highlights", "name": "table_conversation_highlights", "value": "conversation_highlights", "type": "string"},
+            {"id": "table-chat-ru", "name": "table_chat_histories_ru", "value": "n8n_chat_histories_ru", "type": "string"},
+            {"id": "table-chat-en", "name": "table_chat_histories_en", "value": "n8n_chat_histories_en", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-get",
+      "name": "⚙️ CONFIG: Get",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1888, 352]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "detect-highlights",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "a8adc06d-2e50-4f1c-8c2b-44bc242e1336",
+      "name": "🌐 Webhook: Detect",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-2096, -144],
+      "webhookId": "detect-highlights-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Security Check: API KEY + RATE LIMITING\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Detect').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Detect').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) { delete staticData.rateLimits[ip]; }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }]; }\nif (providedKey !== API_KEY) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }]; }\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1696, -144],
+      "id": "9f78f979-5d5c-40e8-94d8-94a080818bba",
+      "name": "🔐 Security Check (Detect)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth-condition", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-1536, -144],
+      "id": "5df2b8a7-b02e-4635-8985-b8d21548ea44",
+      "name": "❓ Auth Check (Detect)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📥 Process incoming request\n// ═══════════════════════════════════════════════════════════════\n\nconst requestData = items[0].json.body || items[0].json;\n\nconst sessionId = requestData.sessionId;\nconst userName = requestData.userName || 'Guest';\nconst language = requestData.language || 'en';\n\nif (!sessionId) {\n    throw new Error('sessionId is required');\n}\n\nreturn [{\n    json: {\n        sessionId: sessionId,\n        userName: userName,\n        language: language\n    }\n}];"
+      },
+      "id": "86628ecb-3712-477a-bf83-ba3794a2abb3",
+      "name": "📥 Process Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1344, -144]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT language_code FROM {{ $('⚙️ CONFIG: Detect').first().json.table_analysis_language_settings }} ORDER BY id DESC LIMIT 1;",
+        "options": {}
+      },
+      "id": "ccd257dc-fd7e-46b9-92ed-ad415a70aae9",
+      "name": "🐘 Get Analysis Language",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [-1152, -144],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔄 Merge with language settings\n// ═══════════════════════════════════════════════════════════════\n\nconst requestData = $('📥 Process Request').first().json;\nconst langSetting = items[0]?.json?.language_code || 'en';\n\nreturn [{\n    json: {\n        sessionId: requestData.sessionId,\n        userName: requestData.userName,\n        language: requestData.language,\n        analysisLanguage: langSetting\n    }\n}];"
+      },
+      "id": "aa8be4ea-5963-4f70-ae3c-32a1796c9b37",
+      "name": "🔄 Merge with Language",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-960, -144]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH all_chats AS (\n    SELECT id, session_id, message::json->>'type' as message_type, message::json->>'content' as content, created_at as timestamp, platform, 'ru' as language\n    FROM {{ $('⚙️ CONFIG: Detect').first().json.table_chat_histories_ru }}\n    WHERE session_id = '{{ $json.sessionId }}' AND created_at >= NOW() - INTERVAL '20 days'\n    UNION ALL\n    SELECT id, session_id, message::json->>'type' as message_type, message::json->>'content' as content, created_at as timestamp, platform, 'en' as language\n    FROM {{ $('⚙️ CONFIG: Detect').first().json.table_chat_histories_en }}\n    WHERE session_id = '{{ $json.sessionId }}' AND created_at >= NOW() - INTERVAL '20 days'\n)\nSELECT * FROM all_chats ORDER BY timestamp ASC;",
+        "options": {}
+      },
+      "id": "3b137110-8882-4864-97c9-9ec15ad04855",
+      "name": "🐘 Get Dialog Messages",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [-768, -144],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📝 Format dialog for AI analysis\n// ═══════════════════════════════════════════════════════════════\n\nconst dialogs = items;\nconst mergedData = $('🔄 Merge with Language').first().json;\nconst analysisLanguage = mergedData.analysisLanguage || 'en';\n\nconst sessionData = {\n    messages: [],\n    language: mergedData.language,\n    sessionId: mergedData.sessionId,\n    messagesMap: {}\n};\n\ndialogs.forEach((item, index) => {\n    const data = item.json;\n    const orderNumber = index + 1;\n    \n    sessionData.messages.push({\n        id: data.id,\n        orderNumber: orderNumber,\n        type: data.message_type,\n        content: data.content,\n        timestamp: data.timestamp,\n        platform: data.platform\n    });\n    \n    sessionData.messagesMap[orderNumber] = data.id;\n});\n\nconst clientLabel = 'Client';\nconst botLabel = 'Bot';\n\nconst conversation = sessionData.messages.map(msg => \n    `[${msg.orderNumber}] ${msg.type === 'human' ? clientLabel : botLabel}: ${msg.content}`\n).join('\\n');\n\nreturn [{\n    json: {\n        sessionId: mergedData.sessionId,\n        userName: mergedData.userName,\n        language: mergedData.language,\n        analysisLanguage: analysisLanguage,\n        conversation: conversation,\n        messages: sessionData.messages,\n        messagesMap: sessionData.messagesMap,\n        totalMessages: sessionData.messages.length\n    }\n}];"
+      },
+      "id": "60eb17e0-7554-4844-8945-2796a72a16fb",
+      "name": "📝 Format Dialog for AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-576, -144]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Output language: {{ $json.analysisLanguage || 'en' }}\nSESSION ID: {{ $json.sessionId }}\nMessage count: {{ $json.totalMessages }}\n\nDialog:\n{{ $json.conversation }}",
+        "options": {
+          "systemMessage": "# ROLE\nYou are an expert dialog analyst for detecting key moments (highlights).\n\n# HIGHLIGHT TYPES\n\n## 1. 💰 PRICING_MENTION\nQuestions about price, plans, budget, payment.\n\n## 2. ❌ OBJECTION\nDoubts, rejections, negativity about price/product.\n\n## 3. ✅ BUYING_SIGNAL\nInterest, willingness to try/buy.\n\n# RULES\n1. One message can contain MULTIPLE types\n2. Detect ONLY Client messages (NOT Bot)\n3. Confidence: 0.70-1.00 (below 0.70 don't include)\n4. Questions about pricing = PRICING + BUYING_SIGNAL\n\n# RESPONSE FORMAT (JSON ONLY!)\n{\n  \"highlights\": [\n    {\n      \"messageId\": message_number,\n      \"messageText\": \"text\",\n      \"type\": \"pricing\" | \"objection\" | \"buying_signal\",\n      \"confidence\": 0.70-1.00,\n      \"reasoning\": \"explanation\",\n      \"matchedPatterns\": [\"patterns\"]\n    }\n  ],\n  \"summary\": {\n    \"totalHighlights\": number,\n    \"byType\": {\"pricing\": N, \"objection\": N, \"buying_signal\": N},\n    \"overallAssessment\": \"dialog assessment\"\n  }\n}"
+        }
+      },
+      "id": "608dc9fa-426f-41ca-9946-098f31b8eaf3",
+      "name": "🤖 AI Agent (Gemini)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [-384, -144]
+    },
+    {
+      "parameters": {"options": {}},
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [-432, 32],
+      "id": "2c7a051a-dcf7-4994-b1d2-a2d7c6b22c0a",
+      "name": "Google Gemini Chat Model",
+      "credentials": {"googlePalmApi": {"id": "YOUR_GEMINI_CREDENTIAL_ID", "name": "Google Gemini(PaLM) Api account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📊 Parse AI response\n// ═══════════════════════════════════════════════════════════════\n\nconst aiResponse = items[0].json.output;\nconst sessionData = $('📝 Format Dialog for AI').first().json;\nconst messagesMap = sessionData.messagesMap || {};\n\nlet parsed;\ntry {\n    let cleanJson = aiResponse.trim();\n    cleanJson = cleanJson.replace(/^```json\\s*/i, '').replace(/^```\\s*/i, '').replace(/\\s*```$/i, '');\n    parsed = JSON.parse(cleanJson);\n    \n    if (!parsed.highlights || !Array.isArray(parsed.highlights)) {\n        throw new Error('Invalid response structure');\n    }\n} catch (error) {\n    return [{\n        json: {\n            hasHighlights: false,\n            sessionId: sessionData.sessionId,\n            totalDetected: 0,\n            highlights: [],\n            error: 'Failed to parse AI response'\n        }\n    }];\n}\n\nconst validHighlights = parsed.highlights.filter(h => h.confidence >= 0.70);\n\nconst enrichedHighlights = validHighlights.map(h => {\n    const orderNumber = h.messageId;\n    const realMessageId = messagesMap[orderNumber];\n    const message = sessionData.messages.find(m => m.id === realMessageId);\n    \n    return {\n        sessionId: sessionData.sessionId,\n        messageId: realMessageId,\n        messageText: h.messageText || message?.content || '',\n        messageType: message?.type || 'human',\n        messageTimestamp: h.messageTimestamp || message?.timestamp,\n        type: h.type,\n        confidence: h.confidence,\n        detection_method: 'ai',\n        reasoning: h.reasoning,\n        matched_patterns: h.matchedPatterns || [],\n        language: sessionData.language,\n        platform: message?.platform || 'unknown'\n    };\n});\n\nreturn [{\n    json: {\n        hasHighlights: enrichedHighlights.length > 0,\n        sessionId: sessionData.sessionId,\n        totalDetected: enrichedHighlights.length,\n        highlights: enrichedHighlights,\n        summary: parsed.summary || {},\n        aiAssessment: parsed.summary?.overallAssessment || ''\n    }\n}];"
+      },
+      "id": "41340751-2c13-4135-a548-c636c249988f",
+      "name": "📊 Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-192, -144]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [{"id": "has-highlights", "leftValue": "={{ $json.hasHighlights }}", "rightValue": true, "operator": {"type": "boolean", "operation": "true"}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ffe59fbf-57da-4fda-9196-08438b157b76",
+      "name": "❓ Has Highlights?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [0, -144]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM {{ $('⚙️ CONFIG: Detect').first().json.table_conversation_highlights }} WHERE session_id = '{{ $('📊 Parse AI Response').first().json.sessionId }}';",
+        "options": {}
+      },
+      "id": "aaa0b649-2374-425e-8577-8670285fe21e",
+      "name": "🐘 Delete Old Highlights",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [208, -352],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📝 Prepare data for database\n// ═══════════════════════════════════════════════════════════════\n\nconst result = items[0].json;\nconst highlights = result.highlights;\n\nif (!highlights || highlights.length === 0) { return []; }\n\nconst uniqueMap = new Map();\nhighlights.forEach(h => {\n    const key = `${h.messageId}_${h.type}`;\n    if (!uniqueMap.has(key) || h.confidence > uniqueMap.get(key).confidence) {\n        uniqueMap.set(key, h);\n    }\n});\n\nconst prepared = Array.from(uniqueMap.values()).map(h => ({\n    json: {\n        session_id: h.sessionId,\n        message_id: h.messageId,\n        message_text: h.messageText,\n        message_type: h.messageType,\n        message_timestamp: h.messageTimestamp,\n        highlight_type: h.type,\n        confidence: h.confidence,\n        detection_method: 'ai',\n        matched_keywords: h.matched_patterns,\n        reasoning: h.reasoning,\n        language: h.language,\n        platform: h.platform\n    }\n}));\n\nreturn prepared;"
+      },
+      "id": "a6d1f1e0-6eef-4e72-8948-3f0a9526a774",
+      "name": "📝 Prepare DB Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [208, -160]
+    },
+    {
+      "parameters": {
+        "schema": {"__rl": true, "value": "public", "mode": "list"},
+        "table": {"__rl": true, "value": "={{ $('⚙️ CONFIG: Detect').first().json.table_conversation_highlights }}", "mode": "raw"},
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "session_id": "={{ $json.session_id }}",
+            "message_id": "={{ $json.message_id }}",
+            "message_text": "={{ $json.message_text }}",
+            "message_type": "={{ $json.message_type }}",
+            "message_timestamp": "={{ $json.message_timestamp }}",
+            "highlight_type": "={{ $json.highlight_type }}",
+            "confidence": "={{ $json.confidence }}",
+            "detection_method": "={{ $json.detection_method }}",
+            "matched_keywords": "={{ $json.matched_keywords }}",
+            "language": "={{ $json.language }}",
+            "platform": "={{ $json.platform }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "a6313e63-086a-4200-96ec-9869184e189e",
+      "name": "🐘 Save to DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [400, -160],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, sessionId: $('📊 Parse AI Response').first().json.sessionId, totalDetected: $('📊 Parse AI Response').first().json.totalDetected, highlights: $('📊 Parse AI Response').first().json.highlights.map(h => ({ type: h.type, confidence: h.confidence, messageText: h.messageText.substring(0, 100), reasoning: h.reasoning })), summary: $('📊 Parse AI Response').first().json.summary } }}",
+        "options": {}
+      },
+      "id": "68748655-5f53-4d98-ad70-b66d9fdb6e7f",
+      "name": "✅ Response Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [592, -160]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, sessionId: $('📊 Parse AI Response').first().json.sessionId, totalDetected: 0, message: 'No highlights detected', highlights: [] } }}",
+        "options": {}
+      },
+      "id": "f360ada7-785f-4cb9-a58f-013490b19c19",
+      "name": "✅ Response No Highlights",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [288, 128]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json.error }}", "options": {"responseCode": "={{ $json.error.status }}"}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-1344, 16],
+      "id": "38323d42-d363-4411-b279-32c244183bc8",
+      "name": "❌ Error Response (Detect)"
+    },
+    {
+      "parameters": {
+        "path": "get-highlights",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "36e3aaf4-6f55-4340-a39c-46af8bc35137",
+      "name": "🌐 Webhook: Get",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-2096, 352],
+      "webhookId": "get-highlights-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Security Check: API KEY + RATE LIMITING\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Get').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Get').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) { delete staticData.rateLimits[ip]; }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }]; }\nif (providedKey !== API_KEY) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }]; }\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1696, 352],
+      "id": "149039b4-942c-4a88-a907-341a6ead70c0",
+      "name": "🔐 Security Check (Get)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth-condition", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-1536, 352],
+      "id": "2a405925-65f4-4dd4-bc8a-004988a5d63a",
+      "name": "❓ Auth Check (Get)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📥 Process GET request\n// ═══════════════════════════════════════════════════════════════\n\nconst query = items[0].json.query || {};\nconst sessionId = query.session_id || query.sessionId;\n\nif (!sessionId) {\n    throw new Error('session_id parameter is required');\n}\n\nreturn [{ json: { sessionId: sessionId } }];"
+      },
+      "id": "6fffa22e-8eed-47b3-b34a-e304c4255167",
+      "name": "📥 Process Get Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1344, 352]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM {{ $('⚙️ CONFIG: Get').first().json.table_conversation_highlights }} WHERE session_id = '{{ $json.sessionId }}' ORDER BY message_timestamp ASC;",
+        "options": {}
+      },
+      "id": "e4ee5c22-85cc-4282-a138-285ed919cedb",
+      "name": "🐘 Get Highlights from DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [-1152, 352],
+      "alwaysOutputData": true,
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📊 Format response\n// ═══════════════════════════════════════════════════════════════\n\nconst highlights = items;\nconst sessionId = $('📥 Process Get Request').first().json.sessionId;\n\nconst isEmpty = !highlights || highlights.length === 0 || !highlights[0]?.json?.id;\n\nif (isEmpty) {\n    return [{\n        json: {\n            success: true,\n            sessionId: sessionId,\n            hasHighlights: false,\n            total: 0,\n            highlights: [],\n            byType: { pricing: 0, objection: 0, buying_signal: 0 }\n        }\n    }];\n}\n\nconst byType = { pricing: 0, objection: 0, buying_signal: 0 };\nlet totalConfidence = 0;\n\nconst formatted = highlights.map(item => {\n    const h = item.json;\n    if (byType[h.highlight_type] !== undefined) byType[h.highlight_type]++;\n    totalConfidence += parseFloat(h.confidence || 0);\n    \n    return {\n        id: h.id,\n        messageId: h.message_id,\n        messageText: h.message_text,\n        type: h.highlight_type,\n        confidence: parseFloat(h.confidence),\n        reasoning: h.reasoning || '',\n        createdAt: h.created_at\n    };\n});\n\nreturn [{\n    json: {\n        success: true,\n        sessionId: sessionId,\n        hasHighlights: true,\n        total: formatted.length,\n        highlights: formatted,\n        byType: byType,\n        avgConfidence: (totalConfidence / formatted.length).toFixed(2)\n    }\n}];"
+      },
+      "id": "c83a38fb-1dd4-402b-aae0-ef09a7f4d15d",
+      "name": "📊 Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-960, 352]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json }}", "options": {}},
+      "id": "9b09ee8d-a050-4659-b164-f9259810d32b",
+      "name": "✅ Response Highlights",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-768, 352]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json.error }}", "options": {"responseCode": "={{ $json.error.status }}"}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-1344, 512],
+      "id": "8892c7ad-79c2-4933-87e3-b1231354faba",
+      "name": "❌ Error Response (Get)"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "🌐 Webhook: Detect": {"main": [[{"node": "⚙️ CONFIG: Detect", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Detect": {"main": [[{"node": "🔐 Security Check (Detect)", "type": "main", "index": 0}]]},
+    "🔐 Security Check (Detect)": {"main": [[{"node": "❓ Auth Check (Detect)", "type": "main", "index": 0}]]},
+    "❓ Auth Check (Detect)": {"main": [[{"node": "📥 Process Request", "type": "main", "index": 0}], [{"node": "❌ Error Response (Detect)", "type": "main", "index": 0}]]},
+    "📥 Process Request": {"main": [[{"node": "🐘 Get Analysis Language", "type": "main", "index": 0}]]},
+    "🐘 Get Analysis Language": {"main": [[{"node": "🔄 Merge with Language", "type": "main", "index": 0}]]},
+    "🔄 Merge with Language": {"main": [[{"node": "🐘 Get Dialog Messages", "type": "main", "index": 0}]]},
+    "🐘 Get Dialog Messages": {"main": [[{"node": "📝 Format Dialog for AI", "type": "main", "index": 0}]]},
+    "📝 Format Dialog for AI": {"main": [[{"node": "🤖 AI Agent (Gemini)", "type": "main", "index": 0}]]},
+    "🤖 AI Agent (Gemini)": {"main": [[{"node": "📊 Parse AI Response", "type": "main", "index": 0}]]},
+    "Google Gemini Chat Model": {"ai_languageModel": [[{"node": "🤖 AI Agent (Gemini)", "type": "ai_languageModel", "index": 0}]]},
+    "📊 Parse AI Response": {"main": [[{"node": "❓ Has Highlights?", "type": "main", "index": 0}]]},
+    "❓ Has Highlights?": {"main": [[{"node": "📝 Prepare DB Data", "type": "main", "index": 0}, {"node": "🐘 Delete Old Highlights", "type": "main", "index": 0}], [{"node": "✅ Response No Highlights", "type": "main", "index": 0}]]},
+    "📝 Prepare DB Data": {"main": [[{"node": "🐘 Save to DB", "type": "main", "index": 0}]]},
+    "🐘 Save to DB": {"main": [[{"node": "✅ Response Success", "type": "main", "index": 0}]]},
+    "🌐 Webhook: Get": {"main": [[{"node": "⚙️ CONFIG: Get", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Get": {"main": [[{"node": "🔐 Security Check (Get)", "type": "main", "index": 0}]]},
+    "🔐 Security Check (Get)": {"main": [[{"node": "❓ Auth Check (Get)", "type": "main", "index": 0}]]},
+    "❓ Auth Check (Get)": {"main": [[{"node": "📥 Process Get Request", "type": "main", "index": 0}], [{"node": "❌ Error Response (Get)", "type": "main", "index": 0}]]},
+    "📥 Process Get Request": {"main": [[{"node": "🐘 Get Highlights from DB", "type": "main", "index": 0}]]},
+    "🐘 Get Highlights from DB": {"main": [[{"node": "📊 Format Response", "type": "main", "index": 0}]]},
+    "📊 Format Response": {"main": [[{"node": "✅ Response Highlights", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "production-en-v1",
+  "meta": {"templateCredsSetupCompleted": true, "instanceId": "production-template"},
+  "id": "highlights-detection-en",
+  "tags": []
+}
