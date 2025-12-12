@@ -1,0 +1,780 @@
+{
+  "name": "⚡ Auto Analize/Contact Extraction - Triggers [Production RU]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## ⚡ Auto Analize/Contact Extraction - Triggers\n\n### 📋 Описание\nЭтот воркфлоу содержит два автоматических триггера:\n1. **Автоанализ диалогов** - запускает анализ неактивных сессий по расписанию\n2. **Извлечение контактов** - автоматически извлекает контактные данные из диалогов\n\n---\n\n### ⚙️ Настройка\n\n#### 1. Узлы CONFIG\nКаждая цепочка имеет свой узел CONFIG:\n- **⚙️ CONFIG: Auto Analysis** - настройки для автоанализа\n- **⚙️ CONFIG: Contact Extraction** - настройки для извлечения контактов\n\n#### 2. Параметры Auto Analysis\n| Параметр | Описание |\n|----------|----------|\n| `api_key` | API ключ для аутентификации |\n| `analyze_webhook_url` | URL вебхука анализа диалогов |\n| `wait_between_sessions` | Задержка между сессиями (сек) |\n| `request_timeout` | Таймаут запроса (мс) |\n| `table_auto_analysis_settings` | Таблица настроек автоанализа |\n| `table_webchat_monitoring` | Таблица мониторинга чата |\n| `table_dialog_analysis` | Таблица результатов анализа |\n| `table_chat_histories_ru` | Таблица истории чата (RU) |\n| `table_chat_histories_en` | Таблица истории чата (EN) |\n\n#### 3. Параметры Contact Extraction\n| Параметр | Описание |\n|----------|----------|\n| `api_key` | API ключ для аутентификации |\n| `extract_webhook_url` | URL вебхука извлечения контактов |\n| `request_timeout` | Таймаут запроса (мс) |\n| `table_auto_extraction_settings` | Таблица настроек извлечения |\n\n---\n\n### 🗄️ Требования к БД\n\n#### Таблица auto_analysis_settings\n```sql\nCREATE TABLE auto_analysis_settings (\n    id SERIAL PRIMARY KEY,\n    enabled BOOLEAN DEFAULT true,\n    delay_minutes INTEGER DEFAULT 10,\n    last_check TIMESTAMP\n);\n```\n\n#### Таблица auto_contact_extraction_settings\n```sql\nCREATE TABLE auto_contact_extraction_settings (\n    id SERIAL PRIMARY KEY,\n    enabled BOOLEAN DEFAULT true,\n    last_check TIMESTAMP\n);\n```\n\n---\n\n### 🔗 Интеграции\n- **Analitic Workflow** - для анализа диалогов\n- **Contact Data Extractor** - для извлечения контактов\n- **PostgreSQL** - хранение настроек и данных\n\n---\n\n### ⏰ Расписание\nОба триггера настроены на запуск каждые 2 минуты.\nИзмените интервал в узлах Schedule Trigger при необходимости.",
+        "height": 980,
+        "width": 520,
+        "color": 5
+      },
+      "id": "sticky-note-main",
+      "name": "📝 Инструкция",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1280,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "api-key",
+              "name": "api_key",
+              "value": "YOUR_API_KEY_HERE",
+              "type": "string"
+            },
+            {
+              "id": "analyze-url",
+              "name": "analyze_webhook_url",
+              "value": "http://localhost:5678/webhook/analyze-dialog",
+              "type": "string"
+            },
+            {
+              "id": "wait-time",
+              "name": "wait_between_sessions",
+              "value": 3,
+              "type": "number"
+            },
+            {
+              "id": "timeout",
+              "name": "request_timeout",
+              "value": 120000,
+              "type": "number"
+            },
+            {
+              "id": "table-settings",
+              "name": "table_auto_analysis_settings",
+              "value": "auto_analysis_settings",
+              "type": "string"
+            },
+            {
+              "id": "table-monitoring",
+              "name": "table_webchat_monitoring",
+              "value": "webchat_monitoring",
+              "type": "string"
+            },
+            {
+              "id": "table-analysis",
+              "name": "table_dialog_analysis",
+              "value": "dialog_analysis",
+              "type": "string"
+            },
+            {
+              "id": "table-histories-ru",
+              "name": "table_chat_histories_ru",
+              "value": "n8n_chat_histories_ru",
+              "type": "string"
+            },
+            {
+              "id": "table-histories-en",
+              "name": "table_chat_histories_en",
+              "value": "n8n_chat_histories_en",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-auto-analysis",
+      "name": "⚙️ CONFIG: Auto Analysis",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -560,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "api-key-extract",
+              "name": "api_key",
+              "value": "YOUR_API_KEY_HERE",
+              "type": "string"
+            },
+            {
+              "id": "extract-url",
+              "name": "extract_webhook_url",
+              "value": "https://your-domain.com/webhook/extract-contact-data",
+              "type": "string"
+            },
+            {
+              "id": "timeout-extract",
+              "name": "request_timeout",
+              "value": 300000,
+              "type": "number"
+            },
+            {
+              "id": "table-extraction-settings",
+              "name": "table_auto_extraction_settings",
+              "value": "auto_contact_extraction_settings",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-contact-extraction",
+      "name": "⚙️ CONFIG: Contact Extraction",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -544,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 2
+            }
+          ]
+        }
+      },
+      "id": "345e5902-3bd0-456e-b218-b33cd1800ed3",
+      "name": "⏰ Schedule: Auto Analysis",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -752,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM {{ $('⚙️ CONFIG: Auto Analysis').first().json.table_auto_analysis_settings }} LIMIT 1",
+        "options": {}
+      },
+      "id": "2a90512f-2bce-4b51-841e-521c4c8316ec",
+      "name": "🐘 Get Settings",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -368,
+        -160
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.enabled }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              },
+              "id": "2194f764-2851-425e-a6fa-45d344a1566a"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "dfeb3e61-81bc-4c3a-81db-437e800ea502",
+      "name": "❓ Check if Enabled",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 🔍 Получение неактивных сессий для автоанализа\n-- Таблицы: webchat_monitoring, dialog_analysis, chat_histories\n-- ═══════════════════════════════════════════════════════════════\n\nWITH latest_sessions AS (\n    SELECT DISTINCT ON (wm.session_id) \n        wm.session_id,\n        wm.user_name,\n        wm.platform,\n        wm.last_activity_time,\n        wm.message_count,\n        wm.timestamp\n    FROM {{ $('⚙️ CONFIG: Auto Analysis').first().json.table_webchat_monitoring }} wm\n    ORDER BY wm.session_id, wm.timestamp DESC\n),\nanalyzed_sessions AS (\n    SELECT DISTINCT session_id, MAX(created_at) as last_analysis_date\n    FROM {{ $('⚙️ CONFIG: Auto Analysis').first().json.table_dialog_analysis }}\n    WHERE analysis_type = 'single'\n    GROUP BY session_id\n),\nlast_messages AS (\n    SELECT \n        session_id,\n        MAX(created_at) as last_message_time,\n        COUNT(*) as message_count\n    FROM (\n        SELECT session_id, created_at FROM {{ $('⚙️ CONFIG: Auto Analysis').first().json.table_chat_histories_ru }}\n        UNION ALL\n        SELECT session_id, created_at FROM {{ $('⚙️ CONFIG: Auto Analysis').first().json.table_chat_histories_en }}\n    ) all_messages\n    GROUP BY session_id\n)\nSELECT \n    ls.session_id,\n    ls.user_name,\n    ls.platform,\n    COALESCE(lm.last_message_time, ls.last_activity_time::timestamp) as last_activity,\n    COALESCE(lm.message_count, 0) as message_count,\n    an.last_analysis_date,\n    EXTRACT(EPOCH FROM (NOW() - COALESCE(lm.last_message_time, ls.last_activity_time::timestamp)))/60 as minutes_inactive\nFROM latest_sessions ls\nLEFT JOIN analyzed_sessions an ON ls.session_id = an.session_id\nLEFT JOIN last_messages lm ON ls.session_id = lm.session_id\nWHERE \n    COALESCE(lm.last_message_time, ls.last_activity_time::timestamp) < NOW() - INTERVAL '{{ $('🐘 Get Settings').first().json.delay_minutes }} minutes'\n    AND (\n        an.last_analysis_date IS NULL \n        OR COALESCE(lm.last_message_time, ls.last_activity_time::timestamp) > an.last_analysis_date\n    )\n    AND COALESCE(lm.message_count, 0) > 0\nORDER BY COALESCE(lm.last_message_time, ls.last_activity_time::timestamp) DESC\nLIMIT 10;",
+        "options": {}
+      },
+      "id": "a37ca9e0-0423-41fe-8c5f-e8349c127713",
+      "name": "🐘 Get Inactive Sessions",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        32,
+        -368
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "50fc51cb-05c6-43e7-9038-f8d075a0d13d",
+      "name": "🔄 Loop Over Sessions",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        384,
+        -368
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('⚙️ CONFIG: Auto Analysis').first().json.analyze_webhook_url }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "apiKey",
+              "value": "={{ $('⚙️ CONFIG: Auto Analysis').first().json.api_key }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"type\": \"single\",\n  \"sessionId\": \"{{ $json.session_id }}\",\n  \"userName\": \"{{ $json.user_name }}\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": "={{ $('⚙️ CONFIG: Auto Analysis').first().json.request_timeout }}"
+        }
+      },
+      "id": "fa6e8e16-96c0-46e9-9bd5-0a6cf60472f9",
+      "name": "📤 Analyze Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        656,
+        -448
+      ]
+    },
+    {
+      "parameters": {
+        "amount": "={{ $('⚙️ CONFIG: Auto Analysis').first().json.wait_between_sessions }}"
+      },
+      "id": "78fff067-acf2-4787-af14-1dcbda0acbb3",
+      "name": "⏳ Wait Between Sessions",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        992,
+        -160
+      ],
+      "webhookId": "9a549a58-1a4c-4ed3-9488-e68cecde56f7"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 🔄 Обновление времени последней проверки\n-- ═══════════════════════════════════════════════════════════════\n\nUPDATE {{ $('⚙️ CONFIG: Auto Analysis').first().json.table_auto_analysis_settings }} \nSET last_check = NOW() \nWHERE id = 1\nRETURNING *;",
+        "options": {}
+      },
+      "id": "a837adb1-6b8a-45bc-b44b-d66f014571e0",
+      "name": "🐘 Update Last Check",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        576,
+        -144
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📊 Подсчет и логирование найденных сессий\n// ═══════════════════════════════════════════════════════════════\n\nconst sessions = $input.all();\n\nif (sessions.length === 0) {\n    return [{\n        json: {\n            message: \"Нет сессий для анализа\",\n            timestamp: new Date().toISOString()\n        }\n    }];\n}\n\nreturn sessions;"
+      },
+      "id": "68f2155b-8cac-4d22-8bee-61ed5b7659a6",
+      "name": "📊 Log Sessions Count",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        -368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📋 Обработка результата анализа сессии\n// ═══════════════════════════════════════════════════════════════\n\nconst result = items[0].json;\n\nreturn items;"
+      },
+      "id": "11f66bdb-fa1f-498b-b10f-6adbd8a4bf26",
+      "name": "📋 Log Analysis Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        -416
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('⚙️ CONFIG: Contact Extraction').first().json.extract_webhook_url }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "apiKey",
+              "value": "={{ $('⚙️ CONFIG: Contact Extraction').first().json.api_key }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"type\": \"batch\"}",
+        "options": {
+          "redirect": {
+            "redirect": {}
+          },
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": "={{ $('⚙️ CONFIG: Contact Extraction').first().json.request_timeout }}"
+        }
+      },
+      "id": "49304b2d-3426-49c9-a0dd-4e32a46b9579",
+      "name": "📤 Trigger Batch Extraction",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -96,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📋 Логирование результата извлечения контактов\n// ═══════════════════════════════════════════════════════════════\n\nconst response = items[0].json;\n\nreturn [{\n  json: {\n    ...response,\n    loggedAt: new Date().toISOString(),\n    executionStatus: response.status === 'success' || response.status === 'completed' ? 'success' : 'warning'\n  }\n}];"
+      },
+      "id": "e2f4e3ea-9578-4527-b284-ae45360c8c99",
+      "name": "📋 Log Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 🔄 Обновление времени последней проверки (отключено)\n-- ═══════════════════════════════════════════════════════════════\n\nUPDATE {{ $('⚙️ CONFIG: Contact Extraction').first().json.table_auto_extraction_settings }} \nSET last_check = NOW() \nWHERE id = 1;",
+        "options": {}
+      },
+      "id": "6631f60a-c009-4153-86a2-e954cb3010b5",
+      "name": "🐘 Update Last Check (Disabled)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -96,
+        576
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// ⚠️ Автоизвлечение контактов отключено\n// ═══════════════════════════════════════════════════════════════\n\nreturn [{\n  json: {\n    status: 'skipped',\n    message: 'Автоматическое извлечение контактов отключено',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "45620414-978c-412c-b227-b150f2356ec2",
+      "name": "⚠️ Log Disabled",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        112,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 2
+            }
+          ]
+        }
+      },
+      "id": "756dd467-4f1f-4a1b-a812-091fee9d5719",
+      "name": "⏰ Schedule: Contact Extraction",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -736,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM {{ $('⚙️ CONFIG: Contact Extraction').first().json.table_auto_extraction_settings }} LIMIT 1",
+        "options": {}
+      },
+      "id": "f11b298b-530b-4fc3-9ed7-bec3ae45f1e2",
+      "name": "🐘 Get Settings (Extract)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -352,
+        416
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.enabled }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              },
+              "id": "enabled-check"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "953bf61e-7ac8-4e57-88bc-504666962a72",
+      "name": "❓ Check if Enabled (Extract)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📥 Обработка ответа от вебхука извлечения\n// ═══════════════════════════════════════════════════════════════\n\ntry {\n  let response;\n  const rawData = items[0].json;\n  \n  if (typeof rawData === 'string') {\n    try {\n      response = JSON.parse(rawData);\n    } catch (e) {\n      response = { \n        status: 'completed', \n        message: rawData,\n        timestamp: new Date().toISOString()\n      };\n    }\n  } else if (rawData.data && typeof rawData.data === 'string') {\n    try {\n      response = JSON.parse(rawData.data);\n    } catch (e) {\n      response = { \n        status: 'completed', \n        message: rawData.data,\n        timestamp: new Date().toISOString()\n      };\n    }\n  } else {\n    response = rawData;\n  }\n  \n  response.executedAt = new Date().toISOString();\n  response.workflowExecution = 'completed';\n  \n  return [{json: response}];\n  \n} catch (error) {\n  return [{json: {\n    status: 'completed_with_errors',\n    message: 'Batch extraction triggered but response parsing failed',\n    error: error.message,\n    rawResponse: JSON.stringify(items[0].json),\n    timestamp: new Date().toISOString(),\n    workflowExecution: 'completed'\n  }}];\n}"
+      },
+      "id": "66412d99-2ced-43a2-beb9-fb10329494d5",
+      "name": "📥 Process Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        112,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 🔄 Обновление времени последней проверки\n-- ═══════════════════════════════════════════════════════════════\n\nUPDATE {{ $('⚙️ CONFIG: Contact Extraction').first().json.table_auto_extraction_settings }} \nSET last_check = NOW() \nWHERE id = 1\nRETURNING *;",
+        "options": {}
+      },
+      "id": "5c2eadaa-e3ef-4e35-b7ce-81a2f73b5b56",
+      "name": "🐘 Update Last Check (Extract)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        528,
+        256
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "⏰ Schedule: Auto Analysis": {
+      "main": [
+        [
+          {
+            "node": "⚙️ CONFIG: Auto Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ CONFIG: Auto Analysis": {
+      "main": [
+        [
+          {
+            "node": "🐘 Get Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🐘 Get Settings": {
+      "main": [
+        [
+          {
+            "node": "❓ Check if Enabled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓ Check if Enabled": {
+      "main": [
+        [
+          {
+            "node": "🐘 Get Inactive Sessions",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🐘 Update Last Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🐘 Get Inactive Sessions": {
+      "main": [
+        [
+          {
+            "node": "📊 Log Sessions Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Log Sessions Count": {
+      "main": [
+        [
+          {
+            "node": "🔄 Loop Over Sessions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔄 Loop Over Sessions": {
+      "main": [
+        [
+          {
+            "node": "🐘 Update Last Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "📤 Analyze Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📤 Analyze Session": {
+      "main": [
+        [
+          {
+            "node": "📋 Log Analysis Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📋 Log Analysis Result": {
+      "main": [
+        [
+          {
+            "node": "⏳ Wait Between Sessions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⏳ Wait Between Sessions": {
+      "main": [
+        [
+          {
+            "node": "🔄 Loop Over Sessions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📤 Trigger Batch Extraction": {
+      "main": [
+        [
+          {
+            "node": "📥 Process Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📋 Log Result": {
+      "main": [
+        [
+          {
+            "node": "🐘 Update Last Check (Extract)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🐘 Update Last Check (Disabled)": {
+      "main": [
+        [
+          {
+            "node": "⚠️ Log Disabled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⏰ Schedule: Contact Extraction": {
+      "main": [
+        [
+          {
+            "node": "⚙️ CONFIG: Contact Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ CONFIG: Contact Extraction": {
+      "main": [
+        [
+          {
+            "node": "🐘 Get Settings (Extract)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🐘 Get Settings (Extract)": {
+      "main": [
+        [
+          {
+            "node": "❓ Check if Enabled (Extract)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓ Check if Enabled (Extract)": {
+      "main": [
+        [
+          {
+            "node": "📤 Trigger Batch Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🐘 Update Last Check (Disabled)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📥 Process Response": {
+      "main": [
+        [
+          {
+            "node": "📋 Log Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "production-ru-v1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "production-template"
+  },
+  "id": "auto-triggers-production-ru",
+  "tags": []
+}
