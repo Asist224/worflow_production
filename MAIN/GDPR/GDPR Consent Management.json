@@ -1,51 +1,273 @@
 {
-  "name": "GDPR Consent Management",
+  "name": "GDPR Consent Management v2 (Full Audit Trail)",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "gdpr-consent",
+        "path": "gdpr-data-access",
         "responseMode": "responseNode",
         "options": {
           "allowedOrigins": "*"
         }
       },
-      "id": "bb666231-b927-45e3-b8a9-ab35e195c86d",
-      "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -672,
-        -80
+        -720,
+        -304
       ],
-      "webhookId": "b49ee8a7-fd41-4672-8541-1f6ef5c3d1b0"
+      "id": "ac523812-742b-4cf2-982a-39cd9b45db4b",
+      "name": "GDPR Data Access Webhook",
+      "webhookId": "gdpr-data-access-webhook"
     },
     {
       "parameters": {
-        "jsCode": "// Трансформируем данные из вебчата в формат для БД\nconst webhookData = items[0].json;\nconst body = webhookData.body || webhookData;\n\n// Конвертируем action в boolean consent_given\nconst action = body.action || body.accepted;\nconst consentGiven = action === 'accepted' || action === true;\n\n// is_active: используем переданное значение или вычисляем из action\n// При decline (отклонении) - is_active должен быть false\nconst isActive = body.is_active !== undefined ? body.is_active : consentGiven;\n\n// Извлекаем данные\nconst sessionId = body.sessionId || body.session_id;\nconst userEmail = body.userEmail || body.userData?.email || null;\nconst consentType = body.type || body.consentType || 'general';\nconst privacyPolicyVersion = String(body.privacyPolicyVersion || body.privacy_policy_version || '1.0');\nconst domain = body.domain || webhookData.headers?.origin || '';\n\n// IP и User Agent из заголовков\nconst ipAddress = webhookData.headers?.['x-forwarded-for'] || webhookData.headers?.['x-real-ip'] || null;\nconst userAgent = webhookData.headers?.['user-agent'] || null;\n\n// Вычисляем дату истечения (по умолчанию 365 дней)\nconst expiresAt = body.expiresAt || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();\n\n// Проверяем обязательные поля\nif (!sessionId) {\n    throw new Error('sessionId is required');\n}\n\nreturn [{\n    json: {\n        session_id: sessionId,\n        user_email: userEmail,\n        consent_given: consentGiven,\n        consent_type: consentType,\n        privacy_policy_version: privacyPolicyVersion,\n        ip_address: ipAddress,\n        user_agent: userAgent,\n        domain: domain,\n        expires_at: expiresAt,\n        is_active: isActive  // ← ИСПРАВЛЕНО: теперь false при decline\n    }\n}];\n"
+        "jsCode": "// Получаем данные из POST запроса\nconst webhookData = items[0].json;\nconst body = webhookData.body || webhookData;\n\nconst sessionId = body.sessionId || body.session_id;\nconst userId = body.userId || body.user_id;\nconst domain = body.domain || webhookData.headers?.origin || '';\nconst ipAddress = webhookData.headers?.['x-forwarded-for'] || webhookData.headers?.['x-real-ip'] || null;\nconst userAgent = webhookData.headers?.['user-agent'] || null;\n\nif (!sessionId && !userId) {\n    throw new Error('sessionId or userId is required');\n}\n\nreturn [{\n    json: {\n        session_id: sessionId,\n        user_id: userId,\n        domain: domain,\n        ip_address: ipAddress,\n        user_agent: userAgent\n    }\n}];"
       },
-      "id": "e75b683b-7bec-4003-a581-abacecce4220",
-      "name": "Transform Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        16,
-        -144
+        -176,
+        -368
+      ],
+      "id": "af4161cc-66ea-4b66-92a3-0833a1aeffc3",
+      "name": "Parse Access Request"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Получаем все данные пользователя для GDPR запроса\nWITH user_data AS (\n    SELECT \n        'consent' as data_type,\n        jsonb_build_object(\n            'consent_given', consent_given,\n            'is_active', is_active,\n            'consent_type', consent_type,\n            'privacy_policy_version', privacy_policy_version,\n            'domain', domain,\n            'created_at', created_at,\n            'expires_at', expires_at,\n            'revoked_at', revoked_at,\n            'revoke_reason', revoke_reason\n        ) as data\n    FROM gdpr_consents\n    WHERE session_id = '{{ $json.session_id }}'\n    ORDER BY created_at DESC\n    LIMIT 1\n),\nuser_contact AS (\n    SELECT \n        'contact_data' as data_type,\n        jsonb_build_object(\n            'name', name,\n            'email', email,\n            'phone', phone,\n            'company', company,\n            'created_at', created_at\n        ) as data\n    FROM prechat_submissions\n    WHERE session_id = '{{ $json.session_id }}'\n    ORDER BY created_at DESC\n    LIMIT 1\n),\nchat_history AS (\n    SELECT \n        'chat_message' as data_type,\n        jsonb_build_object(\n            'message_type', message::json->>'type',\n            'content', message::json->>'content',\n            'timestamp', created_at,\n            'platform', platform,\n            'language', 'ru'\n        ) as data\n    FROM n8n_chat_histories_ru\n    WHERE session_id = '{{ $json.session_id }}'\n    \n    UNION ALL\n    \n    SELECT \n        'chat_message' as data_type,\n        jsonb_build_object(\n            'message_type', message::json->>'type',\n            'content', message::json->>'content',\n            'timestamp', created_at,\n            'platform', platform,\n            'language', 'en'\n        ) as data\n    FROM n8n_chat_histories_en\n    WHERE session_id = '{{ $json.session_id }}'\n)\nSELECT * FROM user_data\nUNION ALL\nSELECT * FROM user_contact\nUNION ALL\nSELECT * FROM chat_history\nORDER BY data_type;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        48,
+        -368
+      ],
+      "id": "ce1f536b-243d-4790-99a3-d420a753b99c",
+      "name": "Get User Data",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Форматируем данные для GDPR ответа\nconst sessionId = $('Parse Access Request').first().json.session_id;\n\nif (!items || items.length === 0) {\n    return [{\n        json: {\n            success: true,\n            data: {\n                sessionId: sessionId,\n                consent: null,\n                contactData: null,\n                chatHistory: [],\n                exportedAt: new Date().toISOString(),\n                message: 'No data found for this session'\n            },\n            dataFound: false\n        }\n    }];\n}\n\n// Группируем данные по типу\nlet consent = null;\nlet contactData = null;\nconst chatHistory = [];\n\nfor (const item of items) {\n    const dataType = item.json.data_type;\n    const data = item.json.data;\n    \n    switch (dataType) {\n        case 'consent':\n            consent = data;\n            break;\n        case 'contact_data':\n            contactData = data;\n            break;\n        case 'chat_message':\n            chatHistory.push(data);\n            break;\n    }\n}\n\n// Сортируем историю чата по времени\nchatHistory.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));\n\nreturn [{\n    json: {\n        success: true,\n        data: {\n            sessionId: sessionId,\n            consent: consent,\n            contactData: contactData,\n            chatHistory: chatHistory,\n            totalMessages: chatHistory.length,\n            exportedAt: new Date().toISOString()\n        },\n        dataFound: true\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        -368
+      ],
+      "id": "fe67c32d-945a-40c7-ac45-8dc4f1e1a98c",
+      "name": "Format Access Response"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- GDPR Art. 15: Логируем запрос на доступ к данным (Right of Access)\nINSERT INTO gdpr_audit_log (\n    session_id,\n    action,\n    details,\n    ip_address,\n    user_agent,\n    domain,\n    purpose,\n    legal_basis,\n    controller,\n    data_categories\n) VALUES (\n    '{{ $('Parse Access Request').first().json.session_id }}',\n    'data_access',\n    '{{ JSON.stringify({\n        data_found: $json.dataFound,\n        total_messages: $json.data?.totalMessages || 0,\n        has_consent: $json.data?.consent !== null,\n        has_contact: $json.data?.contactData !== null,\n        gdpr_article: \"Art. 15 - Right of Access\"\n    }).replace(/'/g, \"''\") }}',\n    {{ $('Parse Access Request').first().json.ip_address ? \"'\" + $('Parse Access Request').first().json.ip_address + \"'\" : 'NULL' }},\n    {{ $('Parse Access Request').first().json.user_agent ? \"'\" + $('Parse Access Request').first().json.user_agent.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    '{{ $('Parse Access Request').first().json.domain }}',\n    'data_access',\n    'consent',\n    '{{ $('Parse Access Request').first().json.domain }}',\n    ARRAY['session_id', 'consent_records', 'contact_data', 'chat_history']\n)\nRETURNING id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        496,
+        -368
+      ],
+      "id": "d1ead7d6-d10d-4ac5-bbf4-10cce00ffa1e",
+      "name": "Audit Log Access",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $('Format Access Response').first().json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "X-GDPR-Request",
+                "value": "data-access"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        720,
+        -368
+      ],
+      "id": "3900bb80-9cde-49c8-9f3a-5eb25293d6ba",
+      "name": "Respond Access"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        -304
+      ],
+      "id": "06e66c85-e07d-41a8-9023-9d8a07d04ff9",
+      "name": "Security Check Access"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -368,
+        -304
+      ],
+      "id": "57aa2809-662b-48d6-b2dc-a736e8f77952",
+      "name": "Auth Check Access"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -176,
+        -192
+      ],
+      "id": "7aee2a56-2a97-40c7-a1de-962ee5e01cfd",
+      "name": "Error Response Access"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "consent-revoke",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "487579a1-37bb-4ff2-95b9-65ced63a90ea",
+      "name": "Webhook Consent Revoke",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -704,
+        624
+      ],
+      "webhookId": "c8d7e6f5-4a3b-2c1d-0e9f-8g7h6i5j4k3l"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -528,
+        624
+      ],
+      "id": "49f49bdd-d07b-4cb9-9fc2-5b2ab73b6788",
+      "name": "Security Check Revoke"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -368,
+        624
+      ],
+      "id": "0aae908b-0a98-4f30-902d-15aa2146f97c",
+      "name": "Auth Check Revoke"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Трансформируем данные для отзыва согласия\nconst webhookData = items[0].json;\nconst body = webhookData.body || webhookData;\n\nconst sessionId = body.sessionId || body.session_id;\nconst userEmail = body.userEmail || body.email || null;\nconst reason = body.reason || 'user_request';\nconst deleteData = body.deleteData || body.delete_data || false;\nconst domain = body.domain || webhookData.headers?.origin || '';\n\nconst ipAddress = webhookData.headers?.['x-forwarded-for'] || webhookData.headers?.['x-real-ip'] || null;\nconst userAgent = webhookData.headers?.['user-agent'] || null;\n\nif (!sessionId) {\n    throw new Error('sessionId is required');\n}\n\nreturn [{\n    json: {\n        session_id: sessionId,\n        user_email: userEmail,\n        reason: reason,\n        delete_data: deleteData,\n        ip_address: ipAddress,\n        user_agent: userAgent,\n        domain: domain,\n        revoked_at: new Date().toISOString()\n    }\n}];"
+      },
+      "id": "d2825ad0-c770-44f8-baa4-5ca0acfc3077",
+      "name": "Transform Revoke Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        560
       ]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO gdpr_consents (\n    session_id,\n    user_email,\n    consent_given,\n    consent_type,\n    privacy_policy_version,\n    ip_address,\n    user_agent,\n    domain,\n    expires_at,\n    is_active\n) VALUES (\n    '{{ $json.session_id }}',\n    {{ $json.user_email ? \"'\" + $json.user_email + \"'\" : 'NULL' }},\n    {{ $json.consent_given }},\n    '{{ $json.consent_type }}',\n    '{{ $json.privacy_policy_version }}',\n    {{ $json.ip_address ? \"'\" + $json.ip_address + \"'\" : 'NULL' }},\n    {{ $json.user_agent ? \"'\" + $json.user_agent.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    '{{ $json.domain }}',\n    '{{ $json.expires_at }}'::timestamp,\n    {{ $json.is_active }}\n)\nON CONFLICT (session_id, consent_type) DO UPDATE SET\n    user_email = EXCLUDED.user_email,\n    consent_given = EXCLUDED.consent_given,\n    privacy_policy_version = EXCLUDED.privacy_policy_version,\n    ip_address = EXCLUDED.ip_address,\n    user_agent = EXCLUDED.user_agent,\n    domain = EXCLUDED.domain,\n    expires_at = EXCLUDED.expires_at,\n    is_active = EXCLUDED.is_active,\n    revoked_at = NULL,\n    revoke_reason = NULL,\n    revoke_ip = NULL\nRETURNING id, session_id, consent_given, created_at;",
+        "query": "UPDATE gdpr_consents\nSET \n    is_active = false,\n    revoked_at = NOW(),\n    revoke_reason = '{{ $json.reason }}',\n    revoke_ip = {{ $json.ip_address ? \"'\" + $json.ip_address + \"'\" : 'NULL' }}\nWHERE session_id = '{{ $json.session_id }}'\n    AND is_active = true\nRETURNING id, session_id, consent_type, revoked_at;",
         "options": {}
       },
-      "id": "d5ecc9ef-701b-4546-a2a5-bbfd11a15a13",
-      "name": "Save Consent",
+      "id": "7028debc-ad7b-4a7c-99e5-abe677650ab7",
+      "name": "Revoke Consent in DB",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        240,
-        -144
+        64,
+        560
       ],
       "credentials": {
         "postgres": {
@@ -53,20 +275,33 @@
           "name": "Postgres account"
         }
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Подготавливаем данные для Audit Log\nconst transformedData = $('Transform Revoke Data').first().json;\nconst revokedConsents = $('Revoke Consent in DB').all();\nconst revokedCount = revokedConsents.length;\n\n// Формируем JSON для details\nconst details = JSON.stringify({\n    reason: transformedData.reason,\n    revokedCount: revokedCount,\n    deleteDataRequested: transformedData.delete_data,\n    gdpr_article: \"Art. 7(3) - Right to Withdraw Consent\"\n});\n\nreturn [{\n    json: {\n        session_id: transformedData.session_id,\n        action: 'consent_revoked',\n        details: details,\n        ip_address: transformedData.ip_address,\n        user_agent: transformedData.user_agent,\n        domain: transformedData.domain,\n        purpose: 'consent_withdrawal',\n        legal_basis: 'consent',\n        controller: transformedData.domain,\n        revoked_count: revokedCount\n    }\n}];"
+      },
+      "id": "42df6839-11b3-4e9a-9ccb-8b0a66223402",
+      "name": "Prepare Audit Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        288,
+        560
+      ]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT EXISTS(\n    SELECT 1 FROM prechat_submissions \n    WHERE session_id = '{{ $('Transform Data').first().json.session_id }}'\n) as has_prechat_data;",
+        "query": "-- GDPR Art. 7(3): Логируем отзыв согласия\nINSERT INTO gdpr_audit_log (\n    session_id,\n    action,\n    details,\n    ip_address,\n    user_agent,\n    domain,\n    purpose,\n    legal_basis,\n    controller,\n    data_categories\n) VALUES (\n    '{{ $json.session_id }}',\n    '{{ $json.action }}',\n    '{{ $json.details.replace(/'/g, \"''\") }}',\n    {{ $json.ip_address ? \"'\" + $json.ip_address + \"'\" : 'NULL' }},\n    {{ $json.user_agent ? \"'\" + $json.user_agent.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    '{{ $json.domain }}',\n    '{{ $json.purpose }}',\n    '{{ $json.legal_basis }}',\n    '{{ $json.controller }}',\n    ARRAY['consent_records']\n)\nRETURNING id;",
         "options": {}
       },
-      "id": "68c22c2b-162d-49b8-b482-eb910eb39f44",
-      "name": "Check PreChat Data",
+      "id": "840fa73d-daea-45d0-8c49-ebee62ea116c",
+      "name": "Save Audit Log Revoke",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        464,
-        -144
+        512,
+        560
       ],
       "credentials": {
         "postgres": {
@@ -77,15 +312,15 @@
     },
     {
       "parameters": {
-        "jsCode": "// Подготавливаем ответ\nconst transformedData = $('Transform Data').first().json;\nconst dbResult = $('Save Consent').first().json || {};\nconst preChatCheck = items[0]?.json || {};\n\nreturn [{\n    json: {\n        success: true,\n        message: 'Consent recorded successfully',\n        data: {\n            consentId: dbResult.id || null,\n            sessionId: transformedData.session_id,\n            consentGiven: transformedData.consent_given,\n            consentType: transformedData.consent_type,\n            timestamp: dbResult.created_at || new Date().toISOString(),\n            hasPreChatData: preChatCheck.has_prechat_data === true\n        }\n    }\n}];"
+        "jsCode": "// Подготавливаем ответ\nconst preparedData = $('Prepare Audit Data').first().json;\n\nreturn [{\n    json: {\n        success: true,\n        message: 'Consent revoked successfully',\n        data: {\n            sessionId: preparedData.session_id,\n            revokedCount: preparedData.revoked_count,\n            reason: JSON.parse(preparedData.details).reason,\n            timestamp: new Date().toISOString(),\n            deleteDataRequested: JSON.parse(preparedData.details).deleteDataRequested\n        }\n    }\n}];"
       },
-      "id": "43d9ed4f-5133-4f81-a4cd-b5fdf3062727",
-      "name": "Prepare Response",
+      "id": "15fbf788-d9a6-4ba7-8066-f9cf1d2945c8",
+      "name": "Prepare Revoke Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        688,
-        -144
+        736,
+        560
       ]
     },
     {
@@ -97,20 +332,326 @@
             "entries": [
               {
                 "name": "X-GDPR-Consent",
-                "value": "recorded"
+                "value": "revoked"
               }
             ]
           }
         }
       },
-      "id": "0fbe2f91-6a4b-489a-82ec-8d09588291bf",
-      "name": "Success Response",
+      "id": "9f5e4e4f-0ca3-47da-9745-347e4f6af6b9",
+      "name": "Success Response Revoke",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        912,
-        -144
+        960,
+        560
       ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -160,
+        720
+      ],
+      "id": "6121a52b-8141-4a0a-a5d4-0a82cdc417c4",
+      "name": "Error Response Revoke"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gdpr-data-export",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        160
+      ],
+      "id": "f7cfffd0-2164-45e6-9053-14a86b63361e",
+      "name": "GDPR Data Export Webhook",
+      "webhookId": "gdpr-data-export-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        160
+      ],
+      "id": "2972b979-e6e4-47c4-87f8-91d6c663fbd2",
+      "name": "Security Check Export"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -368,
+        160
+      ],
+      "id": "c0fb6c8c-3b33-43ec-a443-c906e4dd1168",
+      "name": "Auth Check Export"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные из POST запроса для экспорта\nconst webhookData = items[0].json;\nconst body = webhookData.body || webhookData;\n\nconst sessionId = body.sessionId || body.session_id;\nconst format = body.format || 'json';\nconst language = body.language || 'en';\nconst domain = body.domain || webhookData.headers?.origin || '';\nconst ipAddress = webhookData.headers?.['x-forwarded-for'] || webhookData.headers?.['x-real-ip'] || null;\nconst userAgent = webhookData.headers?.['user-agent'] || null;\n\nif (!sessionId) {\n    throw new Error('sessionId is required');\n}\n\nreturn [{\n    json: {\n        session_id: sessionId,\n        format: format,\n        language: language,\n        domain: domain,\n        ip_address: ipAddress,\n        user_agent: userAgent\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        96
+      ],
+      "id": "0cce3136-f31a-4599-b19f-d2a651839e91",
+      "name": "Parse Export Request"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n    session_id,\n    user_email,\n    consent_given,\n    consent_type,\n    privacy_policy_version,\n    ip_address,\n    user_agent,\n    domain,\n    is_active,\n    revoked_at,\n    revoke_reason,\n    revoke_ip,\n    created_at as consent_date,\n    expires_at as consent_expires\nFROM gdpr_consents\nWHERE session_id = '{{ $json.session_id }}'\nORDER BY created_at DESC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        96,
+        -176
+      ],
+      "id": "47ac2f6a-e44d-4a22-85a0-32830eff215e",
+      "name": "Get All Consents Export",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n    session_id,\n    name,\n    email,\n    phone,\n    company,\n    custom_fields,\n    gdpr_consent as form_consent,\n    domain,\n    created_at as profile_created\nFROM prechat_submissions\nWHERE session_id = '{{ $('Parse Export Request').first().json.session_id }}'\nORDER BY created_at DESC\nLIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        96,
+        -48
+      ],
+      "id": "a1c9f8c1-3736-4adf-ac38-93d493b5f745",
+      "name": "Get Profile Data Export",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n    message::json->>'type' as message_type,\n    message::json->>'content' as content,\n    created_at as timestamp,\n    platform,\n    'ru' as language\nFROM n8n_chat_histories_ru\nWHERE session_id = '{{ $('Parse Export Request').first().json.session_id }}'\n\nUNION ALL\n\nSELECT \n    message::json->>'type' as message_type,\n    message::json->>'content' as content,\n    created_at as timestamp,\n    platform,\n    'en' as language\nFROM n8n_chat_histories_en\nWHERE session_id = '{{ $('Parse Export Request').first().json.session_id }}'\n\nORDER BY timestamp ASC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        96,
+        80
+      ],
+      "id": "3adeff92-275d-4168-a137-d942f94922c4",
+      "name": "Get Chat History Export",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n    action,\n    details,\n    ip_address,\n    domain,\n    created_at as timestamp\nFROM gdpr_audit_log\nWHERE session_id = '{{ $('Parse Export Request').first().json.session_id }}'\nORDER BY created_at ASC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        96,
+        208
+      ],
+      "id": "5fae4ab4-3f6e-42dd-8eee-108b4664f2b8",
+      "name": "Get Audit Log Export",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT *\nFROM webchat_monitoring\nWHERE session_id = '{{ $('Parse Export Request').first().json.session_id }}'\nORDER BY created_at ASC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        96,
+        336
+      ],
+      "id": "dbbf3cf4-9ac7-451b-8186-348f47ff2a25",
+      "name": "Get Monitoring Data Export",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 5
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        352,
+        80
+      ],
+      "id": "098e8be0-edb8-442b-a34d-9648efd4e397",
+      "name": "Merge Export Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Собираем все данные для экспорта в формате GDPR Art. 20\nconst requestData = $('Parse Export Request').first().json;\n\n// Получаем данные из всех источников (с проверкой на существование)\nlet consents = [];\nlet profile = null;\nlet chatHistory = [];\nlet auditLog = [];\nlet monitoringData = [];\n\ntry {\n    consents = $('Get All Consents Export').all().map(i => i.json);\n} catch (e) { /* нет данных */ }\n\ntry {\n    const profileItems = $('Get Profile Data Export').all();\n    if (profileItems.length > 0) {\n        profile = profileItems[0].json;\n    }\n} catch (e) { /* нет данных */ }\n\ntry {\n    chatHistory = $('Get Chat History Export').all().map(i => i.json);\n} catch (e) { /* нет данных */ }\n\ntry {\n    auditLog = $('Get Audit Log Export').all().map(i => i.json);\n} catch (e) { /* нет данных */ }\n\ntry {\n    monitoringData = $('Get Monitoring Data Export').all().map(i => i.json);\n} catch (e) { /* нет данных */ }\n\nconst totalRecords = consents.length + (profile ? 1 : 0) + chatHistory.length + auditLog.length + monitoringData.length;\n\nconst exportData = {\n    exportInfo: {\n        sessionId: requestData.session_id,\n        exportedAt: new Date().toISOString(),\n        format: requestData.format,\n        gdprArticle: 'Art. 20 - Right to Data Portability'\n    },\n    personalData: {\n        profile: profile,\n        consents: consents\n    },\n    activityData: {\n        chatHistory: chatHistory,\n        totalMessages: chatHistory.length\n    },\n    technicalData: {\n        monitoring: monitoringData\n    },\n    auditTrail: auditLog,\n    dataCategories: [\n        'Identity data (name, email)',\n        'Contact data (phone, company)',\n        'Consent records',\n        'Communication history',\n        'Technical data (IP, user agent)',\n        'Monitoring data'\n    ]\n};\n\nreturn [{\n    json: {\n        success: true,\n        data: exportData,\n        totalRecords: totalRecords,\n        // Данные для audit log\n        session_id: requestData.session_id,\n        format: requestData.format,\n        domain: requestData.domain,\n        ip_address: requestData.ip_address,\n        user_agent: requestData.user_agent\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        544,
+        128
+      ],
+      "id": "898d9d36-11ea-4c51-986e-dfb0cf26c010",
+      "name": "Format Export Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Подготавливаем данные для Audit Log\nconst exportData = $('Format Export Data').first().json;\n\nconst details = JSON.stringify({\n    format: exportData.format,\n    total_records: exportData.totalRecords,\n    gdpr_article: \"Art. 20 - Right to Data Portability\"\n});\n\nreturn [{\n    json: {\n        session_id: exportData.session_id,\n        action: 'data_export',\n        details: details,\n        ip_address: exportData.ip_address,\n        user_agent: exportData.user_agent,\n        domain: exportData.domain,\n        purpose: 'data_portability',\n        legal_basis: 'consent',\n        controller: exportData.domain,\n        // Передаём данные для ответа\n        export_response: {\n            success: exportData.success,\n            data: exportData.data,\n            totalRecords: exportData.totalRecords\n        }\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        128
+      ],
+      "id": "c1fb8d58-e28d-4912-8d7b-c093c0e86fc7",
+      "name": "Prepare Audit Data Export"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- GDPR Art. 20: Логируем экспорт данных\nINSERT INTO gdpr_audit_log (\n    session_id,\n    action,\n    details,\n    ip_address,\n    user_agent,\n    domain,\n    purpose,\n    legal_basis,\n    controller,\n    data_categories\n) VALUES (\n    '{{ $json.session_id }}',\n    '{{ $json.action }}',\n    '{{ $json.details.replace(/'/g, \"''\") }}',\n    {{ $json.ip_address ? \"'\" + $json.ip_address + \"'\" : 'NULL' }},\n    {{ $json.user_agent ? \"'\" + $json.user_agent.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    '{{ $json.domain }}',\n    '{{ $json.purpose }}',\n    '{{ $json.legal_basis }}',\n    '{{ $json.controller }}',\n    ARRAY['session_id', 'consent_records', 'contact_data', 'chat_history', 'audit_trail', 'monitoring_data']\n)\nRETURNING id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        912,
+        128
+      ],
+      "id": "e71fafe5-8e23-4111-8b8b-b2411c0afd20",
+      "name": "Audit Log Export",
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $('Prepare Audit Data Export').first().json.export_response }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "X-GDPR-Request",
+                "value": "data-export"
+              },
+              {
+                "name": "Content-Disposition",
+                "value": "attachment; filename=\"gdpr-export.json\""
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1088,
+        128
+      ],
+      "id": "62754864-cc7e-48fc-98b0-7070681fbd20",
+      "name": "Respond Export"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -176,
+        256
+      ],
+      "id": "b0a17673-8c88-49d5-a2a1-35ccd7ff5800",
+      "name": "Error Response Export"
     },
     {
       "parameters": {
@@ -136,992 +677,28 @@
           }
         }
       },
-      "id": "767d74e5-6705-464c-8376-f0653d033f77",
+      "id": "f2f39f52-1d89-4b75-867a-678fe4acf9e6",
       "name": "Webhook Delete Session",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1.1,
       "position": [
-        -672,
-        -416
+        -720,
+        -992
       ],
       "webhookId": "e1ec3156-2578-4572-97c8-70c917b6f4a6"
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "-- Удаление всех связанных записей по session_id\nBEGIN;\nWITH session_data AS (\n  SELECT '{{ $input.item.json.body.sessionId }}' as sid,\n         -- Универсальное извлечение chat_id: убираем всё до первого подчеркивания\n         SUBSTRING('{{ $input.item.json.body.sessionId }}' FROM POSITION('_' IN '{{ $input.item.json.body.sessionId }}') + 1) as cid\n),\ndeleted_monitoring AS (\n  DELETE FROM webchat_monitoring \n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_contacts AS (\n  DELETE FROM user_contact_data\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_analysis AS (\n  DELETE FROM dialog_analysis\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_chat_histories_ru AS (\n  DELETE FROM n8n_chat_histories_ru\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_chat_histories_en AS (\n  DELETE FROM n8n_chat_histories_en\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_highlights AS (\n  DELETE FROM conversation_highlights\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_preferences AS (\n  DELETE FROM user_preferences\n  WHERE chat_id = (SELECT cid FROM session_data)\n  RETURNING *\n),\ndeleted_prechat AS (\n  DELETE FROM prechat_submissions\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_consents AS (\n  DELETE FROM gdpr_consents\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n)\nSELECT \n  (SELECT sid FROM session_data) as deleted_session_id,\n  (SELECT COUNT(*) FROM deleted_monitoring) as monitoring_deleted,\n  (SELECT COUNT(*) FROM deleted_contacts) as contacts_deleted,\n  (SELECT COUNT(*) FROM deleted_analysis) as analysis_deleted,\n  (SELECT COUNT(*) FROM deleted_chat_histories_ru) as chat_histories_ru_deleted,\n  (SELECT COUNT(*) FROM deleted_chat_histories_en) as chat_histories_en_deleted,\n  (SELECT COUNT(*) FROM deleted_highlights) as highlights_deleted,\n  (SELECT COUNT(*) FROM deleted_preferences) as preferences_deleted,\n  (SELECT COUNT(*) FROM deleted_prechat) as prechat_deleted,\n  (SELECT COUNT(*) FROM deleted_consents) as consents_deleted,\n  (SELECT COUNT(*) FROM deleted_monitoring) + \n  (SELECT COUNT(*) FROM deleted_contacts) + \n  (SELECT COUNT(*) FROM deleted_analysis) +\n  (SELECT COUNT(*) FROM deleted_chat_histories_ru) +\n  (SELECT COUNT(*) FROM deleted_chat_histories_en) +\n  (SELECT COUNT(*) FROM deleted_highlights) +\n  (SELECT COUNT(*) FROM deleted_preferences) +\n  (SELECT COUNT(*) FROM deleted_prechat) +\n  (SELECT COUNT(*) FROM deleted_consents) as total_deleted,\n  CASE \n    WHEN (SELECT COUNT(*) FROM deleted_monitoring) + \n         (SELECT COUNT(*) FROM deleted_contacts) + \n         (SELECT COUNT(*) FROM deleted_analysis) +\n         (SELECT COUNT(*) FROM deleted_chat_histories_ru) +\n         (SELECT COUNT(*) FROM deleted_chat_histories_en) +\n         (SELECT COUNT(*) FROM deleted_highlights) +\n         (SELECT COUNT(*) FROM deleted_preferences) +\n         (SELECT COUNT(*) FROM deleted_prechat) +\n         (SELECT COUNT(*) FROM deleted_consents) > 0 \n    THEN 'success'\n    ELSE 'not_found'\n  END as status;\nCOMMIT;",
-        "options": {}
-      },
-      "id": "45ba6d8a-8558-47a7-aba8-d38cb1860987",
-      "name": "Delete from PostgreSQL",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.1,
-      "position": [
-        -128,
-        -480
-      ],
-      "alwaysOutputData": false,
-      "credentials": {
-        "postgres": {
-          "id": "dPjh4Kdb4nIbCTQG",
-          "name": "Postgres account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 1
-          },
-          "conditions": [
-            {
-              "leftValue": "={{ $json.deleted }}",
-              "rightValue": "true",
-              "operator": {
-                "type": "string",
-                "operation": "equals"
-              },
-              "id": "32ec5641-9b2a-481a-b84b-1d84e26152ba"
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {
-          "looseTypeValidation": true
-        }
-      },
-      "id": "fd452c66-d21d-4378-8c7d-d6681a3e4a5d",
-      "name": "Check If Deleted",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        240,
-        -480
-      ]
-    },
-    {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "success-1",
-              "name": "success",
-              "value": true,
-              "type": "boolean"
-            },
-            {
-              "id": "success-2",
-              "name": "message",
-              "value": "Data deleted successfully",
-              "type": "string"
-            },
-            {
-              "id": "success-3",
-              "name": "deleted_count",
-              "value": "={{ $json.deleted_count }}",
-              "type": "number"
-            },
-            {
-              "id": "success-4",
-              "name": "session_id",
-              "value": "={{ $json.session_id }}",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "e911c834-b75b-4572-b025-663d318a6c9c",
-      "name": "Set Success Response",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [
-        432,
-        -576
-      ]
-    },
-    {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "notfound-1",
-              "name": "success",
-              "value": false,
-              "type": "boolean"
-            },
-            {
-              "id": "notfound-2",
-              "name": "message",
-              "value": "No data found for this session",
-              "type": "string"
-            },
-            {
-              "id": "notfound-3",
-              "name": "session_id",
-              "value": "={{ $json.session_id }}",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "8a111814-5638-49ad-8ee2-c3939c7dc49c",
-      "name": "Set Not Found Response",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [
-        432,
-        -384
-      ]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify($json) }}",
-        "options": {
-          "responseCode": 200,
-          "responseHeaders": {
-            "entries": [
-              {
-                "name": "Content-Type",
-                "value": "application/json"
-              }
-            ]
-          }
-        }
-      },
-      "id": "c7d30ab6-2edc-4fd9-913c-3eb935155f97",
-      "name": "Respond to Webhook",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [
-        640,
-        -480
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "// Получаем данные из PostgreSQL\nconst result = $input.item.json;\nconst deletedCount = result.total_deleted || 0;\n\n// Получаем sessionId из webhook\nlet sessionId;\ntry {\n  sessionId = $('Webhook Delete Session').item.json.body.sessionId;\n} catch(e) {\n  // Если не получилось, берем из результата SQL\n  sessionId = result.deleted_session_id || '';\n}\n\nreturn [{\n  json: {\n    session_id: sessionId,\n    deleted: deletedCount > 0,\n    deleted_count: deletedCount,\n    success: deletedCount > 0\n  }\n}];"
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        64,
-        -480
+        -512,
+        -992
       ],
-      "id": "eb811a7f-6642-4b43-ac3b-4f443165e71f",
-      "name": "Code delete"
-    },
-    {
-      "parameters": {
-        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -464,
-        -80
-      ],
-      "id": "c684cd6e-4de4-42e2-8b37-fd2071b70815",
-      "name": "Security Check"
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "auth-condition",
-              "leftValue": "={{ $json.authorized }}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        -240,
-        -80
-      ],
-      "id": "ecded057-a21f-48a7-a77e-ce912e092afd",
-      "name": "Auth Check"
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json.error }}",
-        "options": {
-          "responseCode": "={{ $json.error.status }}"
-        }
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        16,
-        32
-      ],
-      "id": "9c0482a4-2e33-4b6d-9525-5109ba3d46f7",
-      "name": "Error Response"
-    },
-    {
-      "parameters": {
-        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -496,
-        -416
-      ],
-      "id": "84d35e1d-9b49-466e-83bf-d8dab37efd20",
-      "name": "Security Check1"
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "auth-condition",
-              "leftValue": "={{ $json.authorized }}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        -320,
-        -416
-      ],
-      "id": "c55384f4-d974-432e-98f7-aac27518a982",
-      "name": "Auth Check1"
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json.error }}",
-        "options": {
-          "responseCode": "={{ $json.error.status }}"
-        }
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        -112,
-        -304
-      ],
-      "id": "c9c443da-f714-479d-905a-54db934ed870",
-      "name": "Error Response1"
-    },
-    {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "gdpr-data-access",
-        "responseMode": "responseNode",
-        "options": {
-          "allowedOrigins": "*"
-        }
-      },
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [
-        -672,
-        256
-      ],
-      "id": "4e72846f-a872-4e25-b969-06b40af755b7",
-      "name": "GDPR Data Access Webhook",
-      "webhookId": "gdpr-data-access-webhook"
-    },
-    {
-      "parameters": {
-        "jsCode": "// Получаем данные из POST запроса\nconst webhookData = items[0].json;\nconst body = webhookData.body || webhookData;\n\nconst sessionId = body.sessionId || body.session_id;\nconst userId = body.userId || body.user_id;\n\nif (!sessionId && !userId) {\n    throw new Error('sessionId or userId is required');\n}\n\nreturn [{\n    json: {\n        session_id: sessionId,\n        user_id: userId\n    }\n}];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -128,
-        192
-      ],
-      "id": "8687c103-0c01-4428-a883-fd31d6609abf",
-      "name": "Parse Request"
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "-- Получаем все данные пользователя для GDPR запроса\nWITH user_data AS (\n    -- Данные согласия\n    SELECT \n        'consent' as data_type,\n        jsonb_build_object(\n            'consent_given', consent_given,\n            'is_active', is_active,\n            'consent_type', consent_type,\n            'privacy_policy_version', privacy_policy_version,\n            'domain', domain,\n            'created_at', created_at,\n            'expires_at', expires_at,\n            'revoked_at', revoked_at,\n            'revoke_reason', revoke_reason\n        ) as data\n    FROM gdpr_consents\n    WHERE session_id = '{{ $json.session_id }}'\n    ORDER BY created_at DESC\n    LIMIT 1\n),\nuser_contact AS (\n    -- Контактные данные из pre-chat формы\n    SELECT \n        'contact_data' as data_type,\n        jsonb_build_object(\n            'name', name,\n            'email', email,\n            'phone', phone,\n            'company', company,\n            'created_at', created_at\n        ) as data\n    FROM prechat_submissions\n    WHERE session_id = '{{ $json.session_id }}'\n    ORDER BY created_at DESC\n    LIMIT 1\n),\nchat_history AS (\n    -- История чата (русский)\n    SELECT \n        'chat_message' as data_type,\n        jsonb_build_object(\n            'message_type', message::json->>'type',\n            'content', message::json->>'content',\n            'timestamp', created_at,\n            'platform', platform,\n            'language', 'ru'\n        ) as data\n    FROM n8n_chat_histories_ru\n    WHERE session_id = '{{ $json.session_id }}'\n    \n    UNION ALL\n    \n    -- История чата (английский)\n    SELECT \n        'chat_message' as data_type,\n        jsonb_build_object(\n            'message_type', message::json->>'type',\n            'content', message::json->>'content',\n            'timestamp', created_at,\n            'platform', platform,\n            'language', 'en'\n        ) as data\n    FROM n8n_chat_histories_en\n    WHERE session_id = '{{ $json.session_id }}'\n)\nSELECT * FROM user_data\nUNION ALL\nSELECT * FROM user_contact\nUNION ALL\nSELECT * FROM chat_history\nORDER BY data_type;",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        96,
-        192
-      ],
-      "id": "44ed8765-360c-42da-8fe3-2d914bc45645",
-      "name": "Get User Data",
-      "credentials": {
-        "postgres": {
-          "id": "dPjh4Kdb4nIbCTQG",
-          "name": "Postgres account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "// Форматируем данные для GDPR ответа\nconst sessionId = $('Parse Request').first().json.session_id;\n\nif (!items || items.length === 0) {\n    return [{\n        json: {\n            success: true,\n            data: {\n                sessionId: sessionId,\n                consent: null,\n                contactData: null,\n                chatHistory: [],\n                exportedAt: new Date().toISOString(),\n                message: 'No data found for this session'\n            }\n        }\n    }];\n}\n\n// Группируем данные по типу\nlet consent = null;\nlet contactData = null;\nconst chatHistory = [];\n\nfor (const item of items) {\n    const dataType = item.json.data_type;\n    const data = item.json.data;\n    \n    switch (dataType) {\n        case 'consent':\n            consent = data;\n            break;\n        case 'contact_data':\n            contactData = data;\n            break;\n        case 'chat_message':\n            chatHistory.push(data);\n            break;\n    }\n}\n\n// Сортируем историю чата по времени\nchatHistory.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));\n\nreturn [{\n    json: {\n        success: true,\n        data: {\n            sessionId: sessionId,\n            consent: consent,\n            contactData: contactData,\n            chatHistory: chatHistory,\n            totalMessages: chatHistory.length,\n            exportedAt: new Date().toISOString()\n        }\n    }\n}];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        320,
-        192
-      ],
-      "id": "1af5000d-5a38-49db-bf0d-74513df3df54",
-      "name": "Format Response"
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json }}",
-        "options": {
-          "responseHeaders": {
-            "entries": [
-              {
-                "name": "X-GDPR-Request",
-                "value": "data-access"
-              }
-            ]
-          }
-        }
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.4,
-      "position": [
-        560,
-        192
-      ],
-      "id": "8e8b5be4-5b75-425a-ba02-b8ad5b70b693",
-      "name": "Respond"
-    },
-    {
-      "parameters": {
-        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -496,
-        256
-      ],
-      "id": "55dc7dd7-7e3b-46ce-9b3a-d145ece1afaf",
-      "name": "Security Check2"
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "auth-condition",
-              "leftValue": "={{ $json.authorized }}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        -320,
-        256
-      ],
-      "id": "e972d7e1-c746-4a56-a706-2eb9f9171054",
-      "name": "Auth Check2"
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json.error }}",
-        "options": {
-          "responseCode": "={{ $json.error.status }}"
-        }
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        -128,
-        352
-      ],
-      "id": "a7c2e406-29d2-4bf0-b05e-55399852ea01",
-      "name": "Error Response2"
-    },
-    {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "gdpr-data-export",
-        "responseMode": "responseNode",
-        "options": {
-          "allowedOrigins": "*"
-        }
-      },
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [
-        -672,
-        640
-      ],
-      "id": "21943285-c079-4c76-aeed-bac80949b0de",
-      "name": "GDPR Data Export Webhook",
-      "webhookId": "gdpr-data-export-webhook"
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "-- Получаем ВСЕ данные согласия пользователя (GDPR Art. 7)\nSELECT \n    session_id,\n    user_email,\n    consent_given,\n    consent_type,\n    privacy_policy_version,\n    ip_address,\n    user_agent,\n    domain,\n    is_active,\n    revoked_at,\n    revoke_reason,\n    revoke_ip,\n    created_at as consent_date,\n    expires_at as consent_expires\nFROM gdpr_consents\nWHERE session_id = '{{ $json.session_id }}'\nORDER BY created_at DESC;",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        288,
-        368
-      ],
-      "id": "cad75c2b-64e9-40ff-8a8c-f27fb0095baa",
-      "name": "Get All Consents",
-      "credentials": {
-        "postgres": {
-          "id": "dPjh4Kdb4nIbCTQG",
-          "name": "Postgres account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "-- Получаем данные профиля из pre-chat формы\nSELECT \n    session_id,\n    name,\n    email,\n    phone,\n    company,\n    custom_fields,\n    gdpr_consent as form_consent,\n    domain,\n    created_at as profile_created\nFROM prechat_submissions\nWHERE session_id = '{{ $('Parse Request').first().json.session_id }}'\nORDER BY created_at DESC\nLIMIT 1;",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        288,
-        496
-      ],
-      "id": "38119845-adf9-4229-b849-ff623103a243",
-      "name": "Get Profile Data",
-      "credentials": {
-        "postgres": {
-          "id": "dPjh4Kdb4nIbCTQG",
-          "name": "Postgres account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "-- Получаем историю чата для экспорта\nSELECT \n    message::json->>'type' as message_type,\n    message::json->>'content' as content,\n    created_at as timestamp,\n    platform,\n    'ru' as language\nFROM n8n_chat_histories_ru\nWHERE session_id = '{{ $('Parse Request').first().json.session_id }}'\n\nUNION ALL\n\nSELECT \n    message::json->>'type' as message_type,\n    message::json->>'content' as content,\n    created_at as timestamp,\n    platform,\n    'en' as language\nFROM n8n_chat_histories_en\nWHERE session_id = '{{ $('Parse Request').first().json.session_id }}'\n\nORDER BY timestamp ASC;",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        288,
-        624
-      ],
-      "id": "05e2eeae-b9d5-4e56-8d82-3591c1abb2ac",
-      "name": "Get Chat History",
-      "credentials": {
-        "postgres": {
-          "id": "dPjh4Kdb4nIbCTQG",
-          "name": "Postgres account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "-- Получаем audit log (GDPR Art. 30 - Record of processing activities)\nSELECT \n    action,\n    details,\n    ip_address,\n    domain,\n    created_at as timestamp\nFROM gdpr_audit_log\nWHERE session_id = '{{ $('Parse Request').first().json.session_id }}'\nORDER BY created_at ASC;",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        288,
-        752
-      ],
-      "id": "ae68999f-77e7-4090-a860-aab88c392f51",
-      "name": "Get Audit Log",
-      "credentials": {
-        "postgres": {
-          "id": "dPjh4Kdb4nIbCTQG",
-          "name": "Postgres account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "-- Получаем данные мониторинга (если есть)\nSELECT *\nFROM webchat_monitoring\nWHERE session_id = '{{ $('Parse Request').first().json.session_id }}'\nORDER BY created_at ASC;",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        288,
-        880
-      ],
-      "id": "f1c00796-297d-442d-abd3-762bee94d9fd",
-      "name": "Get Monitoring Data",
-      "credentials": {
-        "postgres": {
-          "id": "dPjh4Kdb4nIbCTQG",
-          "name": "Postgres account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "// GDPR Article 20 - Полный экспорт данных пользователя\nconst requestData = $('Parse Request1').first().json;\nconst language = requestData.language || 'en';\n\n// Получаем данные из всех источников (с проверкой на существование)\nlet consentsData = [];\nlet profileData = null;\nlet chatHistory = [];\nlet auditLog = [];\nlet monitoringData = [];\n\ntry {\n    consentsData = $('Get All Consents').all().map(item => item.json);\n} catch (e) { /* нет данных */ }\n\ntry {\n    const profileItems = $('Get Profile Data').all();\n    if (profileItems.length > 0) {\n        profileData = profileItems[0].json;\n    }\n} catch (e) { /* нет данных */ }\n\ntry {\n    chatHistory = $('Get Chat History').all().map(item => item.json);\n} catch (e) { /* нет данных */ }\n\ntry {\n    auditLog = $('Get Audit Log').all().map(item => item.json);\n} catch (e) { /* нет данных */ }\n\ntry {\n    monitoringData = $('Get Monitoring Data').all().map(item => item.json);\n} catch (e) { /* нет данных */ }\n\n// Тексты на всех 11 языках\nconst texts = {\n    en: {\n        title: 'GDPR Data Export',\n        personalData: 'Personal Data',\n        activity: 'Activity Data',\n        auditLog: 'Processing Log',\n        monitoring: 'Technical Data',\n        dataRetention: 'Data Retention Policy',\n        yourRights: 'Your Rights under GDPR',\n        rightAccess: 'Right to Access - You have received this export as part of your right to access your personal data',\n        rightRectification: 'Right to Rectification - You can request correction of inaccurate personal data',\n        rightErasure: 'Right to Erasure - You can request deletion of your personal data',\n        rightPortability: 'Right to Data Portability - This export is provided in a machine-readable format',\n        rightObject: 'Right to Object - You can object to processing of your personal data',\n        rightRestriction: 'Right to Restriction - You can request restriction of processing',\n        contact: 'For any requests regarding your personal data, please contact our Data Protection Officer',\n        chatRetention: '365 days',\n        consentRetention: '5 years (legal requirement)',\n        personalRetention: '2 years after last activity',\n        noData: 'No data available',\n        notRecorded: '[not recorded]'\n    },\n    ru: {\n        title: 'Экспорт данных GDPR',\n        personalData: 'Персональные данные',\n        activity: 'Данные активности',\n        auditLog: 'Журнал обработки',\n        monitoring: 'Технические данные',\n        dataRetention: 'Политика хранения данных',\n        yourRights: 'Ваши права по GDPR',\n        rightAccess: 'Право на доступ - Вы получили этот экспорт в рамках права на доступ к персональным данным',\n        rightRectification: 'Право на исправление - Вы можете запросить исправление неточных данных',\n        rightErasure: 'Право на удаление - Вы можете запросить удаление ваших данных',\n        rightPortability: 'Право на переносимость - Этот экспорт предоставлен в машиночитаемом формате',\n        rightObject: 'Право на возражение - Вы можете возразить против обработки данных',\n        rightRestriction: 'Право на ограничение - Вы можете запросить ограничение обработки',\n        contact: 'По любым вопросам о персональных данных обращайтесь к нашему Офицеру по защите данных',\n        chatRetention: '365 дней',\n        consentRetention: '5 лет (требование закона)',\n        personalRetention: '2 года после последней активности',\n        noData: 'Данные отсутствуют',\n        notRecorded: '[не записано]'\n    },\n    es: {\n        title: 'Exportación de Datos GDPR',\n        personalData: 'Datos Personales',\n        activity: 'Datos de Actividad',\n        auditLog: 'Registro de Procesamiento',\n        monitoring: 'Datos Técnicos',\n        dataRetention: 'Política de Retención de Datos',\n        yourRights: 'Sus Derechos bajo GDPR',\n        rightAccess: 'Derecho de Acceso - Ha recibido esta exportación como parte de su derecho a acceder a sus datos personales',\n        rightRectification: 'Derecho de Rectificación - Puede solicitar la corrección de datos personales inexactos',\n        rightErasure: 'Derecho de Supresión - Puede solicitar la eliminación de sus datos personales',\n        rightPortability: 'Derecho a la Portabilidad - Esta exportación se proporciona en formato legible por máquina',\n        rightObject: 'Derecho de Oposición - Puede oponerse al procesamiento de sus datos personales',\n        rightRestriction: 'Derecho de Limitación - Puede solicitar la limitación del procesamiento',\n        contact: 'Para cualquier solicitud sobre sus datos personales, contacte a nuestro Delegado de Protección de Datos',\n        chatRetention: '365 días',\n        consentRetention: '5 años (requisito legal)',\n        personalRetention: '2 años después de la última actividad',\n        noData: 'No hay datos disponibles',\n        notRecorded: '[no registrado]'\n    },\n    fr: {\n        title: 'Export des Données RGPD',\n        personalData: 'Données Personnelles',\n        activity: 'Données d\\'Activité',\n        auditLog: 'Journal de Traitement',\n        monitoring: 'Données Techniques',\n        dataRetention: 'Politique de Conservation des Données',\n        yourRights: 'Vos Droits sous le RGPD',\n        rightAccess: 'Droit d\\'Accès - Vous avez reçu cet export dans le cadre de votre droit d\\'accès à vos données personnelles',\n        rightRectification: 'Droit de Rectification - Vous pouvez demander la correction de données personnelles inexactes',\n        rightErasure: 'Droit à l\\'Effacement - Vous pouvez demander la suppression de vos données personnelles',\n        rightPortability: 'Droit à la Portabilité - Cet export est fourni dans un format lisible par machine',\n        rightObject: 'Droit d\\'Opposition - Vous pouvez vous opposer au traitement de vos données personnelles',\n        rightRestriction: 'Droit à la Limitation - Vous pouvez demander la limitation du traitement',\n        contact: 'Pour toute demande concernant vos données personnelles, veuillez contacter notre Délégué à la Protection des Données',\n        chatRetention: '365 jours',\n        consentRetention: '5 ans (exigence légale)',\n        personalRetention: '2 ans après la dernière activité',\n        noData: 'Aucune donnée disponible',\n        notRecorded: '[non enregistré]'\n    },\n    de: {\n        title: 'DSGVO Datenexport',\n        personalData: 'Personenbezogene Daten',\n        activity: 'Aktivitätsdaten',\n        auditLog: 'Verarbeitungsprotokoll',\n        monitoring: 'Technische Daten',\n        dataRetention: 'Datenaufbewahrungsrichtlinie',\n        yourRights: 'Ihre Rechte nach DSGVO',\n        rightAccess: 'Auskunftsrecht - Sie haben diesen Export im Rahmen Ihres Rechts auf Zugang zu Ihren personenbezogenen Daten erhalten',\n        rightRectification: 'Recht auf Berichtigung - Sie können die Berichtigung unrichtiger personenbezogener Daten verlangen',\n        rightErasure: 'Recht auf Löschung - Sie können die Löschung Ihrer personenbezogenen Daten verlangen',\n        rightPortability: 'Recht auf Datenübertragbarkeit - Dieser Export wird in einem maschinenlesbaren Format bereitgestellt',\n        rightObject: 'Widerspruchsrecht - Sie können der Verarbeitung Ihrer personenbezogenen Daten widersprechen',\n        rightRestriction: 'Recht auf Einschränkung - Sie können die Einschränkung der Verarbeitung verlangen',\n        contact: 'Bei Anfragen zu Ihren personenbezogenen Daten wenden Sie sich bitte an unseren Datenschutzbeauftragten',\n        chatRetention: '365 Tage',\n        consentRetention: '5 Jahre (gesetzliche Anforderung)',\n        personalRetention: '2 Jahre nach letzter Aktivität',\n        noData: 'Keine Daten verfügbar',\n        notRecorded: '[nicht aufgezeichnet]'\n    },\n    it: {\n        title: 'Esportazione Dati GDPR',\n        personalData: 'Dati Personali',\n        activity: 'Dati di Attività',\n        auditLog: 'Registro di Elaborazione',\n        monitoring: 'Dati Tecnici',\n        dataRetention: 'Politica di Conservazione dei Dati',\n        yourRights: 'I Tuoi Diritti secondo il GDPR',\n        rightAccess: 'Diritto di Accesso - Hai ricevuto questa esportazione come parte del tuo diritto di accesso ai tuoi dati personali',\n        rightRectification: 'Diritto di Rettifica - Puoi richiedere la correzione di dati personali inesatti',\n        rightErasure: 'Diritto alla Cancellazione - Puoi richiedere la cancellazione dei tuoi dati personali',\n        rightPortability: 'Diritto alla Portabilità - Questa esportazione è fornita in formato leggibile da macchina',\n        rightObject: 'Diritto di Opposizione - Puoi opporti al trattamento dei tuoi dati personali',\n        rightRestriction: 'Diritto di Limitazione - Puoi richiedere la limitazione del trattamento',\n        contact: 'Per qualsiasi richiesta riguardante i tuoi dati personali, contatta il nostro Responsabile della Protezione dei Dati',\n        chatRetention: '365 giorni',\n        consentRetention: '5 anni (requisito legale)',\n        personalRetention: '2 anni dopo l\\'ultima attività',\n        noData: 'Nessun dato disponibile',\n        notRecorded: '[non registrato]'\n    },\n    pt: {\n        title: 'Exportação de Dados RGPD',\n        personalData: 'Dados Pessoais',\n        activity: 'Dados de Atividade',\n        auditLog: 'Registo de Processamento',\n        monitoring: 'Dados Técnicos',\n        dataRetention: 'Política de Retenção de Dados',\n        yourRights: 'Os Seus Direitos sob o RGPD',\n        rightAccess: 'Direito de Acesso - Recebeu esta exportação como parte do seu direito de acesso aos seus dados pessoais',\n        rightRectification: 'Direito de Retificação - Pode solicitar a correção de dados pessoais inexatos',\n        rightErasure: 'Direito ao Apagamento - Pode solicitar a eliminação dos seus dados pessoais',\n        rightPortability: 'Direito à Portabilidade - Esta exportação é fornecida num formato legível por máquina',\n        rightObject: 'Direito de Oposição - Pode opor-se ao processamento dos seus dados pessoais',\n        rightRestriction: 'Direito à Limitação - Pode solicitar a limitação do processamento',\n        contact: 'Para quaisquer pedidos relativos aos seus dados pessoais, contacte o nosso Encarregado de Proteção de Dados',\n        chatRetention: '365 dias',\n        consentRetention: '5 anos (requisito legal)',\n        personalRetention: '2 anos após última atividade',\n        noData: 'Sem dados disponíveis',\n        notRecorded: '[não registado]'\n    },\n    zh: {\n        title: 'GDPR数据导出',\n        personalData: '个人数据',\n        activity: '活动数据',\n        auditLog: '处理日志',\n        monitoring: '技术数据',\n        dataRetention: '数据保留政策',\n        yourRights: '您在GDPR下的权利',\n        rightAccess: '访问权 - 您收到此导出是您访问个人数据权利的一部分',\n        rightRectification: '更正权 - 您可以要求更正不准确的个人数据',\n        rightErasure: '删除权 - 您可以要求删除您的个人数据',\n        rightPortability: '数据可携权 - 此导出以机器可读格式提供',\n        rightObject: '反对权 - 您可以反对处理您的个人数据',\n        rightRestriction: '限制权 - 您可以要求限制处理',\n        contact: '如有任何关于您个人数据的请求，请联系我们的数据保护官',\n        chatRetention: '365天',\n        consentRetention: '5年（法律要求）',\n        personalRetention: '最后活动后2年',\n        noData: '无可用数据',\n        notRecorded: '[未记录]'\n    },\n    ja: {\n        title: 'GDPRデータエクスポート',\n        personalData: '個人データ',\n        activity: 'アクティビティデータ',\n        auditLog: '処理ログ',\n        monitoring: '技術データ',\n        dataRetention: 'データ保持ポリシー',\n        yourRights: 'GDPRに基づくあなたの権利',\n        rightAccess: 'アクセス権 - このエクスポートは、個人データへのアクセス権の一部として受け取りました',\n        rightRectification: '訂正権 - 不正確な個人データの訂正を要求できます',\n        rightErasure: '消去権 - 個人データの削除を要求できます',\n        rightPortability: 'データポータビリティ権 - このエクスポートは機械可読形式で提供されています',\n        rightObject: '異議権 - 個人データの処理に異議を唱えることができます',\n        rightRestriction: '制限権 - 処理の制限を要求できます',\n        contact: '個人データに関するご要望は、データ保護責任者にお問い合わせください',\n        chatRetention: '365日',\n        consentRetention: '5年（法的要件）',\n        personalRetention: '最後のアクティビティから2年',\n        noData: 'データなし',\n        notRecorded: '[記録なし]'\n    },\n    ko: {\n        title: 'GDPR 데이터 내보내기',\n        personalData: '개인 데이터',\n        activity: '활동 데이터',\n        auditLog: '처리 로그',\n        monitoring: '기술 데이터',\n        dataRetention: '데이터 보존 정책',\n        yourRights: 'GDPR에 따른 귀하의 권리',\n        rightAccess: '접근권 - 이 내보내기는 개인 데이터에 대한 접근권의 일부로 받으셨습니다',\n        rightRectification: '정정권 - 부정확한 개인 데이터의 정정을 요청할 수 있습니다',\n        rightErasure: '삭제권 - 개인 데이터의 삭제를 요청할 수 있습니다',\n        rightPortability: '데이터 이동권 - 이 내보내기는 기계 판독 가능한 형식으로 제공됩니다',\n        rightObject: '반대권 - 개인 데이터 처리에 반대할 수 있습니다',\n        rightRestriction: '제한권 - 처리 제한을 요청할 수 있습니다',\n        contact: '개인 데이터에 관한 요청은 데이터 보호 책임자에게 문의하세요',\n        chatRetention: '365일',\n        consentRetention: '5년 (법적 요건)',\n        personalRetention: '마지막 활동 후 2년',\n        noData: '사용 가능한 데이터 없음',\n        notRecorded: '[기록 없음]'\n    },\n    uk: {\n        title: 'Експорт даних GDPR',\n        personalData: 'Персональні дані',\n        activity: 'Дані активності',\n        auditLog: 'Журнал обробки',\n        monitoring: 'Технічні дані',\n        dataRetention: 'Політика зберігання даних',\n        yourRights: 'Ваші права за GDPR',\n        rightAccess: 'Право на доступ - Ви отримали цей експорт як частину вашого права на доступ до персональних даних',\n        rightRectification: 'Право на виправлення - Ви можете вимагати виправлення неточних персональних даних',\n        rightErasure: 'Право на видалення - Ви можете вимагати видалення ваших персональних даних',\n        rightPortability: 'Право на переносимість - Цей експорт надається у машиночитаному форматі',\n        rightObject: 'Право на заперечення - Ви можете заперечити проти обробки ваших персональних даних',\n        rightRestriction: 'Право на обмеження - Ви можете вимагати обмеження обробки',\n        contact: 'З будь-якими запитами щодо персональних даних звертайтесь до нашого Офіцера із захисту даних',\n        chatRetention: '365 днів',\n        consentRetention: '5 років (вимога закону)',\n        personalRetention: '2 роки після останньої активності',\n        noData: 'Даних немає',\n        notRecorded: '[не записано]'\n    }\n};\n\nconst t = texts[language] || texts.en;\n\n// Форматируем экспорт согласно GDPR требованиям\nconst exportData = {\n    gdprDataExport: {\n        exportInfo: {\n            title: t.title,\n            exportDate: new Date().toISOString(),\n            exportFormat: 'JSON (machine-readable)',\n            sessionId: requestData.session_id,\n            language: language,\n            gdprArticle: 'Article 20 - Right to data portability'\n        },\n        \n        personalData: {\n    sectionTitle: t.personalData,\n    profile: profileData ? {\n        name: profileData.name || null,\n        email: profileData.email || null,\n        phone: profileData.phone || null,\n        company: profileData.company || null,\n        customFields: profileData.custom_fields || null,\n        domain: profileData.domain || null,\n        createdAt: profileData.profile_created || null\n    } : t.noData,\n\n            \n            consentRecords: consentsData.length > 0 ? consentsData.map(consent => ({\n                consentType: consent.consent_type,\n                consentGiven: consent.consent_given,\n                isActive: consent.is_active,\n                privacyPolicyVersion: consent.privacy_policy_version,\n                ipAddress: consent.ip_address || t.notRecorded,\n                userAgent: consent.user_agent || t.notRecorded,\n                domain: consent.domain,\n                consentDate: consent.consent_date,\n                expiresAt: consent.consent_expires,\n                revokedAt: consent.revoked_at || null,\n                revokeReason: consent.revoke_reason || null,\n                revokeIp: consent.revoke_ip || null\n            })) : t.noData\n        },\n        \n        activityData: {\n            sectionTitle: t.activity,\n            chatStatistics: {\n                totalMessages: chatHistory.length,\n                firstMessage: chatHistory.length > 0 ? chatHistory[0].timestamp : null,\n                lastMessage: chatHistory.length > 0 ? chatHistory[chatHistory.length - 1].timestamp : null\n            },\n            chatHistory: chatHistory.length > 0 ? chatHistory.map(msg => ({\n                type: msg.message_type === 'human' ? 'user' : 'assistant',\n                content: msg.content,\n                timestamp: msg.timestamp,\n                platform: msg.platform,\n                language: msg.language\n            })) : t.noData\n        },\n        \n        processingLog: {\n    sectionTitle: t.auditLog,\n    entries: auditLog.length > 0 ? auditLog.map(log => ({\n        action: log.action,\n        details: log.details || null,\n        ipAddress: log.ip_address || t.notRecorded,\n        domain: log.domain,\n        timestamp: log.timestamp\n    })) : t.noData\n},\n\n        \n        technicalData: {\n    sectionTitle: t.monitoring,\n    entries: monitoringData.length > 0 ? monitoringData : t.noData\n},\n\n        \n        dataRetentionPolicy: {\n            sectionTitle: t.dataRetention,\n            policies: {\n                chatHistory: t.chatRetention,\n                consentRecords: t.consentRetention,\n                personalData: t.personalRetention\n            }\n        },\n        \n        yourRights: {\n            sectionTitle: t.yourRights,\n            rights: [\n                { right: 'Article 15', description: t.rightAccess },\n                { right: 'Article 16', description: t.rightRectification },\n                { right: 'Article 17', description: t.rightErasure },\n                { right: 'Article 18', description: t.rightRestriction },\n                { right: 'Article 20', description: t.rightPortability },\n                { right: 'Article 21', description: t.rightObject }\n            ],\n            contact: t.contact\n        }\n    }\n};\n\nreturn [{\n    json: {\n        success: true,\n        data: exportData\n    }\n}];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        800,
-        624
-      ],
-      "id": "c7c57d28-aa74-4683-8ae6-5b05c3a8d53c",
-      "name": "Format GDPR Export"
-    },
-    {
-      "parameters": {
-        "numberInputs": 5
-      },
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3.2,
-      "position": [
-        608,
-        576
-      ],
-      "id": "0005ac49-60e4-4c03-80fd-6886a64b4c24",
-      "name": "Merge"
-    },
-    {
-      "parameters": {
-        "jsCode": "// Получаем данные из POST запроса\nconst webhookData = items[0].json;\nconst body = webhookData.body || webhookData;\n\nconst sessionId = body.sessionId || body.session_id;\nconst userId = body.userId || body.user_id;\nconst format = body.format || 'json';\nconst userEmail = body.userEmail || body.email;\nconst language = body.language || 'en';\n\nif (!sessionId && !userId) {\n    throw new Error('sessionId or userId is required');\n}\n\nreturn [{\n    json: {\n        session_id: sessionId,\n        user_id: userId,\n        format: format,\n        user_email: userEmail,\n        language: language\n    }\n}];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -112,
-        560
-      ],
-      "id": "9009856d-bb7e-4312-9df3-e5ea244b48c4",
-      "name": "Parse Request1"
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json }}",
-        "options": {
-          "responseHeaders": {
-            "entries": [
-              {
-                "name": "X-GDPR-Request",
-                "value": "data-export"
-              },
-              {
-                "name": "X-GDPR-Article",
-                "value": "Article 20 - Data Portability"
-              }
-            ]
-          }
-        }
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.4,
-      "position": [
-        976,
-        624
-      ],
-      "id": "453446fa-745e-4aac-9eb7-68f872e6b733",
-      "name": "Respond1"
-    },
-    {
-      "parameters": {
-        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -496,
-        640
-      ],
-      "id": "7e599b58-fa3f-4a4b-8750-5c2da0b9935d",
-      "name": "Security Check3"
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "auth-condition",
-              "leftValue": "={{ $json.authorized }}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        -336,
-        640
-      ],
-      "id": "11017fde-6063-4b5b-992c-3396ba179ede",
-      "name": "Auth Check3"
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json.error }}",
-        "options": {
-          "responseCode": "={{ $json.error.status }}"
-        }
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        -112,
-        752
-      ],
-      "id": "ee4be1ed-9104-47e9-8631-0129f8666ee1",
-      "name": "Error Response3"
-    },
-    {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "consent-revoke",
-        "responseMode": "responseNode",
-        "options": {
-          "allowedOrigins": "*"
-        }
-      },
-      "id": "f6fda083-5aa2-46a5-bdc8-aa9983f51518",
-      "name": "Webhook Consent Revoke",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [
-        -672,
-        1120
-      ],
-      "webhookId": "c8d7e6f5-4a3b-2c1d-0e9f-8g7h6i5j4k3l"
-    },
-    {
-      "parameters": {
-        "jsCode": "// Трансформируем данные для отзыва согласия\nconst webhookData = items[0].json;\nconst body = webhookData.body || webhookData;\n\n// Извлекаем данные\nconst sessionId = body.sessionId || body.session_id;\nconst userEmail = body.userEmail || body.email || null;\nconst reason = body.reason || 'user_request';\nconst deleteData = body.deleteData || body.delete_data || false;\nconst domain = body.domain || webhookData.headers?.origin || '';\n\n// IP и User Agent из заголовков\nconst ipAddress = webhookData.headers?.['x-forwarded-for'] || webhookData.headers?.['x-real-ip'] || null;\nconst userAgent = webhookData.headers?.['user-agent'] || null;\n\n// Проверяем обязательные поля\nif (!sessionId) {\n    throw new Error('sessionId is required');\n}\n\nreturn [{\n    json: {\n        session_id: sessionId,\n        user_email: userEmail,\n        reason: reason,\n        delete_data: deleteData,\n        ip_address: ipAddress,\n        user_agent: userAgent,\n        domain: domain,\n        revoked_at: new Date().toISOString()\n    }\n}];"
-      },
-      "id": "68e88804-6286-42b3-b194-49dac6565734",
-      "name": "Transform Revoke Data",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -128,
-        1072
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "-- Деактивируем все активные согласия для данной сессии\nUPDATE gdpr_consents\nSET \n    is_active = false,\n    revoked_at = NOW(),\n    revoke_reason = '{{ $json.reason }}',\n    revoke_ip = {{ $json.ip_address ? \"'\" + $json.ip_address + \"'\" : 'NULL' }}\nWHERE session_id = '{{ $json.session_id }}'\n    AND is_active = true\nRETURNING id, session_id, consent_type, revoked_at;",
-        "options": {}
-      },
-      "id": "fc20c06e-2966-4676-a399-8fd5a60e3d55",
-      "name": "Revoke Consent in DB",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5,
-      "position": [
-        32,
-        1072
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "dPjh4Kdb4nIbCTQG",
-          "name": "Postgres account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "// Логируем отзыв согласия в audit log\nconst transformedData = $('Transform Revoke Data').first().json;\nconst revokedConsents = items;\n\nreturn [{\n    json: {\n        session_id: transformedData.session_id,\n        action: 'consent_revoked',\n        details: {\n            reason: transformedData.reason,\n            revokedCount: revokedConsents.length,\n            deleteDataRequested: transformedData.delete_data\n        },\n        ip_address: transformedData.ip_address,\n        user_agent: transformedData.user_agent,\n        domain: transformedData.domain\n    }\n}];"
-      },
-      "id": "23f2a5c1-8037-4d36-b567-a4aab299adee",
-      "name": "Prepare Audit Log",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        208,
-        1072
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO gdpr_audit_log (\n    session_id,\n    action,\n    details,\n    ip_address,\n    user_agent,\n    domain\n) VALUES (\n    '{{ $json.session_id }}',\n    '{{ $json.action }}',\n    '{{ JSON.stringify($json.details).replace(/'/g, \"''\") }}',\n    {{ $json.ip_address ? \"'\" + $json.ip_address + \"'\" : 'NULL' }},\n    {{ $json.user_agent ? \"'\" + $json.user_agent.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    '{{ $json.domain }}'\n)\nRETURNING id;",
-        "options": {}
-      },
-      "id": "4eadaab9-e61a-4481-b90b-16cb15c515e3",
-      "name": "Save Audit Log",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5,
-      "position": [
-        384,
-        1072
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "dPjh4Kdb4nIbCTQG",
-          "name": "Postgres account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "// Подготавливаем ответ\nconst transformedData = $('Transform Revoke Data').first().json;\nconst revokedConsents = $('Revoke Consent in DB').all();\n\nreturn [{\n    json: {\n        success: true,\n        message: 'Consent revoked successfully',\n        data: {\n            sessionId: transformedData.session_id,\n            revokedCount: revokedConsents.length,\n            reason: transformedData.reason,\n            timestamp: transformedData.revoked_at,\n            deleteDataRequested: transformedData.delete_data\n        }\n    }\n}];"
-      },
-      "id": "7c6f9f21-a2c6-471b-a599-cd5fc53e8527",
-      "name": "Prepare Response1",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        560,
-        1072
-      ]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json }}",
-        "options": {
-          "responseHeaders": {
-            "entries": [
-              {
-                "name": "X-GDPR-Consent",
-                "value": "revoked"
-              }
-            ]
-          }
-        }
-      },
-      "id": "b58d1df0-5325-4242-a45c-0d09e1618bec",
-      "name": "Success Response1",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        752,
-        1072
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -496,
-        1120
-      ],
-      "id": "cd7ea19d-06a1-479f-8a22-08caf41bd6e3",
-      "name": "Security Check4"
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "auth-condition",
-              "leftValue": "={{ $json.authorized }}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        -336,
-        1120
-      ],
-      "id": "c2d7a901-3eb4-42d6-a2d9-d504f7971acc",
-      "name": "Auth Check4"
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json.error }}",
-        "options": {
-          "responseCode": "={{ $json.error.status }}"
-        }
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        -128,
-        1232
-      ],
-      "id": "17b41682-e3d8-4b52-b8c1-b207581151af",
-      "name": "Error Response4"
-    },
-    {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "prechat-form",
-        "responseMode": "responseNode",
-        "options": {
-          "allowedOrigins": "*"
-        }
-      },
-      "id": "1d317217-b4ad-49cf-8466-ea55ddf71d3a",
-      "name": "Webhook PreChat",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [
-        -656,
-        1472
-      ],
-      "webhookId": "a37e1da3-8f42-4cce-bd0e-c8d19c66856c"
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO prechat_submissions (\n    session_id,\n    name,\n    email,\n    phone,\n    company,\n    custom_fields,\n    gdpr_consent,\n    domain\n) VALUES (\n    '{{ $json.session_id }}',\n    {{ $json.name ? \"'\" + $json.name.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.email ? \"'\" + $json.email.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.phone ? \"'\" + $json.phone.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.company ? \"'\" + $json.company.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    '{{ $json.custom_fields }}',\n    {{ $json.gdpr_consent }},\n    '{{ $json.domain }}'\n)\nON CONFLICT (session_id) DO UPDATE SET\n    name = EXCLUDED.name,\n    email = EXCLUDED.email,\n    phone = EXCLUDED.phone,\n    company = EXCLUDED.company,\n    custom_fields = EXCLUDED.custom_fields,\n    updated_at = NOW()\nRETURNING id, session_id, name, email, created_at;",
-        "options": {}
-      },
-      "id": "227c5071-6150-4dda-ac53-0c401bf5c1f2",
-      "name": "Save PreChat Data",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5,
-      "position": [
-        0,
-        1392
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "dPjh4Kdb4nIbCTQG",
-          "name": "Postgres account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ success: true, message: 'Form submitted', submissionId: $json.id, sessionId: $json.session_id }) }}",
-        "options": {}
-      },
-      "id": "5da7b15b-290d-4c9f-a6d9-bca631f9ea36",
-      "name": "PreChat Response",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        192,
-        1392
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "// Трансформируем данные из вебчата в формат для БД\nconst webhookData = items[0].json;\nconst body = webhookData.body || webhookData;\n\n// Извлекаем данные формы (может быть formData или userData)\nconst formData = body.formData || body.userData || {};\n\n// Извлекаем данные\nconst sessionId = body.sessionId || body.session_id;\nconst name = formData.name || null;\nconst email = formData.email || null;\nconst phone = formData.phone || null;\nconst company = formData.company || null;\n\n// Custom fields - все остальные поля кроме стандартных\nconst standardFields = ['name', 'email', 'phone', 'company'];\nconst customFields = {};\nfor (const key in formData) {\n    if (!standardFields.includes(key)) {\n        customFields[key] = formData[key];\n    }\n}\n\n// GDPR consent - по умолчанию true, т.к. форма показывается только после согласия\nconst gdprConsent = body.gdprConsent !== undefined ? body.gdprConsent : true;\n\n// Domain из заголовков или body\nconst domain = body.domain || webhookData.headers?.origin || webhookData.headers?.referer || '';\n\n// Проверяем обязательные поля\nif (!sessionId) {\n    throw new Error('sessionId is required');\n}\n\nreturn [{\n    json: {\n        session_id: sessionId,\n        name: name,\n        email: email,\n        phone: phone,\n        company: company,\n        custom_fields: JSON.stringify(customFields),\n        gdpr_consent: gdprConsent,\n        domain: domain\n    }\n}];"
-      },
-      "id": "f3f59ced-3505-458d-b466-a646917c6e41",
-      "name": "Transform Data1",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -160,
-        1392
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -496,
-        1472
-      ],
-      "id": "8da1639a-1a1d-47c0-9c2f-ceb74f2312f7",
-      "name": "Security Check5"
+      "id": "b2bdfc53-d85e-4ffe-9f56-6fd230fff3e0",
+      "name": "Security Check Delete"
     },
     {
       "parameters": {
@@ -1152,10 +729,509 @@
       "typeVersion": 2.2,
       "position": [
         -352,
-        1472
+        -992
       ],
-      "id": "5612c32a-27c4-43b4-bfc5-176c280f4e6f",
-      "name": "Auth Check5"
+      "id": "eceb6f0d-4804-4451-86b5-d6da1c164a2a",
+      "name": "Auth Check Delete"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Извлекаем данные для удаления и audit log\nconst webhookData = items[0].json;\nconst body = webhookData.body || webhookData;\n\nconst sessionId = body.sessionId || body.session_id;\nconst reason = body.reason || 'user_request';\nconst domain = body.domain || webhookData.headers?.origin || '';\nconst ipAddress = webhookData.headers?.['x-forwarded-for'] || webhookData.headers?.['x-real-ip'] || null;\nconst userAgent = webhookData.headers?.['user-agent'] || null;\n\nif (!sessionId) {\n    throw new Error('sessionId is required');\n}\n\nreturn [{\n    json: {\n        session_id: sessionId,\n        reason: reason,\n        domain: domain,\n        ip_address: ipAddress,\n        user_agent: userAgent\n    }\n}];"
+      },
+      "id": "0fce9e2e-47de-4ff7-a913-b206b79c3093",
+      "name": "Transform Delete Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        -1056
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Удаление всех связанных записей по session_id\nWITH session_data AS (\n  SELECT '{{ $json.session_id }}' as sid,\n         SUBSTRING('{{ $json.session_id }}' FROM POSITION('_' IN '{{ $json.session_id }}') + 1) as cid\n),\ndeleted_monitoring AS (\n  DELETE FROM webchat_monitoring \n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_contacts AS (\n  DELETE FROM user_contact_data\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_analysis AS (\n  DELETE FROM dialog_analysis\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_chat_histories_ru AS (\n  DELETE FROM n8n_chat_histories_ru\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_chat_histories_en AS (\n  DELETE FROM n8n_chat_histories_en\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_highlights AS (\n  DELETE FROM conversation_highlights\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_preferences AS (\n  DELETE FROM user_preferences\n  WHERE chat_id = (SELECT cid FROM session_data)\n  RETURNING *\n),\ndeleted_prechat AS (\n  DELETE FROM prechat_submissions\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n),\ndeleted_consents AS (\n  DELETE FROM gdpr_consents\n  WHERE session_id = (SELECT sid FROM session_data)\n  RETURNING *\n)\nSELECT \n  (SELECT sid FROM session_data) as deleted_session_id,\n  (SELECT COUNT(*) FROM deleted_monitoring) as monitoring_deleted,\n  (SELECT COUNT(*) FROM deleted_contacts) as contacts_deleted,\n  (SELECT COUNT(*) FROM deleted_analysis) as analysis_deleted,\n  (SELECT COUNT(*) FROM deleted_chat_histories_ru) as chat_histories_ru_deleted,\n  (SELECT COUNT(*) FROM deleted_chat_histories_en) as chat_histories_en_deleted,\n  (SELECT COUNT(*) FROM deleted_highlights) as highlights_deleted,\n  (SELECT COUNT(*) FROM deleted_preferences) as preferences_deleted,\n  (SELECT COUNT(*) FROM deleted_prechat) as prechat_deleted,\n  (SELECT COUNT(*) FROM deleted_consents) as consents_deleted,\n  (SELECT COUNT(*) FROM deleted_monitoring) + \n  (SELECT COUNT(*) FROM deleted_contacts) + \n  (SELECT COUNT(*) FROM deleted_analysis) +\n  (SELECT COUNT(*) FROM deleted_chat_histories_ru) +\n  (SELECT COUNT(*) FROM deleted_chat_histories_en) +\n  (SELECT COUNT(*) FROM deleted_highlights) +\n  (SELECT COUNT(*) FROM deleted_preferences) +\n  (SELECT COUNT(*) FROM deleted_prechat) +\n  (SELECT COUNT(*) FROM deleted_consents) as total_deleted;",
+        "options": {}
+      },
+      "id": "61618c93-22c8-48b3-b7d4-e5f7c5fdf107",
+      "name": "Delete from PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.1,
+      "position": [
+        48,
+        -1056
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Подготавливаем данные для Audit Log\nconst transformData = $('Transform Delete Data').first().json;\nconst deleteResult = $('Delete from PostgreSQL').first().json;\n\n// Безопасно получаем значения с fallback на 0\nconst monitoringDeleted = parseInt(deleteResult.monitoring_deleted) || 0;\nconst contactsDeleted = parseInt(deleteResult.contacts_deleted) || 0;\nconst analysisDeleted = parseInt(deleteResult.analysis_deleted) || 0;\nconst chatRuDeleted = parseInt(deleteResult.chat_histories_ru_deleted) || 0;\nconst chatEnDeleted = parseInt(deleteResult.chat_histories_en_deleted) || 0;\nconst highlightsDeleted = parseInt(deleteResult.highlights_deleted) || 0;\nconst preferencesDeleted = parseInt(deleteResult.preferences_deleted) || 0;\nconst prechatDeleted = parseInt(deleteResult.prechat_deleted) || 0;\nconst consentsDeleted = parseInt(deleteResult.consents_deleted) || 0;\nconst totalDeleted = parseInt(deleteResult.total_deleted) || 0;\n\n// Формируем JSON для details\nconst details = JSON.stringify({\n    reason: transformData.reason,\n    deleted_count: totalDeleted,\n    tables_affected: {\n        monitoring: monitoringDeleted,\n        contacts: contactsDeleted,\n        analysis: analysisDeleted,\n        chat_ru: chatRuDeleted,\n        chat_en: chatEnDeleted,\n        highlights: highlightsDeleted,\n        preferences: preferencesDeleted,\n        prechat: prechatDeleted,\n        consents: consentsDeleted\n    },\n    gdpr_article: \"Art. 17 - Right to Erasure\"\n});\n\nreturn [{\n    json: {\n        session_id: transformData.session_id,\n        action: 'data_erasure',\n        details: details,\n        ip_address: transformData.ip_address,\n        user_agent: transformData.user_agent,\n        domain: transformData.domain,\n        purpose: 'data_erasure',\n        legal_basis: 'consent',\n        controller: transformData.domain,\n        // Данные для ответа\n        total_deleted: totalDeleted,\n        monitoring_deleted: monitoringDeleted,\n        contacts_deleted: contactsDeleted,\n        chat_histories_ru_deleted: chatRuDeleted,\n        chat_histories_en_deleted: chatEnDeleted,\n        consents_deleted: consentsDeleted\n    }\n}];"
+      },
+      "id": "06f47790-eb3c-44d4-827f-e99f39c0d324",
+      "name": "Prepare Audit Data Delete",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        -1056
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- GDPR Art. 17: Логируем удаление данных\nINSERT INTO gdpr_audit_log (\n    session_id,\n    action,\n    details,\n    ip_address,\n    user_agent,\n    domain,\n    purpose,\n    legal_basis,\n    controller,\n    data_categories\n) VALUES (\n    '{{ $json.session_id }}',\n    '{{ $json.action }}',\n    '{{ $json.details.replace(/'/g, \"''\") }}',\n    {{ $json.ip_address ? \"'\" + $json.ip_address + \"'\" : 'NULL' }},\n    {{ $json.user_agent ? \"'\" + $json.user_agent.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    '{{ $json.domain }}',\n    '{{ $json.purpose }}',\n    '{{ $json.legal_basis }}',\n    '{{ $json.controller }}',\n    ARRAY['session_id', 'chat_history', 'contact_data', 'consent_records', 'analytics']\n)\nRETURNING id;",
+        "options": {}
+      },
+      "id": "2a709160-b0dd-4563-accd-ae953e6a7bcf",
+      "name": "Audit Log Erasure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        496,
+        -1056
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Формируем ответ об удалении\nconst auditData = $('Prepare Audit Data Delete').first().json;\n\nreturn [{\n    json: {\n        success: auditData.total_deleted > 0,\n        message: auditData.total_deleted > 0 ? 'Data deleted successfully' : 'No data found for this session',\n        session_id: auditData.session_id,\n        deleted_count: auditData.total_deleted,\n        details: {\n            monitoring: auditData.monitoring_deleted,\n            contacts: auditData.contacts_deleted,\n            chat_history: auditData.chat_histories_ru_deleted + auditData.chat_histories_en_deleted,\n            consents: auditData.consents_deleted\n        }\n    }\n}];"
+      },
+      "id": "da53b390-a622-4e69-a62c-45821234b485",
+      "name": "Prepare Delete Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        -1056
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "X-GDPR-Action",
+                "value": "data-erasure"
+              }
+            ]
+          }
+        }
+      },
+      "id": "3ab71dd7-3880-4331-b808-b47bc630a5ed",
+      "name": "Respond to Webhook Delete",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        944,
+        -1056
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -176,
+        -896
+      ],
+      "id": "e2966912-4181-432f-a9b5-7425dc78566f",
+      "name": "Error Response Delete"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gdpr-consent",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "5f561f75-7647-4417-afba-fb1e5fb092bb",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        -672
+      ],
+      "webhookId": "b49ee8a7-fd41-4672-8541-1f6ef5c3d1b0"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -512,
+        -672
+      ],
+      "id": "998ba2c3-5431-44f4-b314-acb99756d95c",
+      "name": "Security Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -288,
+        -672
+      ],
+      "id": "4e48f331-d382-4b21-9c49-7f5e76a7b20c",
+      "name": "Auth Check"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Трансформируем данные из вебчата в формат для БД\nconst webhookData = items[0].json;\nconst body = webhookData.body || webhookData;\n\n// Конвертируем action в boolean consent_given\nconst action = body.action || body.accepted;\nconst consentGiven = action === 'accepted' || action === true;\n\n// is_active: используем переданное значение или вычисляем из action\nconst isActive = body.is_active !== undefined ? body.is_active : consentGiven;\n\n// Извлекаем данные\nconst sessionId = body.sessionId || body.session_id;\nconst userEmail = body.userEmail || body.userData?.email || null;\nconst consentType = body.type || body.consentType || 'general';\nconst privacyPolicyVersion = String(body.privacyPolicyVersion || body.privacy_policy_version || '1.0');\nconst domain = body.domain || webhookData.headers?.origin || '';\n\n// GDPR поля\nconst purpose = body.purpose || 'lead_qualification';\nconst legalBasis = body.legalBasis || body.legal_basis || 'consent';\nconst controller = body.controller || domain;\n\n// IP и User Agent из заголовков\nconst ipAddress = webhookData.headers?.['x-forwarded-for'] || webhookData.headers?.['x-real-ip'] || null;\nconst userAgent = webhookData.headers?.['user-agent'] || null;\n\n// Вычисляем дату истечения (по умолчанию 365 дней)\nconst expiresAt = body.expiresAt || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();\n\n// Проверяем обязательные поля\nif (!sessionId) {\n    throw new Error('sessionId is required');\n}\n\nreturn [{\n    json: {\n        session_id: sessionId,\n        user_email: userEmail,\n        consent_given: consentGiven,\n        consent_type: consentType,\n        privacy_policy_version: privacyPolicyVersion,\n        ip_address: ipAddress,\n        user_agent: userAgent,\n        domain: domain,\n        expires_at: expiresAt,\n        is_active: isActive,\n        // GDPR Audit fields\n        purpose: purpose,\n        legal_basis: legalBasis,\n        controller: controller,\n        action_type: consentGiven ? 'consent_given' : 'consent_declined'\n    }\n}];"
+      },
+      "id": "a9eec112-713d-4c35-a8a3-851ab0bdbf39",
+      "name": "Transform Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -32,
+        -736
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO gdpr_consents (\n    session_id,\n    user_email,\n    consent_given,\n    consent_type,\n    privacy_policy_version,\n    ip_address,\n    user_agent,\n    domain,\n    expires_at,\n    is_active\n) VALUES (\n    '{{ $json.session_id }}',\n    {{ $json.user_email ? \"'\" + $json.user_email + \"'\" : 'NULL' }},\n    {{ $json.consent_given }},\n    '{{ $json.consent_type }}',\n    '{{ $json.privacy_policy_version }}',\n    {{ $json.ip_address ? \"'\" + $json.ip_address + \"'\" : 'NULL' }},\n    {{ $json.user_agent ? \"'\" + $json.user_agent.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    '{{ $json.domain }}',\n    '{{ $json.expires_at }}'::timestamp,\n    {{ $json.is_active }}\n)\nON CONFLICT (session_id, consent_type) DO UPDATE SET\n    user_email = EXCLUDED.user_email,\n    consent_given = EXCLUDED.consent_given,\n    privacy_policy_version = EXCLUDED.privacy_policy_version,\n    ip_address = EXCLUDED.ip_address,\n    user_agent = EXCLUDED.user_agent,\n    domain = EXCLUDED.domain,\n    expires_at = EXCLUDED.expires_at,\n    is_active = EXCLUDED.is_active,\n    revoked_at = NULL,\n    revoke_reason = NULL,\n    revoke_ip = NULL\nRETURNING id, session_id, consent_given, created_at;",
+        "options": {}
+      },
+      "id": "e052d829-a29b-417f-88b9-be80c9ed7160",
+      "name": "Save Consent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        192,
+        -736
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Подготавливаем данные для Audit Log\nconst transformData = $('Transform Data').first().json;\nconst saveResult = $('Save Consent').first().json || {};\n\n// Формируем JSON для details\nconst details = JSON.stringify({\n    consent_given: transformData.consent_given,\n    consent_type: transformData.consent_type,\n    version: transformData.privacy_policy_version\n});\n\nreturn [{\n    json: {\n        session_id: transformData.session_id,\n        action: transformData.action_type,\n        details: details,\n        ip_address: transformData.ip_address,\n        user_agent: transformData.user_agent,\n        domain: transformData.domain,\n        purpose: transformData.purpose,\n        legal_basis: transformData.legal_basis,\n        controller: transformData.controller,\n        privacy_policy_version: transformData.privacy_policy_version,\n        // Данные из Save Consent для ответа\n        consent_id: saveResult.id || null,\n        consent_given: transformData.consent_given,\n        consent_type: transformData.consent_type,\n        created_at: saveResult.created_at || new Date().toISOString()\n    }\n}];"
+      },
+      "id": "18793fd1-629b-4eb3-9334-3708fd13d8d0",
+      "name": "Prepare Audit Data Consent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        -736
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- GDPR Art. 7 & Art. 30: Логируем факт получения/отклонения согласия\nINSERT INTO gdpr_audit_log (\n    session_id,\n    action,\n    details,\n    ip_address,\n    user_agent,\n    domain,\n    purpose,\n    legal_basis,\n    controller,\n    data_categories,\n    privacy_policy_version\n) VALUES (\n    '{{ $json.session_id }}',\n    '{{ $json.action }}',\n    '{{ $json.details.replace(/'/g, \"''\") }}',\n    {{ $json.ip_address ? \"'\" + $json.ip_address + \"'\" : 'NULL' }},\n    {{ $json.user_agent ? \"'\" + $json.user_agent.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    '{{ $json.domain }}',\n    '{{ $json.purpose }}',\n    '{{ $json.legal_basis }}',\n    '{{ $json.controller }}',\n    ARRAY['session_id', 'consent_preferences'],\n    '{{ $json.privacy_policy_version }}'\n)\nRETURNING id;",
+        "options": {}
+      },
+      "id": "a96a5f61-490f-4a2a-85ad-115e7914c2eb",
+      "name": "Audit Log Consent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        640,
+        -736
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT EXISTS(\n    SELECT 1 FROM prechat_submissions \n    WHERE session_id = '{{ $('Prepare Audit Data Consent').first().json.session_id }}'\n) as has_prechat_data;",
+        "options": {}
+      },
+      "id": "39b4a0c2-a550-4d24-b4bf-c045acaacb2f",
+      "name": "Check PreChat Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        864,
+        -736
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Подготавливаем ответ\nconst auditData = $('Prepare Audit Data Consent').first().json;\nconst preChatCheck = items[0]?.json || {};\n\nreturn [{\n    json: {\n        success: true,\n        message: 'Consent recorded successfully',\n        data: {\n            consentId: auditData.consent_id,\n            sessionId: auditData.session_id,\n            consentGiven: auditData.consent_given,\n            consentType: auditData.consent_type,\n            timestamp: auditData.created_at,\n            hasPreChatData: preChatCheck.has_prechat_data === true\n        }\n    }\n}];"
+      },
+      "id": "d91e20cd-ec0a-4deb-9650-2d04e61baa4a",
+      "name": "Prepare Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        -736
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "X-GDPR-Consent",
+                "value": "recorded"
+              }
+            ]
+          }
+        }
+      },
+      "id": "10dd4ffc-d644-4058-bfe7-f2a84b553d0f",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1312,
+        -736
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -32,
+        -560
+      ],
+      "id": "98f15d59-3ef1-4ac2-b5ef-cf282b741b15",
+      "name": "Error Response"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "prechat-form",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "72438278-f9ae-4d4c-a408-db551d6d3e41",
+      "name": "Webhook PreChat",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -704,
+        976
+      ],
+      "webhookId": "a37e1da3-8f42-4cce-bd0e-c8d19c66856c"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -528,
+        976
+      ],
+      "id": "335a3c51-fc13-4cb7-acdc-760b413e2b42",
+      "name": "Security Check PreChat"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -384,
+        976
+      ],
+      "id": "17561be9-4ff6-4ed6-a784-349ebeece1c5",
+      "name": "Auth Check PreChat"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Трансформируем данные из вебчата в формат для БД\nconst webhookData = items[0].json;\nconst body = webhookData.body || webhookData;\n\nconst formData = body.formData || body.userData || {};\n\nconst sessionId = body.sessionId || body.session_id;\nconst name = formData.name || null;\nconst email = formData.email || null;\nconst phone = formData.phone || null;\nconst company = formData.company || null;\n\n// Custom fields\nconst standardFields = ['name', 'email', 'phone', 'company'];\nconst customFields = {};\nfor (const key in formData) {\n    if (!standardFields.includes(key)) {\n        customFields[key] = formData[key];\n    }\n}\n\nconst gdprConsent = body.gdprConsent !== undefined ? body.gdprConsent : true;\nconst domain = body.domain || webhookData.headers?.origin || webhookData.headers?.referer || '';\nconst ipAddress = webhookData.headers?.['x-forwarded-for'] || webhookData.headers?.['x-real-ip'] || null;\nconst userAgent = webhookData.headers?.['user-agent'] || null;\n\nif (!sessionId) {\n    throw new Error('sessionId is required');\n}\n\n// Определяем какие персональные данные были собраны\nconst dataCategories = ['session_id'];\nif (name) dataCategories.push('name');\nif (email) dataCategories.push('email');\nif (phone) dataCategories.push('phone');\nif (company) dataCategories.push('company');\n\nreturn [{\n    json: {\n        session_id: sessionId,\n        name: name,\n        email: email,\n        phone: phone,\n        company: company,\n        custom_fields: JSON.stringify(customFields),\n        gdpr_consent: gdprConsent,\n        domain: domain,\n        ip_address: ipAddress,\n        user_agent: userAgent,\n        data_categories: dataCategories\n    }\n}];"
+      },
+      "id": "8ebc212f-3c5f-4cc5-8e04-07522162ded0",
+      "name": "Transform PreChat Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO prechat_submissions (\n    session_id,\n    name,\n    email,\n    phone,\n    company,\n    custom_fields,\n    gdpr_consent,\n    domain\n) VALUES (\n    '{{ $json.session_id }}',\n    {{ $json.name ? \"'\" + $json.name.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.email ? \"'\" + $json.email.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.phone ? \"'\" + $json.phone.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.company ? \"'\" + $json.company.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    '{{ $json.custom_fields }}',\n    {{ $json.gdpr_consent }},\n    '{{ $json.domain }}'\n)\nON CONFLICT (session_id) DO UPDATE SET\n    name = EXCLUDED.name,\n    email = EXCLUDED.email,\n    phone = EXCLUDED.phone,\n    company = EXCLUDED.company,\n    custom_fields = EXCLUDED.custom_fields,\n    updated_at = NOW()\nRETURNING id, session_id, name, email, created_at;",
+        "options": {}
+      },
+      "id": "7d414bab-8f7f-4fda-9f69-c85c68a16832",
+      "name": "Save PreChat Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        64,
+        912
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Подготавливаем данные для Audit Log\nconst transformData = $('Transform PreChat Data').first().json;\nconst saveResult = $('Save PreChat Data').first().json || {};\n\n// Формируем JSON для details\nconst details = JSON.stringify({\n    form_type: \"prechat\",\n    fields_collected: transformData.data_categories,\n    gdpr_consent: transformData.gdpr_consent,\n    gdpr_article: \"Art. 13/14 - Information to be provided\"\n});\n\n// Формируем строку для ARRAY[] в PostgreSQL\nconst dataCategoriesArray = transformData.data_categories.map(c => \"'\" + c + \"'\").join(', ');\n\nreturn [{\n    json: {\n        session_id: transformData.session_id,\n        action: 'personal_data_collected',\n        details: details,\n        ip_address: transformData.ip_address,\n        user_agent: transformData.user_agent,\n        domain: transformData.domain,\n        purpose: 'lead_qualification',\n        legal_basis: 'consent',\n        controller: transformData.domain,\n        data_categories_sql: dataCategoriesArray,\n        // Данные для ответа\n        submission_id: saveResult.id || null,\n        submission_session_id: saveResult.session_id || transformData.session_id\n    }\n}];"
+      },
+      "id": "310a3b45-84eb-4a3e-a61f-c876d0dde5ed",
+      "name": "Prepare Audit Data PreChat",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        288,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- GDPR Art. 13/14: Логируем сбор персональных данных\nINSERT INTO gdpr_audit_log (\n    session_id,\n    action,\n    details,\n    ip_address,\n    user_agent,\n    domain,\n    purpose,\n    legal_basis,\n    controller,\n    data_categories\n) VALUES (\n    '{{ $json.session_id }}',\n    '{{ $json.action }}',\n    '{{ $json.details.replace(/'/g, \"''\") }}',\n    {{ $json.ip_address ? \"'\" + $json.ip_address + \"'\" : 'NULL' }},\n    {{ $json.user_agent ? \"'\" + $json.user_agent.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    '{{ $json.domain }}',\n    '{{ $json.purpose }}',\n    '{{ $json.legal_basis }}',\n    '{{ $json.controller }}',\n    ARRAY[{{ $json.data_categories_sql }}]\n)\nRETURNING id;",
+        "options": {}
+      },
+      "id": "93d6863d-2bc7-48d8-abe0-9bdf523ed2aa",
+      "name": "Audit Log PreChat",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        512,
+        912
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "dPjh4Kdb4nIbCTQG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Подготавливаем ответ\nconst auditData = $('Prepare Audit Data PreChat').first().json;\n\nreturn [{\n    json: {\n        success: true,\n        message: 'Form submitted',\n        submissionId: auditData.submission_id,\n        sessionId: auditData.submission_session_id\n    }\n}];"
+      },
+      "id": "be8016f7-d81b-4941-a213-5ecaedcd53a9",
+      "name": "Prepare PreChat Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        736,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "4c0ec477-0067-4a76-9d61-0072dc723a33",
+      "name": "PreChat Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        960,
+        912
+      ]
     },
     {
       "parameters": {
@@ -1169,63 +1245,357 @@
       "typeVersion": 1.1,
       "position": [
         -160,
-        1568
+        1072
       ],
-      "id": "f9f88c29-c6ae-4cb9-b5aa-2b8a747b4a67",
-      "name": "Error Response5"
+      "id": "382e4dbd-003f-407f-856c-fd72ecf5935b",
+      "name": "Error Response PreChat"
     }
   ],
   "pinData": {},
   "connections": {
-    "Webhook": {
+    "GDPR Data Access Webhook": {
       "main": [
         [
           {
-            "node": "Security Check",
+            "node": "Security Check Access",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Transform Data": {
+    "Security Check Access": {
       "main": [
         [
           {
-            "node": "Save Consent",
+            "node": "Auth Check Access",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Save Consent": {
+    "Auth Check Access": {
       "main": [
         [
           {
-            "node": "Check PreChat Data",
+            "node": "Parse Access Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response Access",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Check PreChat Data": {
+    "Parse Access Request": {
       "main": [
         [
           {
-            "node": "Prepare Response",
+            "node": "Get User Data",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Prepare Response": {
+    "Get User Data": {
       "main": [
         [
           {
-            "node": "Success Response",
+            "node": "Format Access Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Access Response": {
+      "main": [
+        [
+          {
+            "node": "Audit Log Access",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audit Log Access": {
+      "main": [
+        [
+          {
+            "node": "Respond Access",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Consent Revoke": {
+      "main": [
+        [
+          {
+            "node": "Security Check Revoke",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check Revoke": {
+      "main": [
+        [
+          {
+            "node": "Auth Check Revoke",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check Revoke": {
+      "main": [
+        [
+          {
+            "node": "Transform Revoke Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response Revoke",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Revoke Data": {
+      "main": [
+        [
+          {
+            "node": "Revoke Consent in DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Revoke Consent in DB": {
+      "main": [
+        [
+          {
+            "node": "Prepare Audit Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Audit Data": {
+      "main": [
+        [
+          {
+            "node": "Save Audit Log Revoke",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Audit Log Revoke": {
+      "main": [
+        [
+          {
+            "node": "Prepare Revoke Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Revoke Response": {
+      "main": [
+        [
+          {
+            "node": "Success Response Revoke",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GDPR Data Export Webhook": {
+      "main": [
+        [
+          {
+            "node": "Security Check Export",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check Export": {
+      "main": [
+        [
+          {
+            "node": "Auth Check Export",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check Export": {
+      "main": [
+        [
+          {
+            "node": "Parse Export Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response Export",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Export Request": {
+      "main": [
+        [
+          {
+            "node": "Get All Consents Export",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Profile Data Export",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Chat History Export",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Audit Log Export",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Monitoring Data Export",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Consents Export": {
+      "main": [
+        [
+          {
+            "node": "Merge Export Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Profile Data Export": {
+      "main": [
+        [
+          {
+            "node": "Merge Export Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Get Chat History Export": {
+      "main": [
+        [
+          {
+            "node": "Merge Export Data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Get Audit Log Export": {
+      "main": [
+        [
+          {
+            "node": "Merge Export Data",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Get Monitoring Data Export": {
+      "main": [
+        [
+          {
+            "node": "Merge Export Data",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Merge Export Data": {
+      "main": [
+        [
+          {
+            "node": "Format Export Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Export Data": {
+      "main": [
+        [
+          {
+            "node": "Prepare Audit Data Export",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Audit Data Export": {
+      "main": [
+        [
+          {
+            "node": "Audit Log Export",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audit Log Export": {
+      "main": [
+        [
+          {
+            "node": "Respond Export",
             "type": "main",
             "index": 0
           }
@@ -1236,7 +1606,47 @@
       "main": [
         [
           {
-            "node": "Security Check1",
+            "node": "Security Check Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check Delete": {
+      "main": [
+        [
+          {
+            "node": "Auth Check Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check Delete": {
+      "main": [
+        [
+          {
+            "node": "Transform Delete Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Delete Data": {
+      "main": [
+        [
+          {
+            "node": "Delete from PostgreSQL",
             "type": "main",
             "index": 0
           }
@@ -1247,58 +1657,51 @@
       "main": [
         [
           {
-            "node": "Code delete",
+            "node": "Prepare Audit Data Delete",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Check If Deleted": {
+    "Prepare Audit Data Delete": {
       "main": [
         [
           {
-            "node": "Set Success Response",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Set Not Found Response",
+            "node": "Audit Log Erasure",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Set Success Response": {
+    "Audit Log Erasure": {
       "main": [
         [
           {
-            "node": "Respond to Webhook",
+            "node": "Prepare Delete Response",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Set Not Found Response": {
+    "Prepare Delete Response": {
       "main": [
         [
           {
-            "node": "Respond to Webhook",
+            "node": "Respond to Webhook Delete",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Code delete": {
+    "Webhook": {
       "main": [
         [
           {
-            "node": "Check If Deleted",
+            "node": "Security Check",
             "type": "main",
             "index": 0
           }
@@ -1334,345 +1737,66 @@
         ]
       ]
     },
-    "Security Check1": {
+    "Transform Data": {
       "main": [
         [
           {
-            "node": "Auth Check1",
+            "node": "Save Consent",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Auth Check1": {
+    "Save Consent": {
       "main": [
         [
           {
-            "node": "Delete from PostgreSQL",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Error Response1",
+            "node": "Prepare Audit Data Consent",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "GDPR Data Access Webhook": {
+    "Prepare Audit Data Consent": {
       "main": [
         [
           {
-            "node": "Security Check2",
+            "node": "Audit Log Consent",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Parse Request": {
+    "Audit Log Consent": {
       "main": [
         [
           {
-            "node": "Get User Data",
+            "node": "Check PreChat Data",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Get User Data": {
+    "Check PreChat Data": {
       "main": [
         [
           {
-            "node": "Format Response",
+            "node": "Prepare Response",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Format Response": {
+    "Prepare Response": {
       "main": [
         [
           {
-            "node": "Respond",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Security Check2": {
-      "main": [
-        [
-          {
-            "node": "Auth Check2",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Auth Check2": {
-      "main": [
-        [
-          {
-            "node": "Parse Request",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Error Response2",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "GDPR Data Export Webhook": {
-      "main": [
-        [
-          {
-            "node": "Security Check3",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Get All Consents": {
-      "main": [
-        [
-          {
-            "node": "Merge",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Get Profile Data": {
-      "main": [
-        [
-          {
-            "node": "Merge",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Get Chat History": {
-      "main": [
-        [
-          {
-            "node": "Merge",
-            "type": "main",
-            "index": 2
-          }
-        ]
-      ]
-    },
-    "Get Audit Log": {
-      "main": [
-        [
-          {
-            "node": "Merge",
-            "type": "main",
-            "index": 3
-          }
-        ]
-      ]
-    },
-    "Get Monitoring Data": {
-      "main": [
-        [
-          {
-            "node": "Merge",
-            "type": "main",
-            "index": 4
-          }
-        ]
-      ]
-    },
-    "Format GDPR Export": {
-      "main": [
-        [
-          {
-            "node": "Respond1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Merge": {
-      "main": [
-        [
-          {
-            "node": "Format GDPR Export",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Parse Request1": {
-      "main": [
-        [
-          {
-            "node": "Get All Consents",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Get Profile Data",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Get Chat History",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Get Audit Log",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Get Monitoring Data",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Security Check3": {
-      "main": [
-        [
-          {
-            "node": "Auth Check3",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Auth Check3": {
-      "main": [
-        [
-          {
-            "node": "Parse Request1",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Error Response3",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Webhook Consent Revoke": {
-      "main": [
-        [
-          {
-            "node": "Security Check4",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Transform Revoke Data": {
-      "main": [
-        [
-          {
-            "node": "Revoke Consent in DB",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Revoke Consent in DB": {
-      "main": [
-        [
-          {
-            "node": "Prepare Audit Log",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Prepare Audit Log": {
-      "main": [
-        [
-          {
-            "node": "Save Audit Log",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Save Audit Log": {
-      "main": [
-        [
-          {
-            "node": "Prepare Response1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Prepare Response1": {
-      "main": [
-        [
-          {
-            "node": "Success Response1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Security Check4": {
-      "main": [
-        [
-          {
-            "node": "Auth Check4",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Auth Check4": {
-      "main": [
-        [
-          {
-            "node": "Transform Revoke Data",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Error Response4",
+            "node": "Success Response",
             "type": "main",
             "index": 0
           }
@@ -1683,25 +1807,43 @@
       "main": [
         [
           {
-            "node": "Security Check5",
+            "node": "Security Check PreChat",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Save PreChat Data": {
+    "Security Check PreChat": {
       "main": [
         [
           {
-            "node": "PreChat Response",
+            "node": "Auth Check PreChat",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Transform Data1": {
+    "Auth Check PreChat": {
+      "main": [
+        [
+          {
+            "node": "Transform PreChat Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response PreChat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform PreChat Data": {
       "main": [
         [
           {
@@ -1712,29 +1854,44 @@
         ]
       ]
     },
-    "Security Check5": {
+    "Save PreChat Data": {
       "main": [
         [
           {
-            "node": "Auth Check5",
+            "node": "Prepare Audit Data PreChat",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Auth Check5": {
+    "Prepare Audit Data PreChat": {
       "main": [
         [
           {
-            "node": "Transform Data1",
+            "node": "Audit Log PreChat",
             "type": "main",
             "index": 0
           }
-        ],
+        ]
+      ]
+    },
+    "Audit Log PreChat": {
+      "main": [
         [
           {
-            "node": "Error Response5",
+            "node": "Prepare PreChat Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare PreChat Response": {
+      "main": [
+        [
+          {
+            "node": "PreChat Response",
             "type": "main",
             "index": 0
           }
@@ -1746,11 +1903,10 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "81fa3b65-c6e9-4fbb-93f4-ccf31dee56b0",
+  "versionId": "f006089b-eb9c-4b82-accd-a78e5f2d9a63",
   "meta": {
-    "templateCredsSetupCompleted": true,
     "instanceId": "9a2a948e1b1119e76dce477f4f08641c41898f344f4216cb90098437b1dcaf00"
   },
-  "id": "L0ZkZzA2SLAFLbc8",
+  "id": "rbcr7bc4UpZztsoq",
   "tags": []
 }
