@@ -1,0 +1,245 @@
+{
+  "name": "📊 Email Analysis Retrieval [Production EN]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 📊 Email Analysis Retrieval\n\n### 📋 Description\nAPI for retrieving email dialog analysis results.\n\n---\n\n### ⚙️ CONFIG\n\n| Parameter | Description |\n|-----------|-------------|\n| `api_key` | API key for authentication |\n| `rate_limit_window_ms` | Rate limiting window (ms) |\n| `rate_limit_max_requests` | Max requests per window |\n| `table_email_dialog_analysis` | Email analysis table |\n\n---\n\n### 🔗 Endpoints\n\n| Method | Path | Description |\n|--------|------|-------------|\n| GET | `/get-email-analysis` | Get analysis by email |\n| GET | `/get-all-email-analysis` | Get all analyses |\n\n---\n\n### 📥 Request Parameters\n\n**GET /get-email-analysis:**\n- `email` - email address\n- `type` - analysis type (single/batch)\n\n**GET /get-all-email-analysis:**\n- `days` - last N days\n- `language` - filter by language",
+        "height": 580,
+        "width": 380,
+        "color": 5
+      },
+      "id": "sticky-note-main",
+      "name": "📝 Instructions",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-1100, -200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-analysis", "name": "table_email_dialog_analysis", "value": "email_dialog_analysis", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-get-analysis",
+      "name": "⚙️ CONFIG: Get Analysis",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-464, -192]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-analysis", "name": "table_email_dialog_analysis", "value": "email_dialog_analysis", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-get-all",
+      "name": "⚙️ CONFIG: Get All",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-464, 192]
+    },
+    {
+      "parameters": {
+        "path": "get-email-analysis",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "webhook-get-analysis",
+      "name": "🌐 Webhook: Get Analysis",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-672, -192],
+      "webhookId": "get-email-analysis-webhook"
+    },
+    {
+      "parameters": {
+        "path": "get-all-email-analysis",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "webhook-get-all",
+      "name": "🌐 Webhook: Get All",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-672, 192],
+      "webhookId": "get-all-email-analysis-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('⚙️ CONFIG: Get Analysis').first().json;\nconst inputData = $('🌐 Webhook: Get Analysis').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > config.rate_limit_window_ms) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > config.rate_limit_max_requests) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${config.rate_limit_max_requests} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + config.rate_limit_window_ms - now) / 1000) } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== config.api_key) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-256, -192],
+      "id": "security-get-analysis",
+      "name": "🔐 Security Check"
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('⚙️ CONFIG: Get All').first().json;\nconst inputData = $('🌐 Webhook: Get All').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > config.rate_limit_window_ms) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > config.rate_limit_max_requests) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${config.rate_limit_max_requests} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + config.rate_limit_window_ms - now) / 1000) } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== config.api_key) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-256, 192],
+      "id": "security-get-all",
+      "name": "🔐 Security Check 2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth-check", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-48, -192],
+      "id": "auth-check-1",
+      "name": "❓ Auth Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth-check", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-48, 192],
+      "id": "auth-check-2",
+      "name": "❓ Auth Check 2"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {"responseCode": "={{ $json.error.status }}"}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [160, -96],
+      "id": "error-response-1",
+      "name": "❌ Error Response"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {"responseCode": "={{ $json.error.status }}"}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [160, 288],
+      "id": "error-response-2",
+      "name": "❌ Error Response 2"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n    email,\n    thread_id,\n    user_name,\n    analysis_type,\n    language,\n    emotional_tone,\n    customer_needs,\n    missed_opportunities,\n    recommendations,\n    statistics,\n    satisfaction_percentage,\n    lead_scoring,\n    created_at,\n    updated_at\nFROM {{ $('⚙️ CONFIG: Get Analysis').first().json.table_email_dialog_analysis }} \nWHERE email = '{{ $json.query.email }}' \nAND analysis_type = '{{ $json.query.type || 'single' }}' \nORDER BY created_at DESC \nLIMIT 1",
+        "options": {}
+      },
+      "id": "get-analysis-db",
+      "name": "🐘 Get Analysis",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [160, -288],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT DISTINCT ON (email) \n    email,\n    thread_id,\n    user_name,\n    analysis_type,\n    language,\n    emotional_tone,\n    customer_needs,\n    missed_opportunities,\n    recommendations,\n    statistics,\n    satisfaction_percentage,\n    lead_scoring,\n    created_at,\n    updated_at\nFROM {{ $('⚙️ CONFIG: Get All').first().json.table_email_dialog_analysis }} \nWHERE analysis_type = 'single'\n    {{ $json.query?.days ? \"AND created_at >= NOW() - INTERVAL '\" + $json.query.days + \" days'\" : \"\" }}\n    {{ $json.query?.language ? \"AND language = '\" + $json.query.language + \"'\" : \"\" }}\nORDER BY email, created_at DESC",
+        "options": {}
+      },
+      "id": "get-all-analysis-db",
+      "name": "🐘 Get All Analysis",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [160, 96],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = items[0]?.json;\nif (!data) {\n  return [{json: {found: false, message: 'Analysis not found'}}];\n}\n\nconst parseJsonField = (field) => {\n  if (!field) return null;\n  if (typeof field === 'string') {\n    try { return JSON.parse(field); } catch(e) { return field; }\n  }\n  return field;\n};\n\nreturn [{\n  json: {\n    found: true,\n    email: data.email,\n    threadId: data.thread_id,\n    userName: data.user_name,\n    analysisType: data.analysis_type,\n    language: data.language,\n    emotionalTone: parseJsonField(data.emotional_tone),\n    customerNeeds: parseJsonField(data.customer_needs),\n    missedOpportunities: parseJsonField(data.missed_opportunities),\n    recommendations: parseJsonField(data.recommendations),\n    statistics: parseJsonField(data.statistics),\n    satisfactionPercentage: data.satisfaction_percentage || parseJsonField(data.emotional_tone)?.satisfaction || 0,\n    leadScoring: parseJsonField(data.lead_scoring),\n    createdAt: data.created_at,\n    updatedAt: data.updated_at\n  }\n}];"
+      },
+      "id": "format-analysis",
+      "name": "📋 Format Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [368, -288]
+    },
+    {
+      "parameters": {
+        "jsCode": "const analyses = {};\n\nconst parseJsonField = (field) => {\n  if (!field) return null;\n  if (typeof field === 'string') {\n    try { return JSON.parse(field); } catch(e) { return field; }\n  }\n  return field;\n};\n\nitems.forEach(item => {\n  const data = item.json;\n  const emotionalTone = parseJsonField(data.emotional_tone);\n  const leadScoring = parseJsonField(data.lead_scoring);\n  \n  analyses[data.email] = {\n    emotionalTone: emotionalTone?.overall || 'unknown',\n    satisfactionPercentage: data.satisfaction_percentage || emotionalTone?.satisfaction || 0,\n    leadScoring: leadScoring?.score || 0,\n    leadTemperature: leadScoring?.temperature || 'cold',\n    createdAt: data.created_at,\n    updatedAt: data.updated_at\n  };\n});\n\nreturn [{json: {analyses}}];"
+      },
+      "id": "format-all-analysis",
+      "name": "📋 Format All",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [368, 96]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "respond-analysis",
+      "name": "✅ Respond Analysis",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [576, -288]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "respond-all",
+      "name": "✅ Respond All",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [576, 96]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "🌐 Webhook: Get Analysis": {"main": [[{"node": "⚙️ CONFIG: Get Analysis", "type": "main", "index": 0}]]},
+    "🌐 Webhook: Get All": {"main": [[{"node": "⚙️ CONFIG: Get All", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Get Analysis": {"main": [[{"node": "🔐 Security Check", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Get All": {"main": [[{"node": "🔐 Security Check 2", "type": "main", "index": 0}]]},
+    "🔐 Security Check": {"main": [[{"node": "❓ Auth Check", "type": "main", "index": 0}]]},
+    "🔐 Security Check 2": {"main": [[{"node": "❓ Auth Check 2", "type": "main", "index": 0}]]},
+    "❓ Auth Check": {"main": [[{"node": "🐘 Get Analysis", "type": "main", "index": 0}], [{"node": "❌ Error Response", "type": "main", "index": 0}]]},
+    "❓ Auth Check 2": {"main": [[{"node": "🐘 Get All Analysis", "type": "main", "index": 0}], [{"node": "❌ Error Response 2", "type": "main", "index": 0}]]},
+    "🐘 Get Analysis": {"main": [[{"node": "📋 Format Analysis", "type": "main", "index": 0}]]},
+    "🐘 Get All Analysis": {"main": [[{"node": "📋 Format All", "type": "main", "index": 0}]]},
+    "📋 Format Analysis": {"main": [[{"node": "✅ Respond Analysis", "type": "main", "index": 0}]]},
+    "📋 Format All": {"main": [[{"node": "✅ Respond All", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "production-en-v1",
+  "meta": {"templateCredsSetupCompleted": true, "instanceId": "production-template"},
+  "id": "email-analysis-retrieval-en",
+  "tags": []
+}

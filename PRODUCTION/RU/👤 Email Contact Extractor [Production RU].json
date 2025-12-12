@@ -1,0 +1,309 @@
+{
+  "name": "👤 Email Contact Extractor [Production RU]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 👤 Извлечение контактов из Email\n\n### 📋 Описание\nИзвлечение контактных данных из email-переписки с помощью AI.\n\n---\n\n### ⚙️ CONFIG\n\n| Параметр | Описание |\n|----------|----------|\n| `api_key` | API ключ для аутентификации |\n| `rate_limit_window_ms` | Окно rate limiting (мс) |\n| `rate_limit_max_requests` | Макс. запросов в окне |\n| `table_gmail_conversations` | Таблица переписок |\n| `table_email_contact_data` | Таблица контактов |\n\n---\n\n### 🔗 Эндпоинты\n\n| Метод | Путь | Описание |\n|-------|------|----------|\n| POST | `/extract-email-contact` | Извлечь контакты |\n| GET | `/get-email-contact-data` | Получить контакты |\n\n---\n\n### 📥 Параметры POST\n\n- `email` - email адрес\n- `type` - тип (single/batch)\n\n---\n\n### 🤖 AI Модель\n\nИспользуется Google Gemini для извлечения:\n- Имени\n- Телефона\n- Компании\n- Должности\n- Доп. контактов (Telegram, WhatsApp)",
+        "height": 620,
+        "width": 380,
+        "color": 5
+      },
+      "id": "sticky-note-main",
+      "name": "📝 Инструкция",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-1400, -200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-conv", "name": "table_gmail_conversations", "value": "gmail_conversations", "type": "string"},
+            {"id": "table-contact", "name": "table_email_contact_data", "value": "email_contact_data", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-extract",
+      "name": "⚙️ CONFIG: Extract",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-784, -192]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-conv", "name": "table_gmail_conversations", "value": "gmail_conversations", "type": "string"},
+            {"id": "table-contact", "name": "table_email_contact_data", "value": "email_contact_data", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-get",
+      "name": "⚙️ CONFIG: Get",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-784, 320]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "extract-email-contact",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "webhook-extract",
+      "name": "🌐 Webhook: Extract",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-992, -192],
+      "webhookId": "extract-email-contact-webhook"
+    },
+    {
+      "parameters": {
+        "path": "get-email-contact-data",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "webhook-get",
+      "name": "🌐 Webhook: Get Contacts",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-992, 320],
+      "webhookId": "get-email-contact-data-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('⚙️ CONFIG: Extract').first().json;\nconst inputData = $('🌐 Webhook: Extract').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > config.rate_limit_window_ms) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > config.rate_limit_max_requests) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Слишком много запросов', status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey || providedKey !== config.api_key) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Неверный API ключ', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-576, -192],
+      "id": "security-extract",
+      "name": "🔐 Security Check"
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('⚙️ CONFIG: Get').first().json;\nconst inputData = $('🌐 Webhook: Get Contacts').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > config.rate_limit_window_ms) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > config.rate_limit_max_requests) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Слишком много запросов', status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey || providedKey !== config.api_key) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Неверный API ключ', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-576, 320],
+      "id": "security-get",
+      "name": "🔐 Security Check 2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth-check", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-368, -192],
+      "id": "auth-check-1",
+      "name": "❓ Auth Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth-check", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-368, 320],
+      "id": "auth-check-2",
+      "name": "❓ Auth Check 2"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {"responseCode": "={{ $json.error.status }}"}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-160, -96],
+      "id": "error-response-1",
+      "name": "❌ Error Response"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {"responseCode": "={{ $json.error.status }}"}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-160, 416],
+      "id": "error-response-2",
+      "name": "❌ Error Response 2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const requestData = items[0].json.body || items[0].json;\nreturn [{\n    json: {\n        email: requestData.email,\n        threadId: requestData.threadId,\n        extractionType: requestData.type || 'single'\n    }\n}];"
+      },
+      "id": "process-request",
+      "name": "📋 Process Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-160, -288]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n    email,\n    thread_id,\n    subject,\n    messages,\n    language,\n    message_count\nFROM {{ $('⚙️ CONFIG: Extract').first().json.table_gmail_conversations }}\nWHERE email = '{{ $json.email }}'\nORDER BY updated_at DESC\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "get-email-dialog",
+      "name": "🐘 Get Email Dialog",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [48, -288],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const dialogs = items;\nconst dialogsForExtraction = [];\n\ndialogs.forEach(item => {\n    const data = item.json;\n    let messages = [];\n    try {\n        messages = typeof data.messages === 'string' ? JSON.parse(data.messages) : data.messages || [];\n    } catch (e) { messages = []; }\n    \n    const conversation = messages.map(msg => \n        `${msg.type === 'incoming' ? 'Клиент' : 'Компания'}: ${msg.content}`\n    ).join('\\n');\n    \n    dialogsForExtraction.push({\n        email: data.email,\n        threadId: data.thread_id,\n        subject: data.subject,\n        language: data.language,\n        conversation: conversation\n    });\n});\n\nreturn [{ json: { dialogs: dialogsForExtraction, totalDialogs: dialogsForExtraction.length } }];"
+      },
+      "id": "format-for-ai",
+      "name": "📋 Format for AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [256, -288]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Количество диалогов: {{ $json.totalDialogs }}\n\nEmail диалоги для анализа:\n{{ $json.dialogs.map((d, i) => `\\n--- Email диалог ${i+1} (Email: ${d.email}) ---\\nТема: ${d.subject}\\nЯзык: ${d.language}\\n${d.conversation}`).join('\\n\\n') }}",
+        "options": {
+          "systemMessage": "#Роль: Вы — специалист по извлечению контактных данных из email-переписки.\n\n#Задача: Проанализировать email-диалоги и извлечь все контактные данные клиентов.\n\n#Инструкции:\n1. Имя клиента - из подписи или представления\n2. Телефон - из подписи или текста\n3. Компания и должность - из подписи\n4. Дополнительные контакты - LinkedIn, Telegram, WhatsApp\n\n#Формат ответа - чистый JSON:\n{\n  \"contacts\": [\n    {\n      \"email\": \"email из заголовка\",\n      \"name\": \"полное имя или null\",\n      \"firstName\": \"имя или null\",\n      \"lastName\": \"фамилия или null\",\n      \"phone\": \"телефон или null\",\n      \"company\": \"компания или null\",\n      \"position\": \"должность или null\",\n      \"location\": \"город/страна или null\",\n      \"otherContacts\": {\"whatsapp\": null, \"telegram\": null},\n      \"extractedFrom\": \"откуда взяты данные\",\n      \"confidence\": число от 0 до 100\n    }\n  ]\n}\n\nВажно: Возвращайте ТОЛЬКО валидный JSON!"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [464, -288],
+      "id": "ai-agent",
+      "name": "🤖 Contact Extractor AI"
+    },
+    {
+      "parameters": {"options": {"temperature": 0.3}},
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [464, -96],
+      "id": "gemini-model",
+      "name": "🧠 Google Gemini",
+      "credentials": {"googlePalmApi": {"id": "YOUR_GEMINI_CREDENTIAL_ID", "name": "Google Gemini Api"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiResponse = items[0].json.output || items[0].json;\nlet contactsData;\ntry {\n    if (typeof aiResponse === 'string') {\n        let cleanJson = aiResponse;\n        const firstBrace = cleanJson.indexOf('{');\n        if (firstBrace > 0) cleanJson = cleanJson.substring(firstBrace);\n        const lastBrace = cleanJson.lastIndexOf('}');\n        if (lastBrace !== -1) cleanJson = cleanJson.substring(0, lastBrace + 1);\n        contactsData = JSON.parse(cleanJson.replace(/`/g, ''));\n    } else {\n        contactsData = aiResponse;\n    }\n    if (!contactsData.contacts) throw new Error('Invalid structure');\n} catch (e) {\n    contactsData = { contacts: [] };\n}\nreturn contactsData.contacts.map(contact => ({json: contact}));"
+      },
+      "id": "parse-response",
+      "name": "📋 Parse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [672, -288]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO {{ $('⚙️ CONFIG: Extract').first().json.table_email_contact_data }} (\n    email, full_name, first_name, last_name, phone,\n    company, position, location, other_contacts,\n    extracted_from, confidence_score, last_updated\n) VALUES (\n    '{{ $json.email }}',\n    {{ $json.name ? \"'\" + $json.name.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.firstName ? \"'\" + $json.firstName.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.lastName ? \"'\" + $json.lastName.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.phone ? \"'\" + $json.phone + \"'\" : 'NULL' }},\n    {{ $json.company ? \"'\" + $json.company.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.position ? \"'\" + $json.position.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.location ? \"'\" + $json.location.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.otherContacts ? \"'\" + JSON.stringify($json.otherContacts).replace(/'/g, \"''\") + \"'::jsonb\" : 'NULL' }},\n    '{{ ($json.extractedFrom || 'AI extraction').replace(/'/g, \"''\") }}',\n    {{ $json.confidence || 0 }},\n    CURRENT_TIMESTAMP\n)\nON CONFLICT (email) DO UPDATE SET\n    full_name = COALESCE(EXCLUDED.full_name, {{ $('⚙️ CONFIG: Extract').first().json.table_email_contact_data }}.full_name),\n    phone = COALESCE(EXCLUDED.phone, {{ $('⚙️ CONFIG: Extract').first().json.table_email_contact_data }}.phone),\n    company = COALESCE(EXCLUDED.company, {{ $('⚙️ CONFIG: Extract').first().json.table_email_contact_data }}.company),\n    last_updated = CURRENT_TIMESTAMP\nRETURNING *;",
+        "options": {}
+      },
+      "id": "save-contact",
+      "name": "🐘 Save Contact",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [880, -288],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\"status\": \"success\", \"message\": \"Контакты извлечены\", \"processed\": $items('📋 Parse Response').length} }}",
+        "options": {}
+      },
+      "id": "respond-extract",
+      "name": "✅ Respond Extract",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1088, -288]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n    ecd.*,\n    gc.lead_score,\n    gc.subject,\n    gc.message_count\nFROM {{ $('⚙️ CONFIG: Get').first().json.table_email_contact_data }} ecd\nLEFT JOIN {{ $('⚙️ CONFIG: Get').first().json.table_gmail_conversations }} gc ON ecd.email = gc.email\nWHERE ecd.last_updated >= NOW() - INTERVAL '30 days'\nORDER BY ecd.last_updated DESC;",
+        "options": {}
+      },
+      "id": "get-contacts-db",
+      "name": "🐘 Get Contacts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [-160, 224],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const contacts = {};\nitems.forEach(item => {\n    const data = item.json;\n    contacts[data.email] = {\n        email: data.email,\n        name: data.full_name || `${data.first_name || ''} ${data.last_name || ''}`.trim() || null,\n        phone: data.phone,\n        company: data.company,\n        position: data.position,\n        location: data.location,\n        otherContacts: data.other_contacts,\n        leadScore: data.lead_score || 0,\n        confidence: data.confidence_score,\n        lastUpdated: data.last_updated\n    };\n});\nreturn [{json: {contacts}}];"
+      },
+      "id": "format-contacts",
+      "name": "📋 Format Contacts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [48, 224]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "respond-get",
+      "name": "✅ Respond Get",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [256, 224]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "🌐 Webhook: Extract": {"main": [[{"node": "⚙️ CONFIG: Extract", "type": "main", "index": 0}]]},
+    "🌐 Webhook: Get Contacts": {"main": [[{"node": "⚙️ CONFIG: Get", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Extract": {"main": [[{"node": "🔐 Security Check", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Get": {"main": [[{"node": "🔐 Security Check 2", "type": "main", "index": 0}]]},
+    "🔐 Security Check": {"main": [[{"node": "❓ Auth Check", "type": "main", "index": 0}]]},
+    "🔐 Security Check 2": {"main": [[{"node": "❓ Auth Check 2", "type": "main", "index": 0}]]},
+    "❓ Auth Check": {"main": [[{"node": "📋 Process Request", "type": "main", "index": 0}], [{"node": "❌ Error Response", "type": "main", "index": 0}]]},
+    "❓ Auth Check 2": {"main": [[{"node": "🐘 Get Contacts", "type": "main", "index": 0}], [{"node": "❌ Error Response 2", "type": "main", "index": 0}]]},
+    "📋 Process Request": {"main": [[{"node": "🐘 Get Email Dialog", "type": "main", "index": 0}]]},
+    "🐘 Get Email Dialog": {"main": [[{"node": "📋 Format for AI", "type": "main", "index": 0}]]},
+    "📋 Format for AI": {"main": [[{"node": "🤖 Contact Extractor AI", "type": "main", "index": 0}]]},
+    "🧠 Google Gemini": {"ai_languageModel": [[{"node": "🤖 Contact Extractor AI", "type": "ai_languageModel", "index": 0}]]},
+    "🤖 Contact Extractor AI": {"main": [[{"node": "📋 Parse Response", "type": "main", "index": 0}]]},
+    "📋 Parse Response": {"main": [[{"node": "🐘 Save Contact", "type": "main", "index": 0}]]},
+    "🐘 Save Contact": {"main": [[{"node": "✅ Respond Extract", "type": "main", "index": 0}]]},
+    "🐘 Get Contacts": {"main": [[{"node": "📋 Format Contacts", "type": "main", "index": 0}]]},
+    "📋 Format Contacts": {"main": [[{"node": "✅ Respond Get", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "production-ru-v1",
+  "meta": {"templateCredsSetupCompleted": true, "instanceId": "production-template"},
+  "id": "email-contact-extractor-ru",
+  "tags": []
+}

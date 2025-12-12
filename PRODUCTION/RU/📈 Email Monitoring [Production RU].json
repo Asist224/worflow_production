@@ -1,0 +1,333 @@
+{
+  "name": "📈 Email Monitoring [Production RU]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 📈 Мониторинг Email\n\n### 📋 Описание\nAPI для мониторинга и отслеживания email-переписок.\n\n---\n\n### ⚙️ CONFIG\n\n| Параметр | Описание |\n|----------|----------|\n| `api_key` | API ключ |\n| `rate_limit_window_ms` | Окно rate limiting |\n| `rate_limit_max_requests` | Макс. запросов |\n| `table_email_monitoring` | Таблица мониторинга |\n| `table_email_dialog_analysis` | Таблица анализа |\n| `table_gmail_conversations` | Таблица переписок |\n\n---\n\n### 🔗 Эндпоинты\n\n| Метод | Путь | Описание |\n|-------|------|----------|\n| POST | `/email-monitoring` | Сохранить данные |\n| GET | `/email-monitoring-data` | Получить данные |\n| GET | `/email-dialogs` | Получить диалог |",
+        "height": 500,
+        "width": 380,
+        "color": 5
+      },
+      "id": "sticky-note-main",
+      "name": "📝 Инструкция",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-1300, -300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-mon", "name": "table_email_monitoring", "value": "email_monitoring", "type": "string"},
+            {"id": "table-analysis", "name": "table_email_dialog_analysis", "value": "email_dialog_analysis", "type": "string"},
+            {"id": "table-conv", "name": "table_gmail_conversations", "value": "gmail_conversations", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-save",
+      "name": "⚙️ CONFIG: Save",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-672, -368]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-mon", "name": "table_email_monitoring", "value": "email_monitoring", "type": "string"},
+            {"id": "table-analysis", "name": "table_email_dialog_analysis", "value": "email_dialog_analysis", "type": "string"},
+            {"id": "table-conv", "name": "table_gmail_conversations", "value": "gmail_conversations", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-get",
+      "name": "⚙️ CONFIG: Get Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-672, -96]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-mon", "name": "table_email_monitoring", "value": "email_monitoring", "type": "string"},
+            {"id": "table-analysis", "name": "table_email_dialog_analysis", "value": "email_dialog_analysis", "type": "string"},
+            {"id": "table-conv", "name": "table_gmail_conversations", "value": "gmail_conversations", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-dialog",
+      "name": "⚙️ CONFIG: Get Dialog",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-672, 208]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "email-monitoring",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "webhook-save",
+      "name": "🌐 Webhook: Save",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-880, -368],
+      "webhookId": "email-monitoring-webhook"
+    },
+    {
+      "parameters": {
+        "path": "email-monitoring-data",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "webhook-get",
+      "name": "🌐 Webhook: Get Data",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-880, -96],
+      "webhookId": "get-email-monitoring-webhook"
+    },
+    {
+      "parameters": {
+        "path": "email-dialogs",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "webhook-dialog",
+      "name": "🌐 Webhook: Get Dialog",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-880, 208],
+      "webhookId": "get-email-dialog-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('⚙️ CONFIG: Get Data').first().json;\nconst inputData = $('🌐 Webhook: Get Data').item.json;\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) staticData.rateLimits = {};\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > config.rate_limit_window_ms) delete staticData.rateLimits[ip];\n}\nif (!staticData.rateLimits[clientIP]) staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\nelse {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > config.rate_limit_max_requests)\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Слишком много запросов', status: 429 } } }];\n}\n\nconst providedKey = headers['x-api-key'] || query.apiKey || '';\nif (!providedKey || providedKey !== config.api_key)\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Неверный API ключ', status: 401 } } }];\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-464, -96],
+      "id": "security-get",
+      "name": "🔐 Security Check"
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('⚙️ CONFIG: Get Dialog').first().json;\nconst inputData = $('🌐 Webhook: Get Dialog').item.json;\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) staticData.rateLimits = {};\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > config.rate_limit_window_ms) delete staticData.rateLimits[ip];\n}\nif (!staticData.rateLimits[clientIP]) staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\nelse {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > config.rate_limit_max_requests)\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Слишком много запросов', status: 429 } } }];\n}\n\nconst providedKey = headers['x-api-key'] || query.apiKey || '';\nif (!providedKey || providedKey !== config.api_key)\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Неверный API ключ', status: 401 } } }];\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-464, 208],
+      "id": "security-dialog",
+      "name": "🔐 Security Check 2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-256, -96],
+      "id": "auth-get",
+      "name": "❓ Auth Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-256, 208],
+      "id": "auth-dialog",
+      "name": "❓ Auth Check 2"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {"responseCode": "={{ $json.error.status }}"}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-48, 0],
+      "id": "error-get",
+      "name": "❌ Error"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {"responseCode": "={{ $json.error.status }}"}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-48, 304],
+      "id": "error-dialog",
+      "name": "❌ Error 2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhook = items[0].json;\nconst inputData = webhook.body || webhook;\nconst currentTime = new Date().toISOString();\n\nreturn [{\n  json: {\n    recordId: `email_${inputData.email}_${Date.now()}`,\n    recordTimestamp: currentTime,\n    email: inputData.email,\n    thread_id: inputData.threadId,\n    user_name: inputData.userName || inputData.senderName,\n    timestamp: currentTime,\n    first_contact_time: inputData.firstContactTime || currentTime,\n    last_activity_time: currentTime,\n    event_type: inputData.eventType || 'email_activity',\n    message_count: inputData.messageCount || 0,\n    subject: inputData.subject || '',\n    language: inputData.language || 'ru',\n    lead_score: inputData.leadScore || 0,\n    intent: inputData.intent || 'information',\n    urgency: inputData.urgency || 'medium',\n    status: inputData.status || 'active',\n    last_reply_from: inputData.lastReplyFrom || 'client'\n  }\n}];"
+      },
+      "id": "process-save",
+      "name": "📋 Process Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-464, -368]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO {{ $('⚙️ CONFIG: Save').first().json.table_email_monitoring }} (\n    record_id, record_timestamp, email, thread_id, user_name,\n    timestamp, first_contact_time, last_activity_time,\n    event_type, message_count, subject, language,\n    lead_score, intent, urgency, status, last_reply_from\n) VALUES (\n    '{{ $json.recordId }}', '{{ $json.recordTimestamp }}',\n    '{{ $json.email }}', '{{ $json.thread_id }}', '{{ $json.user_name }}',\n    '{{ $json.timestamp }}', '{{ $json.first_contact_time }}', '{{ $json.last_activity_time }}',\n    '{{ $json.event_type }}', {{ $json.message_count }},\n    '{{ $json.subject.replace(/'/g, \"''\") }}', '{{ $json.language }}',\n    {{ $json.lead_score }}, '{{ $json.intent }}', '{{ $json.urgency }}',\n    '{{ $json.status }}', '{{ $json.last_reply_from }}'\n)\nON CONFLICT (email) DO UPDATE SET\n    thread_id = EXCLUDED.thread_id,\n    user_name = EXCLUDED.user_name,\n    last_activity_time = EXCLUDED.last_activity_time,\n    message_count = EXCLUDED.message_count,\n    subject = EXCLUDED.subject,\n    lead_score = GREATEST({{ $('⚙️ CONFIG: Save').first().json.table_email_monitoring }}.lead_score, EXCLUDED.lead_score),\n    status = EXCLUDED.status,\n    updated_at = NOW()\nRETURNING *;",
+        "options": {}
+      },
+      "id": "save-monitoring",
+      "name": "🐘 Save Monitoring",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [-256, -368],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"status\": \"success\", \"message\": \"Данные сохранены\"}",
+        "options": {}
+      },
+      "id": "respond-save",
+      "name": "✅ Respond Save",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [-48, -368]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH email_stats AS (\n    SELECT \n        em.email, em.user_name,\n        MIN(em.first_contact_time) as first_contact,\n        MAX(em.last_activity_time) as last_activity,\n        MAX(em.message_count) as messages,\n        COALESCE((SELECT (lead_scoring->>'score')::integer FROM {{ $('⚙️ CONFIG: Get Data').first().json.table_email_dialog_analysis }} eda WHERE eda.email = em.email ORDER BY eda.created_at DESC LIMIT 1), 0) as lead_score,\n        COALESCE((SELECT satisfaction_percentage FROM {{ $('⚙️ CONFIG: Get Data').first().json.table_email_dialog_analysis }} eda WHERE eda.email = em.email ORDER BY eda.created_at DESC LIMIT 1), 0) as satisfaction_percentage,\n        FIRST_VALUE(em.subject) OVER (PARTITION BY em.email ORDER BY em.timestamp DESC) as subject,\n        FIRST_VALUE(em.language) OVER (PARTITION BY em.email ORDER BY em.timestamp DESC) as language,\n        FIRST_VALUE(em.status) OVER (PARTITION BY em.email ORDER BY em.timestamp DESC) as status\n    FROM {{ $('⚙️ CONFIG: Get Data').first().json.table_email_monitoring }} em\n    WHERE em.last_activity_time >= NOW() - INTERVAL '30 days' AND em.email IS NOT NULL\n    GROUP BY em.email, em.user_name, em.timestamp, em.subject, em.language, em.status\n)\nSELECT DISTINCT ON (email) * FROM email_stats ORDER BY email, last_activity DESC;",
+        "options": {}
+      },
+      "id": "get-data-db",
+      "name": "🐘 Get Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [-48, -192],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const formattedData = items.map(item => {\n    const data = item.json;\n    const leadScore = parseInt(data.lead_score) || 0;\n    const leadTemperature = leadScore >= 80 ? 'hot' : leadScore >= 50 ? 'warm' : 'cold';\n    \n    return {\n        email: data.email,\n        userName: data.user_name || 'Неизвестно',\n        subject: data.subject || 'Без темы',\n        firstContact: data.first_contact,\n        lastActivity: data.last_activity,\n        messageCount: parseInt(data.messages) || 0,\n        leadScore: leadScore,\n        satisfactionPercentage: parseInt(data.satisfaction_percentage) || 0,\n        language: data.language || 'ru',\n        status: data.status || 'active',\n        leadTemperature: leadTemperature,\n        isHotLead: leadTemperature === 'hot'\n    };\n});\n\nreturn [{json: {data: formattedData, totalCount: formattedData.length, timestamp: new Date().toISOString()}}];"
+      },
+      "id": "format-data",
+      "name": "📋 Format Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [160, -192]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "respond-data",
+      "name": "✅ Respond Data",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [368, -192]
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhookData = items[0].json;\nconst email = webhookData.query?.email;\nconst threadId = webhookData.query?.thread_id;\n\nif (!email && !threadId) {\n    throw new Error('email or thread_id parameter is required');\n}\n\nreturn [{json: {email: email, thread_id: threadId}}];"
+      },
+      "id": "process-dialog-req",
+      "name": "📋 Process Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-48, 112]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT email, thread_id, subject, messages, status, language, message_count, created_at, updated_at\nFROM {{ $('⚙️ CONFIG: Get Dialog').first().json.table_gmail_conversations }}\nWHERE {{ $json.email ? \"email = '\" + $json.email + \"'\" : \"1=1\" }}\n    {{ $json.thread_id ? \"AND thread_id = '\" + $json.thread_id + \"'\" : \"\" }}\nORDER BY updated_at DESC LIMIT 1;",
+        "options": {}
+      },
+      "id": "get-dialog-db",
+      "name": "🐘 Get Dialog",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [160, 112],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "if (!items || items.length === 0 || !items[0].json) {\n    return [{json: {dialogs: [], message: \"Нет сообщений\"}}];\n}\n\nconst conversation = items[0].json;\nlet messages = [];\ntry {\n    messages = typeof conversation.messages === 'string' ? JSON.parse(conversation.messages) : conversation.messages;\n} catch (e) { messages = []; }\n\nconst formattedDialogs = messages.map((msg, index) => ({\n    id: `${conversation.thread_id}_${index}`,\n    email: conversation.email,\n    thread_id: conversation.thread_id,\n    message_type: msg.type === 'incoming' ? 'user' : 'bot',\n    message_text: msg.content || '',\n    timestamp: msg.date || conversation.created_at,\n    language: conversation.language || 'unknown',\n    subject: conversation.subject\n}));\n\nreturn [{json: {dialogs: formattedDialogs}}];"
+      },
+      "id": "format-dialog",
+      "name": "📋 Format Dialog",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [368, 112]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "respond-dialog",
+      "name": "✅ Respond Dialog",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [576, 112]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "🌐 Webhook: Save": {"main": [[{"node": "⚙️ CONFIG: Save", "type": "main", "index": 0}]]},
+    "🌐 Webhook: Get Data": {"main": [[{"node": "⚙️ CONFIG: Get Data", "type": "main", "index": 0}]]},
+    "🌐 Webhook: Get Dialog": {"main": [[{"node": "⚙️ CONFIG: Get Dialog", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Save": {"main": [[{"node": "📋 Process Data", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Get Data": {"main": [[{"node": "🔐 Security Check", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Get Dialog": {"main": [[{"node": "🔐 Security Check 2", "type": "main", "index": 0}]]},
+    "📋 Process Data": {"main": [[{"node": "🐘 Save Monitoring", "type": "main", "index": 0}]]},
+    "🐘 Save Monitoring": {"main": [[{"node": "✅ Respond Save", "type": "main", "index": 0}]]},
+    "🔐 Security Check": {"main": [[{"node": "❓ Auth Check", "type": "main", "index": 0}]]},
+    "🔐 Security Check 2": {"main": [[{"node": "❓ Auth Check 2", "type": "main", "index": 0}]]},
+    "❓ Auth Check": {"main": [[{"node": "🐘 Get Data", "type": "main", "index": 0}], [{"node": "❌ Error", "type": "main", "index": 0}]]},
+    "❓ Auth Check 2": {"main": [[{"node": "📋 Process Request", "type": "main", "index": 0}], [{"node": "❌ Error 2", "type": "main", "index": 0}]]},
+    "🐘 Get Data": {"main": [[{"node": "📋 Format Data", "type": "main", "index": 0}]]},
+    "📋 Format Data": {"main": [[{"node": "✅ Respond Data", "type": "main", "index": 0}]]},
+    "📋 Process Request": {"main": [[{"node": "🐘 Get Dialog", "type": "main", "index": 0}]]},
+    "🐘 Get Dialog": {"main": [[{"node": "📋 Format Dialog", "type": "main", "index": 0}]]},
+    "📋 Format Dialog": {"main": [[{"node": "✅ Respond Dialog", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "production-ru-v1",
+  "meta": {"templateCredsSetupCompleted": true, "instanceId": "production-template"},
+  "id": "email-monitoring-ru",
+  "tags": []
+}
