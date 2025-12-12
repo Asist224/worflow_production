@@ -783,70 +783,6 @@
     },
     {
       "parameters": {
-        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 SECURITY CHECK: API KEY + RATE LIMITING\n// Настройки берутся из узла CONFIG\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG 6').item.json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -40,
-        1520
-      ],
-      "id": "security-check-6",
-      "name": "🔐 Security Check 6"
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "auth-condition",
-              "leftValue": "={{ $json.authorized }}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        160,
-        1520
-      ],
-      "id": "auth-check-6",
-      "name": "❓ Auth OK? 6"
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json.error }}",
-        "options": {
-          "responseCode": "={{ $json.error.status }}"
-        }
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        360,
-        1680
-      ],
-      "id": "error-response-6",
-      "name": "❌ Error Response 6"
-    },
-    {
-      "parameters": {
         "operation": "executeQuery",
         "query": "-- ═══════════════════════════════════════════════════════════════\n-- 🔢 Получение реального количества сообщений\n-- Таблицы: {{ $('⚙️ CONFIG 6').item.json.table_monitoring }},\n--          {{ $('⚙️ CONFIG 6').item.json.table_chat_ru }},\n--          {{ $('⚙️ CONFIG 6').item.json.table_chat_en }}\n-- ═══════════════════════════════════════════════════════════════\n\nWITH message_counts AS (\n    SELECT \n        session_id,\n        COUNT(*) as real_messages\n    FROM (\n        SELECT session_id FROM {{ $('⚙️ CONFIG 6').item.json.table_chat_ru }}\n        UNION ALL\n        SELECT session_id FROM {{ $('⚙️ CONFIG 6').item.json.table_chat_en }}\n    ) all_messages\n    GROUP BY session_id\n)\nSELECT \n    wm.session_id,\n    COALESCE(mc.real_messages, 0) as message_count\nFROM {{ $('⚙️ CONFIG 6').item.json.table_monitoring }} wm\nLEFT JOIN message_counts mc ON wm.session_id = mc.session_id\nWHERE wm.session_id IN (\n    SELECT DISTINCT session_id \n    FROM {{ $('⚙️ CONFIG 6').item.json.table_monitoring }} \n    WHERE last_activity_time > NOW() - INTERVAL '24 hours'\n);",
         "options": {}
@@ -856,8 +792,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        360,
-        1504
+        -40,
+        1520
       ],
       "credentials": {
         "postgres": {
@@ -877,8 +813,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        560,
-        1504
+        160,
+        1520
       ]
     }
   ],
@@ -1264,36 +1200,7 @@
       "main": [
         [
           {
-            "node": "🔐 Security Check 6",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "🔐 Security Check 6": {
-      "main": [
-        [
-          {
-            "node": "❓ Auth OK? 6",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "❓ Auth OK? 6": {
-      "main": [
-        [
-          {
             "node": "🐘 Get Message Count",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "❌ Error Response 6",
             "type": "main",
             "index": 0
           }
