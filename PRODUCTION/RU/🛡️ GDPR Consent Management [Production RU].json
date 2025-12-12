@@ -1,0 +1,404 @@
+{
+  "name": "🛡️ GDPR Consent Management [Production RU]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🛡️ GDPR Consent Management\n\n### 📋 Описание\nУправление согласиями GDPR: сохранение, отзыв, экспорт данных.\n\n---\n\n### ⚙️ CONFIG\n\n| Параметр | Описание |\n|----------|----------|\n| `api_key` | API ключ |\n| `table_gdpr_consents` | Таблица согласий |\n| `table_gdpr_audit_log` | Таблица аудит лога |\n| `table_prechat_submissions` | Таблица пречат форм |\n| `table_chat_history_ru` | Таблица чатов RU |\n| `table_chat_history_en` | Таблица чатов EN |\n\n---\n\n### 📥 Эндпоинты\n\n**Запись согласия:**\n```json\nPOST /webhook/gdpr-consent?apiKey=KEY\n{\"sessionId\": \"xxx\", \"consentType\": \"full\"}\n```\n\n**Доступ к данным (Art. 15):**\n```json\nPOST /webhook/gdpr-data-access?apiKey=KEY\n{\"sessionId\": \"xxx\"}\n```\n\n**Отзыв согласия (Art. 7):**\n```json\nPOST /webhook/consent-revoke?apiKey=KEY\n{\"sessionId\": \"xxx\", \"reason\": \"...\"}\n```\n\n**Удаление данных (Art. 17):**\n```json\nPOST /webhook/gdpr-delete?apiKey=KEY\n{\"sessionId\": \"xxx\"}\n```",
+        "height": 720,
+        "width": 400,
+        "color": 5
+      },
+      "id": "sticky-note-main",
+      "name": "📝 Инструкция",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-960, -600]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-consents", "name": "table_gdpr_consents", "value": "gdpr_consents", "type": "string"},
+            {"id": "table-audit", "name": "table_gdpr_audit_log", "value": "gdpr_audit_log", "type": "string"},
+            {"id": "table-prechat", "name": "table_prechat_submissions", "value": "prechat_submissions", "type": "string"},
+            {"id": "table-history-ru", "name": "table_chat_history_ru", "value": "n8n_chat_histories_ru", "type": "string"},
+            {"id": "table-history-en", "name": "table_chat_history_en", "value": "n8n_chat_histories_en", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-consent",
+      "name": "⚙️ CONFIG: Consent",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-336, -400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-consents", "name": "table_gdpr_consents", "value": "gdpr_consents", "type": "string"},
+            {"id": "table-audit", "name": "table_gdpr_audit_log", "value": "gdpr_audit_log", "type": "string"},
+            {"id": "table-prechat", "name": "table_prechat_submissions", "value": "prechat_submissions", "type": "string"},
+            {"id": "table-history-ru", "name": "table_chat_history_ru", "value": "n8n_chat_histories_ru", "type": "string"},
+            {"id": "table-history-en", "name": "table_chat_history_en", "value": "n8n_chat_histories_en", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-access",
+      "name": "⚙️ CONFIG: Access",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-336, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-consents", "name": "table_gdpr_consents", "value": "gdpr_consents", "type": "string"},
+            {"id": "table-audit", "name": "table_gdpr_audit_log", "value": "gdpr_audit_log", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-revoke",
+      "name": "⚙️ CONFIG: Revoke",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-336, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-consents", "name": "table_gdpr_consents", "value": "gdpr_consents", "type": "string"},
+            {"id": "table-audit", "name": "table_gdpr_audit_log", "value": "gdpr_audit_log", "type": "string"},
+            {"id": "table-prechat", "name": "table_prechat_submissions", "value": "prechat_submissions", "type": "string"},
+            {"id": "table-history-ru", "name": "table_chat_history_ru", "value": "n8n_chat_histories_ru", "type": "string"},
+            {"id": "table-history-en", "name": "table_chat_history_en", "value": "n8n_chat_histories_en", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-delete",
+      "name": "⚙️ CONFIG: Delete",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-336, 800]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gdpr-consent",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "webhook-consent",
+      "name": "🌐 Webhook: Consent",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-528, -400],
+      "webhookId": "gdpr-consent"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gdpr-data-access",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "webhook-access",
+      "name": "🌐 Webhook: Data Access",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-528, 0],
+      "webhookId": "gdpr-data-access"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "consent-revoke",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "webhook-revoke",
+      "name": "🌐 Webhook: Revoke",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-528, 400],
+      "webhookId": "consent-revoke"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gdpr-delete",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "webhook-delete",
+      "name": "🌐 Webhook: Delete",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-528, 800],
+      "webhookId": "gdpr-delete"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Проверка безопасности\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Consent').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Consent').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) { delete staticData.rateLimits[ip]; }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }]; }\nif (providedKey !== API_KEY) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }]; }\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-144, -400],
+      "id": "sec-consent",
+      "name": "🔐 Security Check (Consent)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Проверка безопасности\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Access').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Data Access').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) { delete staticData.rateLimits[ip]; }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }]; }\nif (providedKey !== API_KEY) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }]; }\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-144, 0],
+      "id": "sec-access",
+      "name": "🔐 Security Check (Access)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Проверка безопасности\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Revoke').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Revoke').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) { delete staticData.rateLimits[ip]; }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }]; }\nif (providedKey !== API_KEY) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }]; }\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-144, 400],
+      "id": "sec-revoke",
+      "name": "🔐 Security Check (Revoke)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Проверка безопасности\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Delete').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Delete').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) { delete staticData.rateLimits[ip]; }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }]; }\nif (providedKey !== API_KEY) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }]; }\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-144, 800],
+      "id": "sec-delete",
+      "name": "🔐 Security Check (Delete)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [48, -400],
+      "id": "auth-consent",
+      "name": "❓ Auth (Consent)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [48, 0],
+      "id": "auth-access",
+      "name": "❓ Auth (Access)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [48, 400],
+      "id": "auth-revoke",
+      "name": "❓ Auth (Revoke)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [48, 800],
+      "id": "auth-delete",
+      "name": "❓ Auth (Delete)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO {{ $('⚙️ CONFIG: Consent').first().json.table_gdpr_consents }} (\n  session_id, consent_given, consent_type, is_active, domain, ip_address, user_agent\n) VALUES (\n  '{{ $json.body.sessionId }}',\n  true,\n  '{{ $json.body.consentType || 'full' }}',\n  true,\n  '{{ $json.headers.origin || '' }}',\n  '{{ $json.headers['x-forwarded-for'] || $json.headers['x-real-ip'] || '' }}',\n  '{{ ($json.headers['user-agent'] || '').replace(/'/g, \"''\") }}'\n)\nON CONFLICT (session_id, consent_type) DO UPDATE SET\n  consent_given = true,\n  is_active = true,\n  updated_at = NOW()\nRETURNING *;",
+        "options": {}
+      },
+      "id": "save-consent",
+      "name": "🐘 Save Consent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [240, -400],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ {success: true, message: 'Consent recorded', sessionId: $json.session_id} }}", "options": {}},
+      "id": "resp-consent",
+      "name": "✅ Respond Consent",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [432, -400]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json.error }}", "options": {"responseCode": "={{ $json.error.status }}"}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [240, -240],
+      "id": "err-consent",
+      "name": "❌ Error (Consent)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM {{ $('⚙️ CONFIG: Access').first().json.table_gdpr_consents }} WHERE session_id = '{{ $json.body.sessionId }}' ORDER BY created_at DESC LIMIT 1",
+        "options": {}
+      },
+      "id": "get-data",
+      "name": "🐘 Get User Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [240, 0],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ {success: true, data: $json, gdprArticle: 'Art. 15 - Right of Access'} }}", "options": {"responseHeaders": {"entries": [{"name": "X-GDPR-Request", "value": "data-access"}]}}},
+      "id": "resp-access",
+      "name": "✅ Respond Access",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [432, 0]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json.error }}", "options": {"responseCode": "={{ $json.error.status }}"}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [240, 160],
+      "id": "err-access",
+      "name": "❌ Error (Access)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE {{ $('⚙️ CONFIG: Revoke').first().json.table_gdpr_consents }}\nSET is_active = false, revoked_at = NOW(), revoke_reason = '{{ ($json.body.reason || 'User request').replace(/'/g, \"''\") }}'\nWHERE session_id = '{{ $json.body.sessionId }}'\nRETURNING *;",
+        "options": {}
+      },
+      "id": "revoke-consent",
+      "name": "🐘 Revoke Consent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [240, 400],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ {success: true, message: 'Consent revoked', gdprArticle: 'Art. 7 - Right to Withdraw Consent'} }}", "options": {}},
+      "id": "resp-revoke",
+      "name": "✅ Respond Revoke",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [432, 400]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json.error }}", "options": {"responseCode": "={{ $json.error.status }}"}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [240, 560],
+      "id": "err-revoke",
+      "name": "❌ Error (Revoke)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM {{ $('⚙️ CONFIG: Delete').first().json.table_gdpr_consents }} WHERE session_id = '{{ $json.body.sessionId }}';\nDELETE FROM {{ $('⚙️ CONFIG: Delete').first().json.table_prechat_submissions }} WHERE session_id = '{{ $json.body.sessionId }}';\nDELETE FROM {{ $('⚙️ CONFIG: Delete').first().json.table_chat_history_ru }} WHERE session_id = '{{ $json.body.sessionId }}';\nDELETE FROM {{ $('⚙️ CONFIG: Delete').first().json.table_chat_history_en }} WHERE session_id = '{{ $json.body.sessionId }}';",
+        "options": {}
+      },
+      "id": "delete-data",
+      "name": "🐘 Delete User Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [240, 800],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ {success: true, message: 'Data deleted', gdprArticle: 'Art. 17 - Right to Erasure'} }}", "options": {}},
+      "id": "resp-delete",
+      "name": "✅ Respond Delete",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [432, 800]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json.error }}", "options": {"responseCode": "={{ $json.error.status }}"}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [240, 960],
+      "id": "err-delete",
+      "name": "❌ Error (Delete)"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "🌐 Webhook: Consent": {"main": [[{"node": "⚙️ CONFIG: Consent", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Consent": {"main": [[{"node": "🔐 Security Check (Consent)", "type": "main", "index": 0}]]},
+    "🔐 Security Check (Consent)": {"main": [[{"node": "❓ Auth (Consent)", "type": "main", "index": 0}]]},
+    "❓ Auth (Consent)": {"main": [[{"node": "🐘 Save Consent", "type": "main", "index": 0}], [{"node": "❌ Error (Consent)", "type": "main", "index": 0}]]},
+    "🐘 Save Consent": {"main": [[{"node": "✅ Respond Consent", "type": "main", "index": 0}]]},
+    "🌐 Webhook: Data Access": {"main": [[{"node": "⚙️ CONFIG: Access", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Access": {"main": [[{"node": "🔐 Security Check (Access)", "type": "main", "index": 0}]]},
+    "🔐 Security Check (Access)": {"main": [[{"node": "❓ Auth (Access)", "type": "main", "index": 0}]]},
+    "❓ Auth (Access)": {"main": [[{"node": "🐘 Get User Data", "type": "main", "index": 0}], [{"node": "❌ Error (Access)", "type": "main", "index": 0}]]},
+    "🐘 Get User Data": {"main": [[{"node": "✅ Respond Access", "type": "main", "index": 0}]]},
+    "🌐 Webhook: Revoke": {"main": [[{"node": "⚙️ CONFIG: Revoke", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Revoke": {"main": [[{"node": "🔐 Security Check (Revoke)", "type": "main", "index": 0}]]},
+    "🔐 Security Check (Revoke)": {"main": [[{"node": "❓ Auth (Revoke)", "type": "main", "index": 0}]]},
+    "❓ Auth (Revoke)": {"main": [[{"node": "🐘 Revoke Consent", "type": "main", "index": 0}], [{"node": "❌ Error (Revoke)", "type": "main", "index": 0}]]},
+    "🐘 Revoke Consent": {"main": [[{"node": "✅ Respond Revoke", "type": "main", "index": 0}]]},
+    "🌐 Webhook: Delete": {"main": [[{"node": "⚙️ CONFIG: Delete", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Delete": {"main": [[{"node": "🔐 Security Check (Delete)", "type": "main", "index": 0}]]},
+    "🔐 Security Check (Delete)": {"main": [[{"node": "❓ Auth (Delete)", "type": "main", "index": 0}]]},
+    "❓ Auth (Delete)": {"main": [[{"node": "🐘 Delete User Data", "type": "main", "index": 0}], [{"node": "❌ Error (Delete)", "type": "main", "index": 0}]]},
+    "🐘 Delete User Data": {"main": [[{"node": "✅ Respond Delete", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "production-ru-v1",
+  "meta": {"templateCredsSetupCompleted": true, "instanceId": "production-template"},
+  "id": "gdpr-consent-management-ru",
+  "tags": []
+}
