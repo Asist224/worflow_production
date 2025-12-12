@@ -1,0 +1,419 @@
+{
+  "name": "🧹 Database Cleanup [Production RU]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🧹 Database Cleanup\n\n### 📋 Описание\nАвтоматическая очистка устаревших данных из базы данных.\n\n**Функции:**\n- Автоочистка по расписанию (ежедневно в 3:00)\n- API для получения настроек\n- API для обновления настроек\n\n---\n\n### ⚙️ Настройка CONFIG\n\n| Параметр | Описание |\n|----------|----------|\n| `api_key` | API ключ для аутентификации |\n| `rate_limit_window_ms` | Окно rate limiting (мс) |\n| `rate_limit_max_requests` | Макс. запросов в окне |\n| `table_webchat_monitoring` | Таблица мониторинга |\n| `table_dialog_analysis` | Таблица анализа |\n| `table_chat_histories_ru` | История чата RU |\n| `table_chat_histories_en` | История чата EN |\n| `table_user_contact_data` | Контактные данные |\n| `table_cleanup_settings` | Настройки очистки |\n| `table_cleanup_logs` | Логи очистки |\n\n---\n\n### 📥 API Эндпоинты\n\n**Получить настройки:**\n```\nGET /webhook/cleanup-settings?apiKey=YOUR_KEY\n```\n\n**Обновить настройки:**\n```json\nPOST /webhook/update-cleanup-settings?apiKey=YOUR_KEY\n{\n  \"monitoringRetention\": 30,\n  \"analysisRetention\": 90,\n  \"dialogsRetention\": 60,\n  \"contactsRetention\": 180\n}\n```",
+        "height": 680,
+        "width": 420,
+        "color": 5
+      },
+      "id": "sticky-note-main",
+      "name": "📝 Инструкция",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-1200, -400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-monitoring", "name": "table_webchat_monitoring", "value": "webchat_monitoring", "type": "string"},
+            {"id": "table-analysis", "name": "table_dialog_analysis", "value": "dialog_analysis", "type": "string"},
+            {"id": "table-chat-ru", "name": "table_chat_histories_ru", "value": "n8n_chat_histories_ru", "type": "string"},
+            {"id": "table-chat-en", "name": "table_chat_histories_en", "value": "n8n_chat_histories_en", "type": "string"},
+            {"id": "table-contacts", "name": "table_user_contact_data", "value": "user_contact_data", "type": "string"},
+            {"id": "table-settings", "name": "table_cleanup_settings", "value": "cleanup_settings", "type": "string"},
+            {"id": "table-logs", "name": "table_cleanup_logs", "value": "cleanup_logs", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-cleanup",
+      "name": "⚙️ CONFIG: Cleanup",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-656, -192]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-settings", "name": "table_cleanup_settings", "value": "cleanup_settings", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-get-settings",
+      "name": "⚙️ CONFIG: Get Settings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-720, 176]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-settings", "name": "table_cleanup_settings", "value": "cleanup_settings", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-update-settings",
+      "name": "⚙️ CONFIG: Update Settings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-688, 512]
+    },
+    {
+      "parameters": {
+        "rule": {"interval": [{"field": "cronExpression", "expression": "0 3 * * *"}]}
+      },
+      "id": "9570223c-d6a0-4c96-bc7c-cae140da6ecc",
+      "name": "⏰ Daily Cleanup 3 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [-848, -192]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 📊 Получение статистики перед очисткой\n-- ═══════════════════════════════════════════════════════════════\n\nWITH settings AS (\n    SELECT * FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_cleanup_settings }} LIMIT 1\n),\nsessions_to_delete_ru AS (\n    SELECT session_id FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_chat_histories_ru }}\n    GROUP BY session_id HAVING MAX(created_at) < NOW() - ((SELECT COALESCE(dialogs_retention_days, 60) FROM settings) || ' days')::INTERVAL\n),\nsessions_to_delete_en AS (\n    SELECT session_id FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_chat_histories_en }}\n    GROUP BY session_id HAVING MAX(created_at) < NOW() - ((SELECT COALESCE(dialogs_retention_days, 60) FROM settings) || ' days')::INTERVAL\n),\nmonitoring_sessions_to_delete AS (\n    SELECT session_id FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_webchat_monitoring }}\n    GROUP BY session_id HAVING MAX(last_activity_time) < NOW() - ((SELECT COALESCE(monitoring_retention_days, 30) FROM settings) || ' days')::INTERVAL\n)\nSELECT 'webchat_monitoring' as table_name,\n    (SELECT COUNT(*) FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_webchat_monitoring }}) as total_records,\n    (SELECT COUNT(*) FROM monitoring_sessions_to_delete) as records_to_delete\nUNION ALL\nSELECT 'dialog_analysis' as table_name,\n    (SELECT COUNT(*) FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_dialog_analysis }}) as total_records,\n    (SELECT COUNT(*) FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_dialog_analysis }} WHERE created_at < NOW() - ((SELECT COALESCE(analysis_retention_days, 90) FROM settings) || ' days')::INTERVAL) as records_to_delete\nUNION ALL\nSELECT 'n8n_chat_histories_ru' as table_name,\n    (SELECT COUNT(DISTINCT session_id) FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_chat_histories_ru }}) as total_records,\n    (SELECT COUNT(*) FROM sessions_to_delete_ru) as records_to_delete\nUNION ALL\nSELECT 'n8n_chat_histories_en' as table_name,\n    (SELECT COUNT(DISTINCT session_id) FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_chat_histories_en }}) as total_records,\n    (SELECT COUNT(*) FROM sessions_to_delete_en) as records_to_delete\nUNION ALL\nSELECT 'user_contact_data' as table_name,\n    (SELECT COUNT(*) FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_user_contact_data }}) as total_records,\n    (SELECT COUNT(*) FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_user_contact_data }} WHERE last_updated < NOW() - ((SELECT COALESCE(contacts_retention_days, 180) FROM settings) || ' days')::INTERVAL) as records_to_delete;",
+        "options": {}
+      },
+      "id": "003c3b5e-653e-4276-9983-99bf0bd30e09",
+      "name": "🐘 Get Statistics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [-464, -192],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📊 Обработка статистики очистки\n// ═══════════════════════════════════════════════════════════════\n\nconst stats = items.map(item => item.json);\nlet totalToDelete = 0;\nstats.forEach(stat => { totalToDelete += parseInt(stat.records_to_delete); });\n\nreturn [{\n    json: {\n        stats: stats,\n        totalToDelete: totalToDelete,\n        timestamp: new Date().toISOString()\n    }\n}];"
+      },
+      "id": "de817893-d68a-44a7-bc41-b8425f319efc",
+      "name": "📊 Log Statistics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-288, -192]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1},
+          "conditions": [{"leftValue": "={{ $json.totalToDelete }}", "rightValue": 0, "operator": {"type": "number", "operation": "gt"}, "id": "condition-check"}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "63de060c-aa9b-4d31-9a4a-e23366c7024d",
+      "name": "❓ Check if Needed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-128, -192]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// ⏭️ Нет данных для очистки\n// ═══════════════════════════════════════════════════════════════\n\nreturn [{\n    json: {\n        status: 'skipped',\n        message: 'No records to cleanup',\n        timestamp: new Date().toISOString()\n    }\n}];"
+      },
+      "id": "9084f4af-1ec3-496f-9755-d6d979eb2352",
+      "name": "⏭️ No Cleanup Needed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [112, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_cleanup_settings }} LIMIT 1;",
+        "options": {}
+      },
+      "id": "e2201555-03f6-4219-9a0f-fc31d08e1b2b",
+      "name": "🐘 Get Settings (Cleanup)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [112, -208],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 🗑️ Очистка мониторинга\n-- ═══════════════════════════════════════════════════════════════\n\nWITH deleted AS (\n    DELETE FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_webchat_monitoring }}\n    WHERE session_id IN (\n        SELECT DISTINCT session_id FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_webchat_monitoring }}\n        GROUP BY session_id HAVING MAX(last_activity_time) < NOW() - INTERVAL '{{ $json.monitoring_retention_days || 30 }} days'\n    )\n    RETURNING *\n)\nSELECT COUNT(*) as deleted_monitoring FROM deleted;",
+        "options": {}
+      },
+      "id": "fcb60b4a-5a14-4b0f-bf5a-23a0ee52a69a",
+      "name": "🐘 Cleanup Monitoring",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [416, -544],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 🗑️ Очистка анализа\n-- ═══════════════════════════════════════════════════════════════\n\nWITH deleted AS (\n    DELETE FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_dialog_analysis }}\n    WHERE created_at < NOW() - INTERVAL '{{ $json.analysis_retention_days || 90 }} days'\n    RETURNING *\n)\nSELECT COUNT(*) as deleted_analysis FROM deleted;",
+        "options": {}
+      },
+      "id": "ff65562a-c81a-487c-84ef-bfa5ccebdb61",
+      "name": "🐘 Cleanup Analysis",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [416, -384],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 🗑️ Очистка диалогов RU\n-- ═══════════════════════════════════════════════════════════════\n\nWITH deleted AS (\n    DELETE FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_chat_histories_ru }}\n    WHERE session_id IN (\n        SELECT DISTINCT session_id FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_chat_histories_ru }}\n        GROUP BY session_id HAVING MAX(created_at) < NOW() - INTERVAL '{{ $json.dialogs_retention_days || 60 }} days'\n    )\n    RETURNING *\n)\nSELECT COUNT(*) as deleted_dialogs_ru FROM deleted;",
+        "options": {}
+      },
+      "id": "055c61ba-6f36-460b-99e6-c75f99efe0fd",
+      "name": "🐘 Cleanup Dialogs RU",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [416, -208],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 🗑️ Очистка диалогов EN\n-- ═══════════════════════════════════════════════════════════════\n\nWITH deleted AS (\n    DELETE FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_chat_histories_en }}\n    WHERE session_id IN (\n        SELECT DISTINCT session_id FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_chat_histories_en }}\n        GROUP BY session_id HAVING MAX(created_at) < NOW() - INTERVAL '{{ $json.dialogs_retention_days || 60 }} days'\n    )\n    RETURNING *\n)\nSELECT COUNT(*) as deleted_dialogs_en FROM deleted;",
+        "options": {}
+      },
+      "id": "ad59832f-614a-47ab-9c32-501f8c0d095d",
+      "name": "🐘 Cleanup Dialogs EN",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [416, -48],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 🗑️ Очистка контактов\n-- ═══════════════════════════════════════════════════════════════\n\nWITH deleted AS (\n    DELETE FROM {{ $('⚙️ CONFIG: Cleanup').first().json.table_user_contact_data }}\n    WHERE last_updated < NOW() - INTERVAL '{{ $json.contacts_retention_days || 180 }} days'\n    RETURNING *\n)\nSELECT COUNT(*) as deleted_contacts FROM deleted;",
+        "options": {}
+      },
+      "id": "ba9bc88e-0911-4d24-b3c2-2830e73de72f",
+      "name": "🐘 Cleanup Contacts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [416, 96],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "numberInputs": 5,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [704, -256],
+      "id": "d3131d96-b50e-4cef-adbf-e61a955f6181",
+      "name": "🔀 Merge Results"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📊 Агрегация результатов очистки\n// ═══════════════════════════════════════════════════════════════\n\nconst results = {\n  monitoring_deleted: 0,\n  analysis_deleted: 0,\n  dialogs_ru_deleted: 0,\n  dialogs_en_deleted: 0,\n  contacts_deleted: 0\n};\n\nconst allInputs = $input.all();\n\nfor (const item of allInputs) {\n  const data = item.json;\n  if ('deleted_monitoring' in data) { results.monitoring_deleted = parseInt(data.deleted_monitoring) || 0; }\n  if ('deleted_analysis' in data) { results.analysis_deleted = parseInt(data.deleted_analysis) || 0; }\n  if ('deleted_dialogs_ru' in data) { results.dialogs_ru_deleted = parseInt(data.deleted_dialogs_ru) || 0; }\n  if ('deleted_dialogs_en' in data) { results.dialogs_en_deleted = parseInt(data.deleted_dialogs_en) || 0; }\n  if ('deleted_contacts' in data) { results.contacts_deleted = parseInt(data.deleted_contacts) || 0; }\n}\n\nresults.total_deleted = results.monitoring_deleted + results.analysis_deleted + results.dialogs_ru_deleted + results.dialogs_en_deleted + results.contacts_deleted;\n\nreturn [{json: results}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, -208],
+      "id": "3159ba1b-8ece-413c-b4a1-775c4d78384f",
+      "name": "📊 Aggregate Results"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 💾 Сохранение лога очистки\n-- ═══════════════════════════════════════════════════════════════\n\nINSERT INTO {{ $('⚙️ CONFIG: Cleanup').first().json.table_cleanup_logs }} (status, cleanup_date)\nVALUES ('completed', NOW())\nRETURNING *;",
+        "options": {}
+      },
+      "id": "8a59142a-7862-4b5d-9eb3-eb5f4a17898e",
+      "name": "🐘 Save Cleanup Log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [1040, -208],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {"path": "cleanup-settings", "responseMode": "responseNode", "options": {"allowedOrigins": "*"}},
+      "id": "3c8e81de-721b-4908-b265-be03cbee84c1",
+      "name": "🌐 Webhook: Get Settings",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-864, 176],
+      "webhookId": "cleanup-settings-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Проверка безопасности: API KEY + RATE LIMITING\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Get Settings').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Get Settings').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) { delete staticData.rateLimits[ip]; }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }]; }\nif (providedKey !== API_KEY) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }]; }\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-528, 176],
+      "id": "0c2463da-2e4b-47e3-974a-c5b9135c00c7",
+      "name": "🔐 Security Check (Get)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth-condition", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-352, 176],
+      "id": "d561268a-710f-43d7-95b9-a93a4018b8ae",
+      "name": "❓ Auth Check (Get)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM {{ $('⚙️ CONFIG: Get Settings').first().json.table_cleanup_settings }} LIMIT 1;",
+        "options": {}
+      },
+      "id": "19ffb20d-fd95-4c76-a2ac-f69b418a5b4c",
+      "name": "🐘 Get Settings",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [-128, 128],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ {\"status\": \"success\", \"settings\": $json} }}", "options": {}},
+      "id": "9e7e6ff6-5fa7-4f0d-a9bc-6e8f7714b0ef",
+      "name": "✅ Respond Settings",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [80, 128]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json.error }}", "options": {"responseCode": "={{ $json.error.status }}"}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-128, 272],
+      "id": "23ad9c28-b821-4b44-aa34-b3e35f9639ad",
+      "name": "❌ Error Response (Get)"
+    },
+    {
+      "parameters": {"httpMethod": "POST", "path": "update-cleanup-settings", "responseMode": "responseNode", "options": {"allowedOrigins": "*"}},
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-864, 512],
+      "id": "a015a5d0-7a15-4156-bb3b-b7c4527187a1",
+      "name": "🌐 Webhook: Update Settings",
+      "webhookId": "bb5d906f-0618-47dc-bb02-c5cff1bbf303"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Проверка безопасности: API KEY + RATE LIMITING\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Update Settings').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Update Settings').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) { delete staticData.rateLimits[ip]; }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }]; }\nif (providedKey !== API_KEY) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }]; }\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-496, 512],
+      "id": "e3f1e862-aab5-46eb-8c1f-ecc522e8f951",
+      "name": "🔐 Security Check (Update)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth-condition", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-336, 512],
+      "id": "9a3ab866-5b09-4c38-93a8-dfbe87f896a9",
+      "name": "❓ Auth Check (Update)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📥 Обработка данных обновления\n// ═══════════════════════════════════════════════════════════════\n\nconst data = items[0].json.body || items[0].json;\n\nreturn [{\n    json: {\n        monitoring_retention_days: data.monitoringRetention || 30,\n        analysis_retention_days: data.analysisRetention || 90,\n        dialogs_retention_days: data.dialogsRetention || 60,\n        contacts_retention_days: data.contactsRetention || 180\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-96, 448],
+      "id": "0cb2d230-9f17-4b20-9388-c59f2963d9d4",
+      "name": "📥 Process Update Data"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 💾 Обновление настроек очистки\n-- ═══════════════════════════════════════════════════════════════\n\nUPDATE {{ $('⚙️ CONFIG: Update Settings').first().json.table_cleanup_settings }}\nSET monitoring_retention_days = {{ $json.monitoring_retention_days }},\n    analysis_retention_days = {{ $json.analysis_retention_days }},\n    dialogs_retention_days = {{ $json.dialogs_retention_days }},\n    contacts_retention_days = {{ $json.contacts_retention_days }},\n    updated_at = NOW()\nWHERE id = 1\nRETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [112, 448],
+      "id": "9b6db150-24b5-4d93-b581-9ab5533e2d71",
+      "name": "🐘 Update Settings",
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ {\"status\": \"success\", \"message\": \"Настройки очистки обновлены\", \"data\": $json} }}", "options": {}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [336, 448],
+      "id": "21a175c4-f360-4bb0-9234-817edffb21a7",
+      "name": "✅ Respond Update"
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json.error }}", "options": {"responseCode": "={{ $json.error.status }}"}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-96, 608],
+      "id": "09e9577d-5f89-4624-b9ef-7a6346c4093d",
+      "name": "❌ Error Response (Update)"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "⏰ Daily Cleanup 3 AM": {"main": [[{"node": "⚙️ CONFIG: Cleanup", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Cleanup": {"main": [[{"node": "🐘 Get Statistics", "type": "main", "index": 0}]]},
+    "🐘 Get Statistics": {"main": [[{"node": "📊 Log Statistics", "type": "main", "index": 0}]]},
+    "📊 Log Statistics": {"main": [[{"node": "❓ Check if Needed", "type": "main", "index": 0}]]},
+    "❓ Check if Needed": {"main": [[{"node": "🐘 Get Settings (Cleanup)", "type": "main", "index": 0}], [{"node": "⏭️ No Cleanup Needed", "type": "main", "index": 0}]]},
+    "🐘 Get Settings (Cleanup)": {"main": [[{"node": "🐘 Cleanup Monitoring", "type": "main", "index": 0}, {"node": "🐘 Cleanup Analysis", "type": "main", "index": 0}, {"node": "🐘 Cleanup Dialogs RU", "type": "main", "index": 0}, {"node": "🐘 Cleanup Dialogs EN", "type": "main", "index": 0}, {"node": "🐘 Cleanup Contacts", "type": "main", "index": 0}]]},
+    "🐘 Cleanup Monitoring": {"main": [[{"node": "🔀 Merge Results", "type": "main", "index": 0}]]},
+    "🐘 Cleanup Analysis": {"main": [[{"node": "🔀 Merge Results", "type": "main", "index": 1}]]},
+    "🐘 Cleanup Dialogs RU": {"main": [[{"node": "🔀 Merge Results", "type": "main", "index": 2}]]},
+    "🐘 Cleanup Dialogs EN": {"main": [[{"node": "🔀 Merge Results", "type": "main", "index": 3}]]},
+    "🐘 Cleanup Contacts": {"main": [[{"node": "🔀 Merge Results", "type": "main", "index": 4}]]},
+    "🔀 Merge Results": {"main": [[{"node": "📊 Aggregate Results", "type": "main", "index": 0}]]},
+    "📊 Aggregate Results": {"main": [[{"node": "🐘 Save Cleanup Log", "type": "main", "index": 0}]]},
+    "🌐 Webhook: Get Settings": {"main": [[{"node": "⚙️ CONFIG: Get Settings", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Get Settings": {"main": [[{"node": "🔐 Security Check (Get)", "type": "main", "index": 0}]]},
+    "🔐 Security Check (Get)": {"main": [[{"node": "❓ Auth Check (Get)", "type": "main", "index": 0}]]},
+    "❓ Auth Check (Get)": {"main": [[{"node": "🐘 Get Settings", "type": "main", "index": 0}], [{"node": "❌ Error Response (Get)", "type": "main", "index": 0}]]},
+    "🐘 Get Settings": {"main": [[{"node": "✅ Respond Settings", "type": "main", "index": 0}]]},
+    "🌐 Webhook: Update Settings": {"main": [[{"node": "⚙️ CONFIG: Update Settings", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Update Settings": {"main": [[{"node": "🔐 Security Check (Update)", "type": "main", "index": 0}]]},
+    "🔐 Security Check (Update)": {"main": [[{"node": "❓ Auth Check (Update)", "type": "main", "index": 0}]]},
+    "❓ Auth Check (Update)": {"main": [[{"node": "📥 Process Update Data", "type": "main", "index": 0}], [{"node": "❌ Error Response (Update)", "type": "main", "index": 0}]]},
+    "📥 Process Update Data": {"main": [[{"node": "🐘 Update Settings", "type": "main", "index": 0}]]},
+    "🐘 Update Settings": {"main": [[{"node": "✅ Respond Update", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "production-ru-v1",
+  "meta": {"templateCredsSetupCompleted": true, "instanceId": "production-template"},
+  "id": "database-cleanup-ru",
+  "tags": []
+}
