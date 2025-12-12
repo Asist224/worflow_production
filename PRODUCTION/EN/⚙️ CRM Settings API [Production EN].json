@@ -1,0 +1,310 @@
+{
+  "name": "⚙️ CRM Settings API [Production EN]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## ⚙️ CRM Settings API\n\n### 📋 Description\nAPI for managing CRM settings and getting statuses.\n\n---\n\n### ⚙️ CONFIG\n\n| Parameter | Description |\n|-----------|-------------|\n| `api_key` | API key |\n| `table_crm_sent_leads` | Sent leads table |\n| `table_crm_settings` | CRM settings table |\n\n---\n\n### 📥 Endpoints\n\n**CRM Statuses:**\n```\nGET /webhook/crm-status?apiKey=KEY\n```\n\n**Get settings:**\n```\nGET /webhook/crm-settings?apiKey=KEY\n```\n\n**Update settings:**\n```json\nPOST /webhook/update-crm-settings?apiKey=KEY\n{\"webhookUrl\": \"...\", \"autoSendEnabled\": true, \"minLeadScore\": 70}\n```",
+        "height": 500,
+        "width": 380,
+        "color": 5
+      },
+      "id": "sticky-note-main",
+      "name": "📝 Instructions",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-280, -300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-sent", "name": "table_crm_sent_leads", "value": "crm_sent_leads", "type": "string"},
+            {"id": "table-settings", "name": "table_crm_settings", "value": "crm_settings", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-status",
+      "name": "⚙️ CONFIG: Status",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [144, -48]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-settings", "name": "table_crm_settings", "value": "crm_settings", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-get",
+      "name": "⚙️ CONFIG: Get",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [144, 320]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
+            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
+            {"id": "table-settings", "name": "table_crm_settings", "value": "crm_settings", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-update",
+      "name": "⚙️ CONFIG: Update",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [144, 608]
+    },
+    {
+      "parameters": {
+        "path": "crm-status",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "fe896d3d-2df0-434a-8899-153bef69092c",
+      "name": "🌐 Webhook: Status",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-32, -48],
+      "webhookId": "crm-status"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Security Check\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Status').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Status').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) { delete staticData.rateLimits[ip]; }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }]; }\nif (providedKey !== API_KEY) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }]; }\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [336, -48],
+      "id": "sec-status",
+      "name": "🔐 Security Check (Status)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth-condition", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [512, -48],
+      "id": "auth-status",
+      "name": "❓ Auth Check (Status)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  session_id,\n  crm_type,\n  crm_lead_id,\n  lead_score,\n  lead_temperature,\n  sent_at\nFROM {{ $('⚙️ CONFIG: Status').first().json.table_crm_sent_leads }}\nWHERE sent_at > NOW() - INTERVAL '30 days'\nORDER BY sent_at DESC",
+        "options": {}
+      },
+      "id": "91f5959e-89f4-4ab3-8a90-8e5bf166fa68",
+      "name": "🐘 Get CRM Statuses",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [688, -48],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📊 Format statuses\n// ═══════════════════════════════════════════════════════════════\n\nconst statuses = {};\nitems.forEach(item => {\n  const data = item.json;\n  statuses[data.session_id] = {\n    leadScore: data.lead_score,\n    leadTemperature: data.lead_temperature,\n    crmLeadId: data.crm_lead_id,\n    crmType: data.crm_type,\n    sentAt: data.sent_at\n  };\n});\n\nreturn [{\n  json: {\n    statuses: statuses,\n    total: Object.keys(statuses).length\n  }\n}];"
+      },
+      "id": "dc26bbfa-bdbb-4b39-8f2f-d4fe654da4de",
+      "name": "📊 Format Statuses",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, -48]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json }}", "options": {}},
+      "id": "eac6287a-808f-4de8-8fbb-0f02ff6aaaf3",
+      "name": "✅ Respond Statuses",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1072, -48]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json.error }}", "options": {"responseCode": "={{ $json.error.status }}"}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [688, 112],
+      "id": "err-status",
+      "name": "❌ Error Response (Status)"
+    },
+    {
+      "parameters": {
+        "path": "crm-settings",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "efa1e4bf-b5eb-4f21-ad02-c2110d33e036",
+      "name": "🌐 Webhook: Get Settings",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-32, 320],
+      "webhookId": "crm-settings"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Security Check\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Get').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Get Settings').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) { delete staticData.rateLimits[ip]; }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }]; }\nif (providedKey !== API_KEY) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }]; }\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [336, 320],
+      "id": "sec-get",
+      "name": "🔐 Security Check (Get)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth-condition", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [512, 320],
+      "id": "auth-get",
+      "name": "❓ Auth Check (Get)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM {{ $('⚙️ CONFIG: Get').first().json.table_crm_settings }} WHERE crm_type = 'bitrix24' LIMIT 1",
+        "options": {}
+      },
+      "id": "0938ba17-c376-413c-a436-621a1e922844",
+      "name": "🐘 Get Settings from DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [720, 320],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json }}", "options": {}},
+      "id": "e43f2b5d-87f0-4103-a807-8f210b8cdee5",
+      "name": "✅ Respond Settings",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [912, 320]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json.error }}", "options": {"responseCode": "={{ $json.error.status }}"}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [720, 480],
+      "id": "err-get",
+      "name": "❌ Error Response (Get)"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "update-crm-settings",
+        "responseMode": "responseNode",
+        "options": {"allowedOrigins": "*"}
+      },
+      "id": "b93563eb-e21a-4fce-8f5c-5e857eeb1034",
+      "name": "🌐 Webhook: Update Settings",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-32, 608],
+      "webhookId": "update-crm-settings"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Security Check\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG: Update').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Update Settings').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) { delete staticData.rateLimits[ip]; }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', status: 429 } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }]; }\nif (providedKey !== API_KEY) { return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }]; }\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [336, 608],
+      "id": "sec-update",
+      "name": "🔐 Security Check (Update)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
+          "conditions": [{"id": "auth-condition", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [512, 608],
+      "id": "auth-update",
+      "name": "❓ Auth Check (Update)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE {{ $('⚙️ CONFIG: Update').first().json.table_crm_settings }} \nSET \n  webhook_url = '{{ $json.body.webhookUrl }}',\n  auto_send_enabled = {{ $json.body.autoSendEnabled }},\n  min_lead_score = {{ $json.body.minLeadScore }},\n  settings = '{{ JSON.stringify($json.body.settings || {}) }}'::jsonb,\n  updated_at = NOW()\nWHERE crm_type = 'bitrix24'\nRETURNING *",
+        "options": {}
+      },
+      "id": "597876c9-3620-4e19-af48-23e219905134",
+      "name": "🐘 Update Settings in DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [720, 608],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json }}", "options": {}},
+      "id": "a718fb2c-5687-4461-857a-5bc15247079a",
+      "name": "✅ Respond Update",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [912, 608]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ $json.error }}", "options": {"responseCode": "={{ $json.error.status }}"}},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [720, 768],
+      "id": "err-update",
+      "name": "❌ Error Response (Update)"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "🌐 Webhook: Status": {"main": [[{"node": "⚙️ CONFIG: Status", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Status": {"main": [[{"node": "🔐 Security Check (Status)", "type": "main", "index": 0}]]},
+    "🔐 Security Check (Status)": {"main": [[{"node": "❓ Auth Check (Status)", "type": "main", "index": 0}]]},
+    "❓ Auth Check (Status)": {"main": [[{"node": "🐘 Get CRM Statuses", "type": "main", "index": 0}], [{"node": "❌ Error Response (Status)", "type": "main", "index": 0}]]},
+    "🐘 Get CRM Statuses": {"main": [[{"node": "📊 Format Statuses", "type": "main", "index": 0}]]},
+    "📊 Format Statuses": {"main": [[{"node": "✅ Respond Statuses", "type": "main", "index": 0}]]},
+    "🌐 Webhook: Get Settings": {"main": [[{"node": "⚙️ CONFIG: Get", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Get": {"main": [[{"node": "🔐 Security Check (Get)", "type": "main", "index": 0}]]},
+    "🔐 Security Check (Get)": {"main": [[{"node": "❓ Auth Check (Get)", "type": "main", "index": 0}]]},
+    "❓ Auth Check (Get)": {"main": [[{"node": "🐘 Get Settings from DB", "type": "main", "index": 0}], [{"node": "❌ Error Response (Get)", "type": "main", "index": 0}]]},
+    "🐘 Get Settings from DB": {"main": [[{"node": "✅ Respond Settings", "type": "main", "index": 0}]]},
+    "🌐 Webhook: Update Settings": {"main": [[{"node": "⚙️ CONFIG: Update", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG: Update": {"main": [[{"node": "🔐 Security Check (Update)", "type": "main", "index": 0}]]},
+    "🔐 Security Check (Update)": {"main": [[{"node": "❓ Auth Check (Update)", "type": "main", "index": 0}]]},
+    "❓ Auth Check (Update)": {"main": [[{"node": "🐘 Update Settings in DB", "type": "main", "index": 0}], [{"node": "❌ Error Response (Update)", "type": "main", "index": 0}]]},
+    "🐘 Update Settings in DB": {"main": [[{"node": "✅ Respond Update", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "production-en-v1",
+  "meta": {"templateCredsSetupCompleted": true, "instanceId": "production-template"},
+  "id": "crm-settings-api-en",
+  "tags": []
+}

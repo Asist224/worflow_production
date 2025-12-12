@@ -1,0 +1,197 @@
+{
+  "name": "🚀 Auto Send Hot Leads to CRM [Production RU]",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🚀 Auto Send Hot Leads to CRM\n\n### 📋 Описание\nАвтоматическая отправка горячих лидов в CRM по расписанию.\n\n---\n\n### ⚙️ CONFIG\n\n| Параметр | Описание |\n|----------|----------|\n| `crm_endpoint_url` | URL эндпоинта отправки в CRM |\n| `api_key` | API ключ |\n| `min_lead_score` | Минимальный скор лида |\n| `wait_between_requests_sec` | Задержка между запросами |\n| `table_crm_settings` | Таблица настроек CRM |\n| `table_dialog_analysis` | Таблица анализов |\n| `table_user_contact_data` | Таблица контактов |\n| `table_webchat_monitoring` | Таблица мониторинга |\n| `table_crm_sent_leads` | Таблица отправленных лидов |\n| `table_automation_log` | Таблица логов |\n\n---\n\n### 🔄 Логика работы\n1. Запускается каждые 15 минут\n2. Проверяет настройки auto_send_enabled\n3. Находит лидов со скором >= min_lead_score\n4. Отправляет каждого в CRM\n5. Логирует действия",
+        "height": 560,
+        "width": 380,
+        "color": 5
+      },
+      "id": "sticky-note-main",
+      "name": "📝 Инструкция",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-1100, -300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "crm-endpoint", "name": "crm_endpoint_url", "value": "http://localhost:5678/webhook/send-to-crm", "type": "string"},
+            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
+            {"id": "min-score", "name": "min_lead_score", "value": 70, "type": "number"},
+            {"id": "wait-sec", "name": "wait_between_requests_sec", "value": 10, "type": "number"},
+            {"id": "table-crm", "name": "table_crm_settings", "value": "crm_settings", "type": "string"},
+            {"id": "table-analysis", "name": "table_dialog_analysis", "value": "dialog_analysis", "type": "string"},
+            {"id": "table-contacts", "name": "table_user_contact_data", "value": "user_contact_data", "type": "string"},
+            {"id": "table-monitor", "name": "table_webchat_monitoring", "value": "webchat_monitoring", "type": "string"},
+            {"id": "table-sent", "name": "table_crm_sent_leads", "value": "crm_sent_leads", "type": "string"},
+            {"id": "table-log", "name": "table_automation_log", "value": "automation_log", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-main",
+      "name": "⚙️ CONFIG",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-656, -112]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "1c6a2bb9-bcff-4467-93c0-6a96539b2cba",
+      "name": "⏰ Every 15 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [-864, -112]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  auto_send_enabled,\n  min_lead_score,\n  webhook_url\nFROM {{ $('⚙️ CONFIG').first().json.table_crm_settings }} \nWHERE crm_type = 'bitrix24' \nLIMIT 1",
+        "options": {}
+      },
+      "id": "fca26dec-77e6-4029-8999-c916675fc3fa",
+      "name": "🐘 Get CRM Settings",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [-448, -112],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [
+            {
+              "id": "8f7e6d5c-4b3a-2910-1234-567890abcdef",
+              "leftValue": "={{ $json.auto_send_enabled }}",
+              "rightValue": true,
+              "operator": {"type": "boolean", "operation": "equals"}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0d878c7b-f9ed-4b0f-968c-5203a70af002",
+      "name": "❓ Check Auto Send Enabled",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-240, -112]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  da.session_id,\n  COALESCE((da.lead_scoring::json->>'score')::int, 0) as lead_score,\n  (da.emotional_tone::json->>'satisfaction')::int as satisfaction,\n  ucd.phone,\n  ucd.email,\n  ucd.full_name,\n  wm.platform,\n  wm.message_count\nFROM {{ $('⚙️ CONFIG').first().json.table_dialog_analysis }} da\nJOIN {{ $('⚙️ CONFIG').first().json.table_user_contact_data }} ucd ON da.session_id = ucd.session_id\nLEFT JOIN {{ $('⚙️ CONFIG').first().json.table_webchat_monitoring }} wm ON da.session_id = wm.session_id\nLEFT JOIN {{ $('⚙️ CONFIG').first().json.table_crm_sent_leads }} csl ON da.session_id = csl.session_id\nWHERE \n  csl.session_id IS NULL\n  AND COALESCE((da.lead_scoring::json->>'score')::int, 0) >= {{ $('🐘 Get CRM Settings').first().json.min_lead_score || $('⚙️ CONFIG').first().json.min_lead_score }}\n  AND (ucd.phone IS NOT NULL OR ucd.email IS NOT NULL)\n  AND da.created_at > NOW() - INTERVAL '7 days'\nLIMIT 10",
+        "options": {}
+      },
+      "id": "769dc542-5c18-422e-a3a9-9d9aee7afbd1",
+      "name": "🔍 Find Hot Leads",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [-32, -112],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "f7ad393d-a332-46e3-be36-94f43ce0418f",
+      "name": "📦 Split in Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 2,
+      "position": [176, -112]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('⚙️ CONFIG').first().json.crm_endpoint_url }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "apiKey",
+              "value": "={{ $('⚙️ CONFIG').first().json.api_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"sessionId\": \"{{ $json.session_id }}\",\n  \"autoSend\": true,\n  \"webhookUrl\": \"{{ $('🐘 Get CRM Settings').first().json.webhook_url }}\"\n}",
+        "options": {}
+      },
+      "id": "344a0060-5e5b-4b42-9730-684d84f5cb94",
+      "name": "📤 Send to CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [384, -128],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO {{ $('⚙️ CONFIG').first().json.table_automation_log }} (\n  action_type,\n  session_id,\n  details,\n  created_at\n) VALUES (\n  'auto_crm_send',\n  '{{ $('📤 Send to CRM').item.json.sessionId }}',\n  '{{ JSON.stringify($json) }}'::jsonb,\n  NOW()\n)",
+        "options": {}
+      },
+      "id": "68143af6-e9a5-49e0-90b2-7fbf3e7e905f",
+      "name": "📝 Log Action",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [592, -128],
+      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}},
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "amount": "={{ $('⚙️ CONFIG').first().json.wait_between_requests_sec }}",
+        "unit": "seconds"
+      },
+      "id": "337a4cd5-4a94-4be7-a917-7c9807813150",
+      "name": "⏳ Wait",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [784, -128],
+      "webhookId": "wait-webhook"
+    },
+    {
+      "parameters": {},
+      "id": "a4870c4f-4a43-4275-a999-7476ded75b6e",
+      "name": "🛑 Stop (Auto Send Disabled)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [-32, 64]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "⏰ Every 15 minutes": {"main": [[{"node": "⚙️ CONFIG", "type": "main", "index": 0}]]},
+    "⚙️ CONFIG": {"main": [[{"node": "🐘 Get CRM Settings", "type": "main", "index": 0}]]},
+    "🐘 Get CRM Settings": {"main": [[{"node": "❓ Check Auto Send Enabled", "type": "main", "index": 0}]]},
+    "❓ Check Auto Send Enabled": {"main": [[{"node": "🔍 Find Hot Leads", "type": "main", "index": 0}], [{"node": "🛑 Stop (Auto Send Disabled)", "type": "main", "index": 0}]]},
+    "🔍 Find Hot Leads": {"main": [[{"node": "📦 Split in Batches", "type": "main", "index": 0}]]},
+    "📦 Split in Batches": {"main": [[{"node": "📤 Send to CRM", "type": "main", "index": 0}]]},
+    "📤 Send to CRM": {"main": [[{"node": "📝 Log Action", "type": "main", "index": 0}]]},
+    "📝 Log Action": {"main": [[{"node": "⏳ Wait", "type": "main", "index": 0}]]},
+    "⏳ Wait": {"main": [[{"node": "📦 Split in Batches", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "production-ru-v1",
+  "meta": {"templateCredsSetupCompleted": true, "instanceId": "production-template"},
+  "id": "auto-send-hot-leads-crm-ru",
+  "tags": []
+}
