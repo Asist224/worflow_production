@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## 🔍 Highlights Detection\n\n### 📋 Description\nDetect important moments in dialogs using AI.\n\n**Two endpoints:**\n- `POST /detect` - analyze dialog and save highlights\n- `GET /get` - get saved highlights\n\n---\n\n### ⚙️ CONFIG Settings\n\n| Parameter | Description |\n|-----------|-------------|\n| `api_key` | API key for authentication |\n| `rate_limit_window_ms` | Rate limiting window (ms) |\n| `rate_limit_max_requests` | Max requests per window |\n| `table_conversation_highlights` | Highlights table |\n| `table_chat_histories_ru` | Chat table RU |\n| `table_chat_histories_en` | Chat table EN |\n| `table_chat_sessions` | Sessions table |\n\n---\n\n### 🔑 Credentials\n- **Postgres** - for all database nodes\n- **Google Gemini** - for AI analysis",
+        "content": "## 🔍 Highlights Detection\n\n### 📋 Description\nDetect important moments in dialogs using AI.\n\n**Two endpoints:**\n- `POST /detect` - analyze dialog and save highlights\n- `GET /get` - get saved highlights\n\n---\n\n### ⚙️ CONFIG Settings\n\n| Parameter | Description |\n|-----------|-------------|\n| `api_key` | API key for authentication |\n| `rate_limit_window_ms` | Rate limiting window (ms) |\n| `rate_limit_max_requests` | Max requests per window |\n| `table_conversation_highlights` | Highlights table |\n| `table_chat_histories_ru` | Chat table RU |\n| `table_chat_histories_en` | Chat table EN |\n| `table_chat_sessions` | Sessions table |\n| `table_analysis_language_settings` | Language settings table | Sessions table |\n\n---\n\n### 🔑 Credentials\n- **Postgres** - for all database nodes\n- **Google Gemini** - for AI analysis",
         "height": 600,
         "width": 400,
         "color": 5
@@ -62,6 +62,12 @@
               "name": "table_chat_sessions",
               "value": "chat_sessions",
               "type": "string"
+            },
+            {
+              "id": "table-analysis-lang",
+              "name": "table_analysis_language_settings",
+              "value": "analysis_language_settings",
+              "type": "string"
             }
           ]
         },
@@ -114,6 +120,12 @@
               "id": "table-chat-en",
               "name": "table_chat_histories_en",
               "value": "n8n_chat_histories_en",
+              "type": "string"
+            },
+            {
+              "id": "table-analysis-lang",
+              "name": "table_analysis_language_settings",
+              "value": "analysis_language_settings",
               "type": "string"
             }
           ]
@@ -172,7 +184,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- Get язык анализа из настроек\nSELECT language_code \nFROM analysis_language_settings \nORDER BY id DESC \nLIMIT 1;",
+        "query": "-- Get язык анализа из настроек\nSELECT language_code \nFROM {{ $('⚙️ CONFIG: Detect').first().json.table_analysis_language_settings }} \nORDER BY id DESC \nLIMIT 1;",
         "options": {}
       },
       "id": "ccd257dc-fd7e-46b9-92ed-ad415a70aae9",
@@ -364,7 +376,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- Delete старые highlights для этой сессии перед вставкой новых\nDELETE FROM {{ $('⚙️ CONFIG: Detect').first().json.table_conversation_highlights }} \nWHERE session_id = '{{ $('Parse AI Response').first().json.sessionId }}';",
+        "query": "-- Delete старые highlights для этой сессии перед вставкой новых\nDELETE FROM {{ $('⚙️ CONFIG: Detect').first().json.table_conversation_highlights }} \nWHERE session_id = '{{ $('📊 Parse AI Response').first().json.sessionId }}';",
         "options": {}
       },
       "id": "aaa0b649-2374-425e-8577-8670285fe21e",
@@ -615,7 +627,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH all_messages AS (\n  SELECT \n    created_at,\n    message::json->>'type' as msg_type\n  FROM {{ $('⚙️ CONFIG: Get').first().json.table_chat_histories_ru }}\n  WHERE session_id = '{{ $('Compare Dates & Calculate Status').first().json.sessionId }}'\n    AND created_at > '{{ $('Compare Dates & Calculate Status').first().json.lastAnalysisDate }}'\n  \n  UNION ALL\n  \n  SELECT \n    created_at,\n    message::json->>'type' as msg_type\n  FROM {{ $('⚙️ CONFIG: Get').first().json.table_chat_histories_en }}\n  WHERE session_id = '{{ $('Compare Dates & Calculate Status').first().json.sessionId }}'\n    AND created_at > '{{ $('Compare Dates & Calculate Status').first().json.lastAnalysisDate }}'\n)\nSELECT \n  COUNT(*) as new_messages_count,\n  COUNT(CASE WHEN msg_type = 'human' THEN 1 END) as new_user_messages\nFROM all_messages",
+        "query": "WITH all_messages AS (\n  SELECT \n    created_at,\n    message::json->>'type' as msg_type\n  FROM {{ $('⚙️ CONFIG: Get').first().json.table_chat_histories_ru }}\n  WHERE session_id = '{{ $('📊 Compare Dates & Calculate Status').first().json.sessionId }}'\n    AND created_at > '{{ $('📊 Compare Dates & Calculate Status').first().json.lastAnalysisDate }}'\n  \n  UNION ALL\n  \n  SELECT \n    created_at,\n    message::json->>'type' as msg_type\n  FROM {{ $('⚙️ CONFIG: Get').first().json.table_chat_histories_en }}\n  WHERE session_id = '{{ $('📊 Compare Dates & Calculate Status').first().json.sessionId }}'\n    AND created_at > '{{ $('📊 Compare Dates & Calculate Status').first().json.lastAnalysisDate }}'\n)\nSELECT \n  COUNT(*) as new_messages_count,\n  COUNT(CASE WHEN msg_type = 'human' THEN 1 END) as new_user_messages\nFROM all_messages",
         "options": {}
       },
       "type": "n8n-nodes-base.postgres",
@@ -660,7 +672,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst config = $('⚙️ CONFIG: Detect').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Detect').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -724,7 +736,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst config = $('⚙️ CONFIG: Get').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Get').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
