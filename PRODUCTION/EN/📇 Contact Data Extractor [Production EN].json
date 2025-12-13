@@ -12,22 +12,75 @@
       "name": "📝 Instructions",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [-1680, 160]
+      "position": [
+        -1680,
+        160
+      ]
     },
     {
       "parameters": {
         "assignments": {
           "assignments": [
-            {"id": "api-key", "name": "api_key", "value": "YOUR_API_KEY_HERE", "type": "string"},
-            {"id": "rate-window", "name": "rate_limit_window_ms", "value": 60000, "type": "number"},
-            {"id": "rate-max", "name": "rate_limit_max_requests", "value": 60, "type": "number"},
-            {"id": "table-chat-ru", "name": "table_chat_histories_ru", "value": "n8n_chat_histories_ru", "type": "string"},
-            {"id": "table-chat-en", "name": "table_chat_histories_en", "value": "n8n_chat_histories_en", "type": "string"},
-            {"id": "table-contacts", "name": "table_user_contact_data", "value": "user_contact_data", "type": "string"},
-            {"id": "table-prechat", "name": "table_prechat_submissions", "value": "prechat_submissions", "type": "string"},
-            {"id": "gemini-single", "name": "gemini_model_single", "value": "models/gemini-2.0-flash", "type": "string"},
-            {"id": "gemini-batch", "name": "gemini_model_batch", "value": "models/gemini-2.5-flash-lite", "type": "string"},
-            {"id": "gemini-temp", "name": "gemini_temperature", "value": 0.3, "type": "number"}
+            {
+              "id": "api-key",
+              "name": "api_key",
+              "value": "YOUR_API_KEY_HERE",
+              "type": "string"
+            },
+            {
+              "id": "rate-window",
+              "name": "rate_limit_window_ms",
+              "value": 60000,
+              "type": "number"
+            },
+            {
+              "id": "rate-max",
+              "name": "rate_limit_max_requests",
+              "value": 60,
+              "type": "number"
+            },
+            {
+              "id": "table-chat-ru",
+              "name": "table_chat_histories_ru",
+              "value": "n8n_chat_histories_ru",
+              "type": "string"
+            },
+            {
+              "id": "table-chat-en",
+              "name": "table_chat_histories_en",
+              "value": "n8n_chat_histories_en",
+              "type": "string"
+            },
+            {
+              "id": "table-contacts",
+              "name": "table_user_contact_data",
+              "value": "user_contact_data",
+              "type": "string"
+            },
+            {
+              "id": "table-prechat",
+              "name": "table_prechat_submissions",
+              "value": "prechat_submissions",
+              "type": "string"
+            },
+            {
+              "id": "gemini-single",
+              "name": "gemini_model_single",
+              "value": "models/gemini-2.0-flash",
+              "type": "string"
+            },
+            {
+              "id": "gemini-batch",
+              "name": "gemini_model_batch",
+              "value": "models/gemini-2.5-flash-lite",
+              "type": "string"
+            },
+            {
+              "id": "gemini-temp",
+              "name": "gemini_temperature",
+              "value": 0.3,
+              "type": "number"
+            }
           ]
         },
         "options": {}
@@ -36,7 +89,10 @@
       "name": "⚙️ CONFIG",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [-1248, 368]
+      "position": [
+        -1400,
+        200
+      ]
     },
     {
       "parameters": {
@@ -45,68 +101,58 @@
         "responseMode": "responseNode",
         "options": {
           "allowedOrigins": "*",
-          "responseHeaders": {"entries": [{"name": "Content-Type", "value": "application/json"}]}
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
         }
       },
       "id": "9482fd9f-fb9a-4d1f-a528-6877a19335cb",
       "name": "🌐 Webhook: Extract Contact",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [-1424, 368],
+      "position": [
+        -1424,
+        368
+      ],
       "webhookId": "extract-contact-data-webhook"
     },
     {
       "parameters": {
-        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔐 Security check: API KEY + RATE LIMITING\n// ═══════════════════════════════════════════════════════════════\n\nconst config = $('⚙️ CONFIG').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests;\n\nconst inputData = $('🌐 Webhook: Extract Contact').item.json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [-1056, 368],
-      "id": "33edc2cc-99c0-4399-af50-aae484e3eb6e",
-      "name": "🔐 Security Check"
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2},
-          "conditions": [{"id": "auth-condition", "leftValue": "={{ $json.authorized }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [-880, 368],
-      "id": "970e429f-0763-45a2-b533-78ab2d9ac06e",
-      "name": "❓ Auth Check"
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json.error }}",
-        "options": {"responseCode": "={{ $json.error.status }}"}
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [-688, 496],
-      "id": "f9a9858a-b274-40c0-a36e-d5a7e809ef96",
-      "name": "❌ Error Response"
-    },
-    {
-      "parameters": {
-        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📥 Extract request parameters\n// ═══════════════════════════════════════════════════════════════\n\nconst requestData = items[0].json.body || items[0].json;\nconst sessionId = requestData.sessionId;\nconst extractionType = requestData.type || 'single';\n\nreturn [{\n    json: {\n        sessionId: sessionId,\n        extractionType: extractionType\n    }\n}];"
+        "jsCode": "// Получаем параметры запроса\nconst requestData = items[0].json.body || items[0].json;\nconst sessionId = requestData.sessionId;\nconst extractionType = requestData.type || 'single';\n\nreturn [{\n    json: {\n        sessionId: sessionId,\n        extractionType: extractionType\n    }\n}];"
       },
       "id": "b794ec13-62f3-41ba-8c17-155d1cf2626b",
       "name": "📥 Process Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-688, 352]
+      "position": [
+        -880,
+        352
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1},
-          "conditions": [{"leftValue": "={{ $json.extractionType }}", "rightValue": "single", "operator": {"type": "string", "operation": "equals"}}],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.extractionType }}",
+              "rightValue": "single",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
           "combinator": "and"
         },
         "options": {}
@@ -115,76 +161,124 @@
       "name": "❓ Check Type",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [-464, 352]
+      "position": [
+        -656,
+        352
+      ]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 📥 Load new messages for single session\n-- ═══════════════════════════════════════════════════════════════\n\nWITH last_extraction AS (\n    SELECT COALESCE(last_updated, '1970-01-01'::timestamp) as last_extracted\n    FROM {{ $('⚙️ CONFIG').first().json.table_user_contact_data }}\n    WHERE session_id = '{{ $json.sessionId }}'\n),\nall_chats AS (\n    SELECT id, session_id, message::json->>'type' as message_type, message::json->>'content' as content, created_at as timestamp, platform, 'ru' as language\n    FROM {{ $('⚙️ CONFIG').first().json.table_chat_histories_ru }}\n    WHERE session_id = '{{ $json.sessionId }}'\n      AND created_at > COALESCE((SELECT last_extracted FROM last_extraction), '1970-01-01'::timestamp)\n    UNION ALL\n    SELECT id, session_id, message::json->>'type' as message_type, message::json->>'content' as content, created_at as timestamp, platform, 'en' as language\n    FROM {{ $('⚙️ CONFIG').first().json.table_chat_histories_en }}\n    WHERE session_id = '{{ $json.sessionId }}'\n      AND created_at > COALESCE((SELECT last_extracted FROM last_extraction), '1970-01-01'::timestamp)\n)\nSELECT * FROM all_chats ORDER BY timestamp ASC;",
+        "query": "-- Загружаем только НОВЫЕ сообщения после last_updated\nWITH last_extraction AS (\n    SELECT \n        COALESCE(last_updated, '1970-01-01'::timestamp) as last_extracted\n    FROM user_contact_data\n    WHERE session_id = '{{ $json.sessionId }}'\n),\nall_chats AS (\n    SELECT \n        id,\n        session_id,\n        message::json->>'type' as message_type,\n        message::json->>'content' as content,\n        created_at as timestamp,\n        platform,\n        'ru' as language\n    FROM n8n_chat_histories_ru\n    WHERE session_id = '{{ $json.sessionId }}'\n      AND created_at > COALESCE((SELECT last_extracted FROM last_extraction), '1970-01-01'::timestamp)\n    \n    UNION ALL\n    \n    SELECT \n        id,\n        session_id,\n        message::json->>'type' as message_type,\n        message::json->>'content' as content,\n        created_at as timestamp,\n        platform,\n        'en' as language\n    FROM n8n_chat_histories_en\n    WHERE session_id = '{{ $json.sessionId }}'\n      AND created_at > COALESCE((SELECT last_extracted FROM last_extraction), '1970-01-01'::timestamp)\n)\nSELECT * FROM all_chats\nORDER BY timestamp ASC;",
         "options": {}
       },
       "id": "85e9c47b-f83f-4da3-9c3c-4685eaf5e3ca",
       "name": "🐘 Get Single Dialog",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [-240, 112],
-      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+      "position": [
+        -432,
+        112
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account"
+        }
+      }
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 📥 Get batch dialogs with filtering\n-- ═══════════════════════════════════════════════════════════════\n\nWITH recent_dialogs AS (\n    SELECT session_id, MAX(created_at) as last_message\n    FROM (\n        SELECT session_id, created_at FROM {{ $('⚙️ CONFIG').first().json.table_chat_histories_ru }}\n        UNION ALL\n        SELECT session_id, created_at FROM {{ $('⚙️ CONFIG').first().json.table_chat_histories_en }}\n    ) all_messages\n    WHERE created_at > NOW() - INTERVAL '24 hours'\n    GROUP BY session_id\n),\nsessions_to_process AS (\n    SELECT rd.session_id, rd.last_message, COALESCE(ucd.last_updated, '1970-01-01'::timestamp) as last_extracted\n    FROM recent_dialogs rd\n    LEFT JOIN {{ $('⚙️ CONFIG').first().json.table_user_contact_data }} ucd ON rd.session_id = ucd.session_id\n    WHERE ucd.session_id IS NULL OR ucd.last_updated < rd.last_message\n    LIMIT 20\n)\nSELECT ac.id, ac.session_id, ac.message_type, ac.content, ac.timestamp, ac.platform, ac.language\nFROM (\n    SELECT r.id, r.session_id, r.message::json->>'type' as message_type, r.message::json->>'content' as content, r.created_at as timestamp, r.platform, 'ru' as language\n    FROM {{ $('⚙️ CONFIG').first().json.table_chat_histories_ru }} r\n    INNER JOIN sessions_to_process stp ON r.session_id = stp.session_id\n    WHERE r.created_at > stp.last_extracted\n    UNION ALL\n    SELECT e.id, e.session_id, e.message::json->>'type' as message_type, e.message::json->>'content' as content, e.created_at as timestamp, e.platform, 'en' as language\n    FROM {{ $('⚙️ CONFIG').first().json.table_chat_histories_en }} e\n    INNER JOIN sessions_to_process stp ON e.session_id = stp.session_id\n    WHERE e.created_at > stp.last_extracted\n) ac\nORDER BY ac.session_id, ac.timestamp;",
+        "query": "-- Получаем пакетные диалоги с умной фильтрацией\nWITH recent_dialogs AS (\n    SELECT \n        session_id,\n        MAX(created_at) as last_message\n    FROM (\n        SELECT session_id, created_at FROM n8n_chat_histories_ru\n        UNION ALL\n        SELECT session_id, created_at FROM n8n_chat_histories_en\n    ) all_messages\n    WHERE created_at > NOW() - INTERVAL '24 hours'\n    GROUP BY session_id\n),\nsessions_to_process AS (\n    SELECT \n        rd.session_id,\n        rd.last_message,\n        COALESCE(ucd.last_updated, '1970-01-01'::timestamp) as last_extracted\n    FROM recent_dialogs rd\n    LEFT JOIN user_contact_data ucd ON rd.session_id = ucd.session_id\n    WHERE ucd.session_id IS NULL OR ucd.last_updated < rd.last_message\n    LIMIT 20\n)\nSELECT \n    ac.id,\n    ac.session_id,\n    ac.message_type,\n    ac.content,\n    ac.timestamp,\n    ac.platform,\n    ac.language\nFROM (\n    SELECT \n        r.id,\n        r.session_id,\n        r.message::json->>'type' as message_type,\n        r.message::json->>'content' as content,\n        r.created_at as timestamp,\n        r.platform,\n        'ru' as language\n    FROM n8n_chat_histories_ru r\n    INNER JOIN sessions_to_process stp ON r.session_id = stp.session_id\n    WHERE r.created_at > stp.last_extracted\n    \n    UNION ALL\n    \n    SELECT \n        e.id,\n        e.session_id,\n        e.message::json->>'type' as message_type,\n        e.message::json->>'content' as content,\n        e.created_at as timestamp,\n        e.platform,\n        'en' as language\n    FROM n8n_chat_histories_en e\n    INNER JOIN sessions_to_process stp ON e.session_id = stp.session_id\n    WHERE e.created_at > stp.last_extracted\n) ac\nORDER BY ac.session_id, ac.timestamp;",
         "options": {}
       },
       "id": "d1eea9f7-ad09-4217-9c2d-b94e0ebe5b55",
       "name": "🐘 Get Batch Dialogs",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [-224, 576],
-      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+      "position": [
+        -416,
+        576
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account"
+        }
+      }
     },
     {
-      "parameters": {"jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📤 Pass batch data\n// ═══════════════════════════════════════════════════════════════\n\nreturn items;"}
+      "parameters": {
+        "jsCode": "// Pass data from Postgres node\nreturn items;"
       },
       "id": "739eb108-5377-4f2b-ba00-b3d45948c337",
       "name": "📤 Pass Batch Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [0, 576]
+      "position": [
+        -192,
+        576
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📊 Group messages by session_id\n// ═══════════════════════════════════════════════════════════════\n\nconst sessions = {};\n\nitems.forEach(item => {\n    const data = item.json;\n    const sessionId = data.session_id;\n    \n    if (!sessions[sessionId]) {\n        sessions[sessionId] = {\n            sessionId: sessionId,\n            language: data.language,\n            platform: data.platform || 'unknown',\n            messages: []\n        };\n    }\n    \n    sessions[sessionId].messages.push({\n        type: data.message_type,\n        content: data.content,\n        timestamp: data.timestamp\n    });\n});\n\nconst result = Object.values(sessions).map(session => ({\n    json: session\n}));\n\nreturn result;"
+        "jsCode": "// Группируем сообщения по session_id\nconst sessions = {};\n\n// Собираем все сообщения по сессиям\nitems.forEach(item => {\n    const data = item.json;\n    const sessionId = data.session_id;\n    \n    if (!sessions[sessionId]) {\n        sessions[sessionId] = {\n            sessionId: sessionId,\n            language: data.language,\n            platform: data.platform || 'unknown',\n            messages: []\n        };\n    }\n    \n    sessions[sessionId].messages.push({\n        type: data.message_type,\n        content: data.content,\n        timestamp: data.timestamp\n    });\n});\n\n// Преобразуем в массив для Loop\nconst result = Object.values(sessions).map(session => ({\n    json: session\n}));\n\n\nreturn result;"
       },
       "id": "dd2de959-6725-40ae-9ebe-bc8050142793",
       "name": "📊 Group By Session",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [208, 576]
+      "position": [
+        16,
+        576
+      ]
     },
     {
-      "parameters": {"options": {}},
+      "parameters": {
+        "options": {}
+      },
       "id": "7ff364e4-518c-45f5-a7ba-a7312ceb961a",
       "name": "🔄 Loop Over Sessions",
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
-      "position": [448, 576]
+      "position": [
+        256,
+        576
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📝 Format dialog for AI (Loop)\n// ═══════════════════════════════════════════════════════════════\n\nconst sessionData = items[0].json;\nconst sessionId = sessionData.sessionId;\nconst messages = sessionData.messages || [];\nconst language = sessionData.language;\nconst platform = sessionData.platform;\n\nlet platformInfo = '';\nif (sessionId.startsWith('telegram_')) {\n    platformInfo = '\\nPlatform: Telegram (check user_contact_data for profile name)';\n} else if (sessionId.startsWith('webchat_')) {\n    platformInfo = '\\nPlatform: WebChat (no profile data)';\n} else if (sessionId.startsWith('whatsapp_')) {\n    platformInfo = '\\nPlatform: WhatsApp (phone may be in session_id)';\n}\n\nconst conversation = messages.map(msg => \n    `${msg.type === 'human' ? 'Client' : 'Bot'}: ${msg.content}`\n).join('\\n');\n\nreturn [{\n    json: {\n        sessionId: sessionId,\n        language: language,\n        platform: platform,\n        platformInfo: platformInfo,\n        conversation: conversation,\n        messagesCount: messages.length\n    }\n}];"
+        "jsCode": "// Форматируем диалог одной сессии для AI\nconst sessionData = items[0].json;\nconst sessionId = sessionData.sessionId;\nconst messages = sessionData.messages || [];\nconst language = sessionData.language;\nconst platform = sessionData.platform;\n\n// Форматируем платформу\nlet platformInfo = '';\nif (sessionId.startsWith('telegram_')) {\n    platformInfo = '\\nПлатформа: Telegram (проверь базу user_contact_data для имени из профиля)';\n} else if (sessionId.startsWith('webchat_')) {\n    platformInfo = '\\nПлатформа: WebChat (нет данных профиля)';\n} else if (sessionId.startsWith('whatsapp_')) {\n    platformInfo = '\\nПлатформа: WhatsApp (телефон может быть в session_id)';\n}\n\n// Форматируем диалог\nconst conversation = messages.map(msg => \n    `${msg.type === 'human' ? 'Клиент' : 'Бот'}: ${msg.content}`\n).join('\\n');\n\nreturn [{\n    json: {\n        sessionId: sessionId,\n        language: language,\n        platform: platform,\n        platformInfo: platformInfo,\n        conversation: conversation,\n        messagesCount: messages.length\n    }\n}];"
       },
       "id": "b3981f67-d74e-4c80-b9e1-f53dca4826b3",
       "name": "📝 Format Loop Dialog",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [656, 576]
+      "position": [
+        464,
+        576
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1},
-          "conditions": [{"leftValue": "={{ $json.platform }}", "rightValue": "webchat", "operator": {"type": "string", "operation": "equals"}}],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.platform }}",
+              "rightValue": "webchat",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
           "combinator": "and"
         },
         "options": {}
@@ -193,87 +287,121 @@
       "name": "❓ IF Webchat Loop",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [864, 576]
+      "position": [
+        672,
+        576
+      ]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT session_id, name, email, phone, company, custom_fields\nFROM {{ $('⚙️ CONFIG').first().json.table_prechat_submissions }}\nWHERE session_id = '{{ $json.sessionId }}'\nLIMIT 1;",
+        "query": "SELECT session_id, name, email, phone, company, custom_fields\nFROM prechat_submissions\nWHERE session_id = '{{ $json.sessionId }}'\nLIMIT 1;",
         "options": {}
       },
       "id": "7ccd7187-cf95-49b7-bcc1-7aaa8b3e0c21",
       "name": "🐘 Get PreChat Loop",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [1072, 480],
+      "position": [
+        880,
+        480
+      ],
       "alwaysOutputData": true,
-      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account"
+        }
+      }
     },
     {
       "parameters": {
-        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📤 Pass prechat data\n// ═══════════════════════════════════════════════════════════════\n\nconst dialogData = $('📝 Format Loop Dialog').first().json;\nconst preChat = items[0]?.json || null;\nconst hasPreChat = !!(preChat && preChat.session_id);\n\nreturn [{\n    json: {\n        ...dialogData,\n        preChat: hasPreChat ? preChat : null,\n        hasPreChat: hasPreChat\n    }\n}];"
+        "jsCode": "// Передаём данные prechat из формы\nconst dialogData = $('Format Loop Dialog').first().json;\nconst preChat = items[0]?.json || null;\nconst hasPreChat = !!(preChat && preChat.session_id);\n\nreturn [{\n    json: {\n        ...dialogData,\n        preChat: hasPreChat ? preChat : null,\n        hasPreChat: hasPreChat\n    }\n}];"
       },
       "id": "b8d74fcd-8ef1-474b-a324-4ee138110ebf",
       "name": "📤 Pass PreChat Loop",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1280, 480]
+      "position": [
+        1088,
+        480
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📤 For non-webchat platforms - no prechat\n// ═══════════════════════════════════════════════════════════════\n\nconst dialogData = $('📝 Format Loop Dialog').first().json;\n\nreturn [{\n    json: {\n        ...dialogData,\n        preChat: null,\n        hasPreChat: false\n    }\n}];"
+        "jsCode": "// Для не-webchat платформ - без prechat данных\nconst dialogData = $('Format Loop Dialog').first().json;\n\nreturn [{\n    json: {\n        ...dialogData,\n        preChat: null,\n        hasPreChat: false\n    }\n}];"
       },
       "id": "7a762006-42b7-4e3a-84ae-95b966ae00cc",
       "name": "📤 Pass Empty PreChat",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1072, 672]
+      "position": [
+        880,
+        672
+      ]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 🔍 Check existing contact\n-- ═══════════════════════════════════════════════════════════════\n\nSELECT session_id, platform, platform_user_id, platform_username, platform_first_name, full_name, telegram, confidence_score\nFROM {{ $('⚙️ CONFIG').first().json.table_user_contact_data }}\nWHERE session_id = '{{ $json.sessionId }}';",
+        "query": "-- Получаем существующий контакт для одной сессии\nSELECT \n    session_id,\n    platform,\n    platform_user_id,\n    platform_username,\n    platform_first_name,\n    full_name,\n    telegram,\n    confidence_score\nFROM user_contact_data\nWHERE session_id = '{{ $json.sessionId }}';",
         "options": {}
       },
       "id": "8ad23489-b30e-4f25-95d6-394f408894df",
       "name": "🐘 Check Loop Existing",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [1488, 576],
+      "position": [
+        1296,
+        576
+      ],
       "alwaysOutputData": true,
-      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account"
+        }
+      }
     },
     {
       "parameters": {
-        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📤 Prepare data for merge\n// ═══════════════════════════════════════════════════════════════\n\nconst existingContact = items.length > 0 && items[0].json ? items[0].json : null;\n\nreturn [{\n    json: {\n        existingContact: existingContact\n    }\n}];"
+        "jsCode": "// Pass data from Postgres and prepare for merge\nconst existingContact = items.length > 0 && items[0].json ? items[0].json : null;\n\nreturn [{\n    json: {\n        existingContact: existingContact\n    }\n}];"
       },
       "id": "44b05f38-73b4-4d7c-85c8-a6dc6bbac3fb",
       "name": "📤 Pass Loop Check",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1696, 576]
+      "position": [
+        1504,
+        576
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔀 Merge data for AI\n// ═══════════════════════════════════════════════════════════════\n\nlet dialogData;\ntry {\n    dialogData = $('📤 Pass PreChat Loop').first().json;\n} catch (e) {\n    try {\n        dialogData = $('📤 Pass Empty PreChat').first().json;\n    } catch (e2) {\n        dialogData = $('📝 Format Loop Dialog').first().json;\n    }\n}\n\nconst checkData = items[0].json;\nconst existingContact = checkData.existingContact;\nconst preChat = dialogData.preChat || null;\nconst hasPreChat = dialogData.hasPreChat || false;\n\nlet contextInfo = dialogData.platformInfo || '';\n\nlet preChatInfo = '';\nif (hasPreChat && preChat) {\n    preChatInfo = `\\n\\n📋 PRECHAT FORM DATA (filled by user before chat):\\n- Name: ${preChat.name || 'not provided'}\\n- Email: ${preChat.email || 'not provided'}\\n- Phone: ${preChat.phone || 'not provided'}\\n- Company: ${preChat.company || 'not provided'}`;\n}\n\nif (existingContact) {\n    if (existingContact.platform === 'telegram' && existingContact.platform_first_name) {\n        contextInfo += `\\nTelegram profile name: ${existingContact.platform_first_name}`;\n    }\n    if (existingContact.platform_username) {\n        contextInfo += `\\nTelegram username: ${existingContact.platform_username}`;\n    }\n    if (existingContact.full_name && existingContact.confidence_score < 100) {\n        contextInfo += `\\nPreviously saved name: ${existingContact.full_name} (confidence: ${existingContact.confidence_score})`;\n    }\n}\n\nreturn [{\n    json: {\n        sessionId: dialogData.sessionId,\n        language: dialogData.language,\n        platform: dialogData.platform,\n        platformInfo: contextInfo,\n        preChatInfo: preChatInfo,\n        conversation: dialogData.conversation,\n        hasExistingContact: !!existingContact,\n        existingConfidence: existingContact ? existingContact.confidence_score : 0,\n        hasPreChat: hasPreChat\n    }\n}];"
+        "jsCode": "// Объединяем данные диалога с существующим контактом и prechat\n// Получаем данные из Pass PreChat Loop или Pass Empty PreChat Loop\nlet dialogData;\ntry {\n    dialogData = $('Pass PreChat Loop').first().json;\n} catch (e) {\n    try {\n        dialogData = $('Pass Empty PreChat Loop').first().json;\n    } catch (e2) {\n        dialogData = $('Format Loop Dialog').first().json;\n    }\n}\n\nconst checkData = items[0].json;\nconst existingContact = checkData.existingContact;\nconst preChat = dialogData.preChat || null;\nconst hasPreChat = dialogData.hasPreChat || false;\n\nlet contextInfo = dialogData.platformInfo || '';\n\n// Добавляем информацию из prechat формы\nlet preChatInfo = '';\nif (hasPreChat && preChat) {\n    preChatInfo = `\\n\\n📋 ДАННЫЕ ИЗ ФОРМЫ PRECHAT (заполнены пользователем перед чатом):\\n- Имя: ${preChat.name || 'не указано'}\\n- Email: ${preChat.email || 'не указано'}\\n- Телефон: ${preChat.phone || 'не указано'}\\n- Компания: ${preChat.company || 'не указана'}`;\n}\n\nif (existingContact) {\n    if (existingContact.platform === 'telegram' && existingContact.platform_first_name) {\n        contextInfo += `\\nВ профиле Telegram указано имя: ${existingContact.platform_first_name}`;\n    }\n    if (existingContact.platform_username) {\n        contextInfo += `\\nTelegram username: ${existingContact.platform_username}`;\n    }\n    if (existingContact.full_name && existingContact.confidence_score < 100) {\n        contextInfo += `\\nРанее сохранено имя: ${existingContact.full_name} (confidence: ${existingContact.confidence_score})`;\n    }\n}\n\nreturn [{\n    json: {\n        sessionId: dialogData.sessionId,\n        language: dialogData.language,\n        platform: dialogData.platform,\n        platformInfo: contextInfo,\n        preChatInfo: preChatInfo,\n        conversation: dialogData.conversation,\n        hasExistingContact: !!existingContact,\n        existingConfidence: existingContact ? existingContact.confidence_score : 0,\n        hasPreChat: hasPreChat\n    }\n}];"
       },
       "id": "98a4199e-aa6e-40e1-b6fe-eb0d8c430c51",
       "name": "🔀 Merge Loop Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1904, 576]
+      "position": [
+        1712,
+        576
+      ]
     },
     {
       "parameters": {
         "promptType": "define",
-        "text": "=Session ID: {{ $json.sessionId }}\nLanguage: {{ $json.language }}\n{{ $json.platformInfo }}\n{{ $json.preChatInfo }}\n\n💬 DIALOG:\n{{ $json.conversation }}",
+        "text": "=Session ID: {{ $json.sessionId }}\nЯзык: {{ $json.language }}\n{{ $json.platformInfo }}\n{{ $json.preChatInfo }}\n\n💬 ДИАЛОГ:\n{{ $json.conversation }}",
         "options": {
-          "systemMessage": "=#Role: You are a specialist in extracting contact data from dialogs between clients and AI agents.\n\n#Task: Analyze a dialog for ONE session and extract all CLIENT contact data, including names, phones, emails, messengers and other contact information.\n\n#CRITICAL - DISTINGUISH MESSAGE SENDER:\n\nIn the dialog there are TWO types of messages:\n- \"Client:\" → messages from the USER (human)\n- \"Bot:\" → messages from the AI BOT/MANAGER\n\n⚠️ RULE: Extract ONLY contact data from CLIENT messages!\n\n❌ IGNORE contacts from bot messages:\n- Bot may introduce itself: \"My name is Anna\" → DO NOT extract\n- Bot may give company contacts: \"Our phone +7-999-111-22-33\" → DO NOT extract\n- Bot may give support email: \"Write to support@company.com\" → DO NOT extract\n\n✅ EXTRACT contacts from client messages:\n- Client introduces themselves: \"My name is John\" → EXTRACT name\n- Client gives phone: \"My number is +7-999-222-33-44\" → EXTRACT phone\n- Client gives email: \"Write me at john@mail.com\" → EXTRACT email\n\n#PRECHAT FORM DATA:\n\nBefore starting the chat, the user may have filled out a form with contacts (section 📋 PRECHAT FORM DATA).\nUse this data as FALLBACK:\n\n- PRIORITY 1: Data from DIALOG (client explicitly stated) → confidence 100\n- PRIORITY 2: Data from PRECHAT FORM (if not in dialog) → confidence 50-70\n- PRIORITY 3: Data from messenger profile → confidence 60\n\nExample: Form has name \"Mike\", in dialog client wrote \"My name is John\" → Use \"John\" (dialog priority)\nExample: Form has email \"test@mail.com\", email not mentioned in dialog → Use \"test@mail.com\" from form\n\n#CONFIDENCE RULES:\n\n- Client EXPLICITLY introduced/stated in dialog → confidence = 100\n- Data from prechat form (client didn't state in dialog) → confidence = 60\n- Bot addresses client by name → confidence = 85\n- Name from messenger profile → confidence = 60\n- Data guessed from context → confidence = 40\n\n#Rules:\n- Extract ONLY CLIENT data, ignore bot/company data\n- DO NOT make up data\n- Normalize phones to +7XXXXXXXXXX format for Russia\n- In extractedFrom specify source: \"from dialog\", \"from prechat form\", \"from profile\"\n\n#Response format - clean JSON:\n{\n  \"sessionId\": \"session id\",\n  \"name\": \"full name or null\",\n  \"firstName\": \"first name or null\",\n  \"lastName\": \"last name or null\",\n  \"phone\": \"normalized phone or null\",\n  \"phoneRaw\": \"phone as stated or null\",\n  \"email\": \"email or null\",\n  \"telegram\": \"@username or null\",\n  \"whatsapp\": \"WhatsApp number or null\",\n  \"otherContacts\": {},\n  \"company\": \"company or null\",\n  \"position\": \"position or null\",\n  \"location\": \"city/country or null\",\n  \"preferredContact\": \"preferred contact method or null\",\n  \"extractedFrom\": \"data source\",\n  \"confidence\": number from 0 to 100\n}\n\nReturn ONLY valid JSON without markdown blocks!"
+          "systemMessage": "=#Роль: Вы — специалист по извлечению контактных данных из диалогов между клиентами и AI-агентами.\n\n#Задача: Проанализировать диалог ОДНОЙ сессии и извлечь все контактные данные КЛИЕНТА, включая имена, телефоны, email, мессенджеры и другую контактную информацию.\n\n#КРИТИЧЕСКИ ВАЖНО - РАЗЛИЧАЙ ОТПРАВИТЕЛЯ СООБЩЕНИЙ:\n\nВ диалоге есть ДВА типа сообщений:\n- \"Клиент:\" → это сообщения ПОЛЬЗОВАТЕЛЯ (человека)\n- \"Бот:\" → это сообщения AI-БОТА/МЕНЕДЖЕРА\n\n⚠️ ПРАВИЛО: Извлекай ТОЛЬКО контактные данные из сообщений КЛИЕНТА!\n\n❌ ИГНОРИРУЙ контакты из сообщений бота:\n- Бот может представляться: \"Меня зовут Анна\" → НЕ извлекать\n- Бот может давать контакты компании: \"Наш телефон +7-999-111-22-33\" → НЕ извлекать\n- Бот может давать email поддержки: \"Пишите на support@company.com\" → НЕ извлекать\n\n✅ ИЗВЛЕКАЙ контакты из сообщений клиента:\n- Клиент представляется: \"Меня зовут Лобзик\" → ИЗВЛЕЧЬ имя\n- Клиент даёт телефон: \"Мой номер +7-999-222-33-44\" → ИЗВЛЕЧЬ телефон\n- Клиент даёт email: \"Напишите мне на lobzik@mail.ru\" → ИЗВЛЕЧЬ email\n\n#ДАННЫЕ ИЗ ФОРМЫ PRECHAT:\n\nПеред началом чата пользователь мог заполнить форму с контактами (секция 📋 ДАННЫЕ ИЗ ФОРМЫ PRECHAT).\nЭти данные используй как FALLBACK (запасной источник):\n\n- ПРИОРИТЕТ 1: Данные из ДИАЛОГА (клиент явно назвал) → confidence 100\n- ПРИОРИТЕТ 2: Данные из ФОРМЫ PRECHAT (если в диалоге нет) → confidence 50-70\n- ПРИОРИТЕТ 3: Данные из профиля мессенджера → confidence 60\n\nПример: В форме имя \"Лапоть\", в диалоге клиент написал \"Меня зовут Лобзик\" → Используй \"Лобзик\" (приоритет диалога)\nПример: В форме email \"test@mail.com\", в диалоге email не упоминался → Используй \"test@mail.com\" из формы\n\n#ПРИМЕРЫ ПРАВИЛЬНОЙ РАБОТЫ:\n\nПример 1 - Контакты бота (ИГНОРИРОВАТЬ):\nБот: Здравствуйте! Меня зовут Cryptonus, я AI-консультант. Телефон поддержки: +7-999-111-22-33\nКлиент: Привет, я Лобзик\n\nПравильный ответ:\n- name: \"Лобзик\" ← из сообщения клиента\n- phone: null ← телефон бота игнорируем\n\nПример 2 - Приоритет диалога над формой:\n📋 ДАННЫЕ ИЗ ФОРМЫ: Имя: Лапоть, Email: lapot@mail.com\nКлиент: Меня зовут Лобзик\n\nПравильный ответ:\n- name: \"Лобзик\" ← из диалога (приоритет!)\n- email: \"lapot@mail.com\" ← из формы (fallback)\n\n#Инструкции по извлечению:\n\n1. **Имя клиента**:\n   - ПРИОРИТЕТ 1: Клиент явно представился в диалоге\n   - ПРИОРИТЕТ 2: Имя из формы prechat (если в диалоге нет)\n   - ПРИОРИТЕТ 3: Бот обращается к клиенту по имени\n   - ПРИОРИТЕТ 4: Имя из профиля мессенджера\n\n2. **Телефон/Email**:\n   - ПРИОРИТЕТ 1: Клиент указал в диалоге\n   - ПРИОРИТЕТ 2: Из формы prechat\n   - ПРИОРИТЕТ 3: Из профиля\n\n#ПРАВИЛА ДЛЯ УВЕРЕННОСТИ (confidence):\n\n- Клиент ЯВНО представился/указал в диалоге → confidence = 100\n- Данные из формы prechat (клиент не указал в диалоге) → confidence = 60\n- Бот обращается к клиенту по имени → confidence = 85\n- Имя из профиля мессенджера → confidence = 60\n- Данные угаданы из контекста → confidence = 40\n\n#Правила:\n- Извлекай ТОЛЬКО данные КЛИЕНТА, игнорируй данные бота/компании\n- НЕ придумывай данные\n- Нормализуй телефоны к формату +7XXXXXXXXXX для РФ\n- В extractedFrom указывай источник: \"из диалога\", \"из формы prechat\", \"из профиля\"\n\n#Формат ответа - чистый JSON:\n{\n  \"sessionId\": \"id сессии\",\n  \"name\": \"полное имя или null\",\n  \"firstName\": \"имя или null\",\n  \"lastName\": \"фамилия или null\",\n  \"phone\": \"нормализованный телефон или null\",\n  \"phoneRaw\": \"телефон как указан или null\",\n  \"email\": \"email или null\",\n  \"telegram\": \"@username или null\",\n  \"whatsapp\": \"номер WhatsApp или null\",\n  \"otherContacts\": {},\n  \"company\": \"компания или null\",\n  \"position\": \"должность или null\",\n  \"location\": \"город/страна или null\",\n  \"preferredContact\": \"способ связи или null\",\n  \"extractedFrom\": \"источник данных\",\n  \"confidence\": число от 0 до 100\n}\n\nВозвращай ТОЛЬКО валидный JSON без markdown блоков!"
         }
       },
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 2,
-      "position": [2112, 576],
+      "position": [
+        1920,
+        576
+      ],
       "id": "596b290f-2fa8-4d65-8c61-e9efdf9bc545",
       "name": "🤖 AI Batch Extractor"
     },
@@ -281,63 +409,94 @@
       "parameters": {},
       "type": "@n8n/n8n-nodes-langchain.toolThink",
       "typeVersion": 1,
-      "position": [2352, 752],
+      "position": [
+        2160,
+        752
+      ],
       "id": "e946428d-9e86-4370-b357-af2c29d928fc",
       "name": "💭 Think Batch"
     },
     {
       "parameters": {
-        "modelName": "={{ $('⚙️ CONFIG').first().json.gemini_model_batch }}",
-        "options": {"temperature": "={{ $('⚙️ CONFIG').first().json.gemini_temperature }}"}
+        "modelName": "models/gemini-2.5-flash-lite",
+        "options": {
+          "temperature": 0.3
+        }
       },
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1,
-      "position": [2048, 752],
+      "position": [
+        1856,
+        752
+      ],
       "id": "4c8a7615-b3ee-4db7-b010-9b466f5bc59b",
       "name": "🧠 Gemini Batch",
-      "credentials": {"googlePalmApi": {"id": "YOUR_GEMINI_CREDENTIAL_ID", "name": "Google Gemini(PaLM) Api account"}}
+      "credentials": {
+        "googlePalmApi": {
+          "id": "YOUR_GOOGLEPALMAPI_CREDENTIAL_ID",
+          "name": "Googlepalmapi account"
+        }
+      }
     },
     {
       "parameters": {
-        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📋 Parse AI response (Batch)\n// ═══════════════════════════════════════════════════════════════\n\nconst aiResponse = items[0].json.output || items[0].json.response || items[0].json;\n\nlet contactData;\ntry {\n    if (typeof aiResponse === 'string') {\n        let cleanJson = aiResponse;\n        cleanJson = cleanJson.replace(/```json\\s*/g, '').replace(/```\\s*/g, '');\n        const firstBrace = cleanJson.indexOf('{');\n        if (firstBrace > 0) { cleanJson = cleanJson.substring(firstBrace); }\n        const lastBrace = cleanJson.lastIndexOf('}');\n        if (lastBrace !== -1 && lastBrace < cleanJson.length - 1) { cleanJson = cleanJson.substring(0, lastBrace + 1); }\n        const parsedData = JSON.parse(cleanJson);\n        if (parsedData.contacts && Array.isArray(parsedData.contacts) && parsedData.contacts.length > 0) {\n            contactData = parsedData.contacts[0];\n        } else {\n            contactData = parsedData;\n        }\n    } else {\n        if (aiResponse.contacts && Array.isArray(aiResponse.contacts) && aiResponse.contacts.length > 0) {\n            contactData = aiResponse.contacts[0];\n        } else {\n            contactData = aiResponse;\n        }\n    }\n    if (!contactData.sessionId) { throw new Error('Missing sessionId in response'); }\n} catch (error) {\n    const sessionData = $('🔀 Merge Loop Data').first().json;\n    contactData = {\n        sessionId: sessionData.sessionId, name: null, firstName: null, lastName: null,\n        phone: null, phoneRaw: null, email: null, telegram: null, whatsapp: null,\n        otherContacts: null, company: null, position: null, location: null,\n        preferredContact: null, extractedFrom: 'AI parse error: ' + error.message, confidence: 0\n    };\n}\n\nreturn [{json: contactData}];"
+        "jsCode": "// Парсим ответ AI для одной сессии (Batch)\nconst aiResponse = items[0].json.output || items[0].json.response || items[0].json;\n\nlet contactData;\ntry {\n    if (typeof aiResponse === 'string') {\n        let cleanJson = aiResponse;\n        \n        // Удаляем markdown блоки\n        cleanJson = cleanJson.replace(/```json\\s*/g, '').replace(/```\\s*/g, '');\n        \n        const firstBrace = cleanJson.indexOf('{');\n        if (firstBrace > 0) {\n            cleanJson = cleanJson.substring(firstBrace);\n        }\n        const lastBrace = cleanJson.lastIndexOf('}');\n        if (lastBrace !== -1 && lastBrace < cleanJson.length - 1) {\n            cleanJson = cleanJson.substring(0, lastBrace + 1);\n        }\n        \n        const parsedData = JSON.parse(cleanJson);\n        \n        // Проверяем массив contacts\n        if (parsedData.contacts && Array.isArray(parsedData.contacts) && parsedData.contacts.length > 0) {\n            contactData = parsedData.contacts[0];\n        } else {\n            contactData = parsedData;\n        }\n        \n    } else {\n        if (aiResponse.contacts && Array.isArray(aiResponse.contacts) && aiResponse.contacts.length > 0) {\n            contactData = aiResponse.contacts[0];\n        } else {\n            contactData = aiResponse;\n        }\n    }\n    \n    // Валидация\n    if (!contactData.sessionId) {\n        throw new Error('Missing sessionId in response');\n    }\n    \n    \n} catch (error) {\n    console.error('❌ [Batch] Parse error:', error.message);\n    \n    const sessionData = $('Merge Loop Data').first().json;\n    contactData = {\n        sessionId: sessionData.sessionId,\n        name: null,\n        firstName: null,\n        lastName: null,\n        phone: null,\n        phoneRaw: null,\n        email: null,\n        telegram: null,\n        whatsapp: null,\n        otherContacts: null,\n        company: null,\n        position: null,\n        location: null,\n        preferredContact: null,\n        extractedFrom: 'AI parse error: ' + error.message,\n        confidence: 0\n    };\n}\n\n// Возвращаем данные КАК ЕСТЬ (без добавления кавычек)\nreturn [{json: contactData}];"
       },
       "id": "0fd92d5d-9fcb-4100-8e22-96df4150fdb3",
       "name": "📋 Parse Batch Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2480, 576]
+      "position": [
+        2288,
+        576
+      ]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 💾 Save contact (Batch)\n-- ═══════════════════════════════════════════════════════════════\n\nINSERT INTO {{ $('⚙️ CONFIG').first().json.table_user_contact_data }} (\n    session_id, platform, full_name, first_name, last_name, phone, phone_raw, email,\n    telegram, whatsapp, other_contacts, company, position, location, preferred_contact,\n    extracted_from, confidence_score, last_updated\n) VALUES (\n    '{{ $json.sessionId }}',\n    CASE WHEN '{{ $json.sessionId }}' LIKE 'telegram_%' THEN 'telegram' WHEN '{{ $json.sessionId }}' LIKE 'webchat_%' THEN 'webchat' WHEN '{{ $json.sessionId }}' LIKE 'whatsapp_%' THEN 'whatsapp' ELSE 'unknown' END,\n    {{ $json.name ? \"'\" + String($json.name).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.firstName ? \"'\" + String($json.firstName).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.lastName ? \"'\" + String($json.lastName).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.phone ? \"'\" + $json.phone + \"'\" : 'NULL' }},\n    {{ $json.phoneRaw ? \"'\" + $json.phoneRaw + \"'\" : 'NULL' }},\n    {{ $json.email ? \"'\" + $json.email + \"'\" : 'NULL' }},\n    {{ $json.telegram ? \"'\" + $json.telegram + \"'\" : 'NULL' }},\n    {{ $json.whatsapp ? \"'\" + $json.whatsapp + \"'\" : 'NULL' }},\n    {{ $json.otherContacts && Object.keys($json.otherContacts).length > 0 ? \"'\" + JSON.stringify($json.otherContacts).replace(/'/g, \"''\") + \"'::jsonb\" : 'NULL' }},\n    {{ $json.company ? \"'\" + String($json.company).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.position ? \"'\" + String($json.position).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.location ? \"'\" + String($json.location).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.preferredContact ? \"'\" + $json.preferredContact + \"'\" : 'NULL' }},\n    {{ $json.extractedFrom ? \"'\" + String($json.extractedFrom).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.confidence || 0 }},\n    CURRENT_TIMESTAMP\n)\nON CONFLICT (session_id)\nDO UPDATE SET\n    full_name = COALESCE({{ $('⚙️ CONFIG').first().json.table_user_contact_data }}.full_name, EXCLUDED.full_name),\n    first_name = COALESCE({{ $('⚙️ CONFIG').first().json.table_user_contact_data }}.first_name, EXCLUDED.first_name),\n    last_name = COALESCE({{ $('⚙️ CONFIG').first().json.table_user_contact_data }}.last_name, EXCLUDED.last_name),\n    phone = COALESCE({{ $('⚙️ CONFIG').first().json.table_user_contact_data }}.phone, EXCLUDED.phone),\n    email = COALESCE({{ $('⚙️ CONFIG').first().json.table_user_contact_data }}.email, EXCLUDED.email),\n    confidence_score = GREATEST(EXCLUDED.confidence_score, COALESCE({{ $('⚙️ CONFIG').first().json.table_user_contact_data }}.confidence_score, 0)),\n    last_updated = CURRENT_TIMESTAMP\nRETURNING *;",
+        "query": "INSERT INTO user_contact_data (\n    session_id,\n    platform,\n    full_name,\n    first_name,\n    last_name,\n    phone,\n    phone_raw,\n    email,\n    telegram,\n    whatsapp,\n    other_contacts,\n    company,\n    position,\n    location,\n    preferred_contact,\n    extracted_from,\n    confidence_score,\n    last_updated\n) VALUES (\n    '{{ $json.sessionId }}',\n    CASE \n        WHEN '{{ $json.sessionId }}' LIKE 'telegram_%' THEN 'telegram'\n        WHEN '{{ $json.sessionId }}' LIKE 'webchat_%' THEN 'webchat'\n        WHEN '{{ $json.sessionId }}' LIKE 'whatsapp_%' THEN 'whatsapp'\n        ELSE 'unknown'\n    END,\n    {{ $json.name ? \"'\" + String($json.name).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.firstName ? \"'\" + String($json.firstName).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.lastName ? \"'\" + String($json.lastName).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.phone ? \"'\" + $json.phone + \"'\" : 'NULL' }},\n    {{ $json.phoneRaw ? \"'\" + $json.phoneRaw + \"'\" : 'NULL' }},\n    {{ $json.email ? \"'\" + $json.email + \"'\" : 'NULL' }},\n    {{ $json.telegram ? \"'\" + $json.telegram + \"'\" : 'NULL' }},\n    {{ $json.whatsapp ? \"'\" + $json.whatsapp + \"'\" : 'NULL' }},\n    {{ $json.otherContacts && Object.keys($json.otherContacts).length > 0 ? \"'\" + JSON.stringify($json.otherContacts).replace(/'/g, \"''\") + \"'::jsonb\" : 'NULL' }},\n    {{ $json.company ? \"'\" + String($json.company).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.position ? \"'\" + String($json.position).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.location ? \"'\" + String($json.location).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.preferredContact ? \"'\" + $json.preferredContact + \"'\" : 'NULL' }},\n    {{ $json.extractedFrom ? \"'\" + String($json.extractedFrom).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.confidence || 0 }},\n    CURRENT_TIMESTAMP\n)\nON CONFLICT (session_id)\nDO UPDATE SET\n    full_name = CASE \n        -- ПРИОРИТЕТ 1: Имя из диалога ВСЕГДА побеждает имя из профиля (независимо от confidence)\n        WHEN EXCLUDED.extracted_from LIKE '%из диалога%' \n             AND (user_contact_data.extracted_from LIKE '%из профиля%' \n                  OR user_contact_data.extracted_from IS NULL)\n             AND EXCLUDED.full_name IS NOT NULL\n        THEN EXCLUDED.full_name\n        \n        -- ПРИОРИТЕТ 2: При РАВНОМ confidence, имя из диалога побеждает\n        WHEN EXCLUDED.confidence_score = user_contact_data.confidence_score\n             AND EXCLUDED.extracted_from LIKE '%из диалога%'\n             AND EXCLUDED.full_name IS NOT NULL\n        THEN EXCLUDED.full_name\n        \n        -- ПРИОРИТЕТ 3: Если новый confidence ВЫШЕ - обновляем\n        WHEN EXCLUDED.confidence_score > COALESCE(user_contact_data.confidence_score, 0)\n             AND EXCLUDED.full_name IS NOT NULL\n        THEN EXCLUDED.full_name\n        \n        -- ПРИОРИТЕТ 4: Если старого имени нет - пишем новое\n        WHEN user_contact_data.full_name IS NULL \n             AND EXCLUDED.full_name IS NOT NULL\n        THEN EXCLUDED.full_name\n        \n        -- Иначе оставляем старое\n        ELSE user_contact_data.full_name\n    END,\n    \n    first_name = CASE \n        WHEN EXCLUDED.extracted_from LIKE '%из диалога%' \n             AND (user_contact_data.extracted_from LIKE '%из профиля%' \n                  OR user_contact_data.extracted_from IS NULL)\n             AND EXCLUDED.first_name IS NOT NULL\n        THEN EXCLUDED.first_name\n        WHEN EXCLUDED.confidence_score = user_contact_data.confidence_score\n             AND EXCLUDED.extracted_from LIKE '%из диалога%'\n             AND EXCLUDED.first_name IS NOT NULL\n        THEN EXCLUDED.first_name\n        WHEN EXCLUDED.confidence_score > COALESCE(user_contact_data.confidence_score, 0)\n             AND EXCLUDED.first_name IS NOT NULL\n        THEN EXCLUDED.first_name\n        WHEN user_contact_data.first_name IS NULL \n             AND EXCLUDED.first_name IS NOT NULL\n        THEN EXCLUDED.first_name\n        ELSE user_contact_data.first_name\n    END,\n    \n    last_name = CASE \n        WHEN EXCLUDED.extracted_from LIKE '%из диалога%' \n             AND (user_contact_data.extracted_from LIKE '%из профиля%' \n                  OR user_contact_data.extracted_from IS NULL)\n             AND EXCLUDED.last_name IS NOT NULL\n        THEN EXCLUDED.last_name\n        WHEN EXCLUDED.confidence_score = user_contact_data.confidence_score\n             AND EXCLUDED.extracted_from LIKE '%из диалога%'\n             AND EXCLUDED.last_name IS NOT NULL\n        THEN EXCLUDED.last_name\n        WHEN EXCLUDED.confidence_score > COALESCE(user_contact_data.confidence_score, 0)\n             AND EXCLUDED.last_name IS NOT NULL\n        THEN EXCLUDED.last_name\n        WHEN user_contact_data.last_name IS NULL \n             AND EXCLUDED.last_name IS NOT NULL\n        THEN EXCLUDED.last_name\n        ELSE user_contact_data.last_name\n    END,\n    \n    phone = COALESCE(user_contact_data.phone, EXCLUDED.phone),\n    phone_raw = COALESCE(user_contact_data.phone_raw, EXCLUDED.phone_raw),\n    email = COALESCE(user_contact_data.email, EXCLUDED.email),\n    telegram = COALESCE(user_contact_data.telegram, EXCLUDED.telegram),\n    whatsapp = COALESCE(user_contact_data.whatsapp, EXCLUDED.whatsapp),\n    other_contacts = COALESCE(user_contact_data.other_contacts, EXCLUDED.other_contacts),\n    company = COALESCE(user_contact_data.company, EXCLUDED.company),\n    position = COALESCE(user_contact_data.position, EXCLUDED.position),\n    location = COALESCE(user_contact_data.location, EXCLUDED.location),\n    preferred_contact = COALESCE(user_contact_data.preferred_contact, EXCLUDED.preferred_contact),\n    \n    extracted_from = CASE\n        WHEN EXCLUDED.full_name != user_contact_data.full_name \n             OR user_contact_data.full_name IS NULL\n        THEN EXCLUDED.extracted_from\n        ELSE user_contact_data.extracted_from\n    END,\n    \n    confidence_score = GREATEST(EXCLUDED.confidence_score, COALESCE(user_contact_data.confidence_score, 0)),\n    \n    last_updated = CURRENT_TIMESTAMP\nRETURNING *;",
         "options": {}
       },
       "id": "21a9846b-90c5-41b1-8af5-4dc806d64460",
       "name": "🐘 Save Batch Contact",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [2688, 576],
-      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+      "position": [
+        2496,
+        576
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account"
+        }
+      }
     },
     {
-      "parameters": {"jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📤 Return to Loop\n// ═══════════════════════════════════════════════════════════════\n\nreturn items;"}
+      "parameters": {
+        "jsCode": "// Pass data back to Loop\nreturn items;"
       },
       "id": "6a6385a0-48f3-4139-bbab-245f78007e89",
       "name": "📤 Pass To Loop",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2976, 752]
+      "position": [
+        2784,
+        752
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📊 Aggregate batch results\n// ═══════════════════════════════════════════════════════════════\n\nconst allResults = items;\n\nconst summary = {\n    totalProcessed: allResults.length,\n    successful: allResults.filter(i => i.json.session_id).length,\n    failed: allResults.filter(i => !i.json.session_id).length,\n    timestamp: new Date().toISOString()\n};\n\nreturn [{json: summary}];"
+        "jsCode": "// Собираем результаты после Loop\nconst allResults = items;\n\nconst summary = {\n    totalProcessed: allResults.length,\n    successful: allResults.filter(i => i.json.session_id).length,\n    failed: allResults.filter(i => !i.json.session_id).length,\n    timestamp: new Date().toISOString()\n};\n\n\nreturn [{json: summary}];"
       },
       "id": "3cd111e8-ae21-4fea-8276-ed7e9cbde049",
       "name": "📊 Aggregate Results",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [656, 416]
+      "position": [
+        464,
+        416
+      ]
     },
     {
       "parameters": {
@@ -349,77 +508,108 @@
       "name": "✅ Respond Batch",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [864, 416]
+      "position": [
+        672,
+        416
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📝 Format dialogs for Single extraction\n// ═══════════════════════════════════════════════════════════════\n\nconst dialogs = items;\nconst sessions = {};\n\ndialogs.forEach(item => {\n    const data = item.json;\n    if (!sessions[data.session_id]) {\n        sessions[data.session_id] = {\n            messages: [],\n            language: data.language,\n            platform: data.platform || 'unknown'\n        };\n    }\n    sessions[data.session_id].messages.push({\n        type: data.message_type,\n        content: data.content,\n        timestamp: data.timestamp\n    });\n});\n\nconst dialogsForExtraction = [];\n\nfor (const [sessionId, data] of Object.entries(sessions)) {\n    let platformInfo = '';\n    if (sessionId.startsWith('telegram_')) {\n        platformInfo = '\\nPlatform: Telegram (check user_contact_data for profile name)';\n    } else if (sessionId.startsWith('webchat_')) {\n        platformInfo = '\\nPlatform: WebChat (no profile data)';\n    } else if (sessionId.startsWith('whatsapp_')) {\n        platformInfo = '\\nPlatform: WhatsApp (phone may be in session_id)';\n    }\n    dialogsForExtraction.push({\n        sessionId: sessionId,\n        language: data.language,\n        platform: data.platform,\n        platformInfo: platformInfo,\n        conversation: data.messages.map(msg => `${msg.type === 'human' ? 'Client' : 'Bot'}: ${msg.content}`).join('\\n')\n    });\n}\n\nreturn [{ json: { dialogs: dialogsForExtraction, totalDialogs: dialogsForExtraction.length } }];"
+        "jsCode": "// Форматируем диалоги для Single extraction\nconst dialogs = items;\nconst sessions = {};\n\ndialogs.forEach(item => {\n    const data = item.json;\n    if (!sessions[data.session_id]) {\n        sessions[data.session_id] = {\n            messages: [],\n            language: data.language,\n            platform: data.platform || 'unknown'\n        };\n    }\n    \n    sessions[data.session_id].messages.push({\n        type: data.message_type,\n        content: data.content,\n        timestamp: data.timestamp\n    });\n});\n\nconst dialogsForExtraction = [];\n\nfor (const [sessionId, data] of Object.entries(sessions)) {\n    let platformInfo = '';\n    \n    if (sessionId.startsWith('telegram_')) {\n        platformInfo = '\\nПлатформа: Telegram (проверь базу user_contact_data для имени из профиля)';\n    } else if (sessionId.startsWith('webchat_')) {\n        platformInfo = '\\nПлатформа: WebChat (нет данных профиля)';\n    } else if (sessionId.startsWith('whatsapp_')) {\n        platformInfo = '\\nПлатформа: WhatsApp (телефон может быть в session_id)';\n    }\n    \n    dialogsForExtraction.push({\n        sessionId: sessionId,\n        language: data.language,\n        platform: data.platform,\n        platformInfo: platformInfo,\n        conversation: data.messages.map(msg => \n            `${msg.type === 'human' ? 'Клиент' : 'Бот'}: ${msg.content}`\n        ).join('\\n')\n    });\n}\n\nreturn [{\n    json: {\n        dialogs: dialogsForExtraction,\n        totalDialogs: dialogsForExtraction.length\n    }\n}];"
       },
       "id": "8820cbec-d0bd-4468-a5e6-6627ae170259",
       "name": "📝 Format Single Dialog",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-16, 112]
+      "position": [
+        -208,
+        112
+      ]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT session_id, name, email, phone, company, custom_fields\nFROM {{ $('⚙️ CONFIG').first().json.table_prechat_submissions }}\nWHERE session_id IN (\n    {{ $json.dialogs.filter(d => d.platform === 'webchat').map(d => \"'\" + d.sessionId + \"'\").join(',') || \"''\" }}\n);",
+        "query": "SELECT session_id, name, email, phone, company, custom_fields\nFROM prechat_submissions\nWHERE session_id IN (\n    {{ $json.dialogs.filter(d => d.platform === 'webchat').map(d => \"'\" + d.sessionId + \"'\").join(',') || \"''\" }}\n);",
         "options": {}
       },
       "id": "a14eaf5d-21f9-4796-a276-5c7cded17303",
       "name": "🐘 Get PreChat Single",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [192, 0],
+      "position": [
+        0,
+        0
+      ],
       "alwaysOutputData": true,
-      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account"
+        }
+      }
     },
     {
       "parameters": {
-        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📤 Pass prechat data for single\n// ═══════════════════════════════════════════════════════════════\n\nconst dialogsData = $('📝 Format Single Dialog').first().json;\nconst preChatItems = items || [];\n\nconst preChatMap = {};\npreChatItems.forEach(item => {\n    if (item.json && item.json.session_id) {\n        preChatMap[item.json.session_id] = item.json;\n    }\n});\n\nreturn [{ json: { dialogs: dialogsData.dialogs, totalDialogs: dialogsData.totalDialogs, preChatMap: preChatMap } }];"
+        "jsCode": "// Сохраняем prechat данные в map по session_id\nconst dialogsData = $('Format Single Dialog').first().json;\nconst preChatItems = items || [];\n\nconst preChatMap = {};\npreChatItems.forEach(item => {\n    if (item.json && item.json.session_id) {\n        preChatMap[item.json.session_id] = item.json;\n    }\n});\n\nreturn [{\n    json: {\n        dialogs: dialogsData.dialogs,\n        totalDialogs: dialogsData.totalDialogs,\n        preChatMap: preChatMap\n    }\n}];"
       },
       "id": "ec5b3148-f76f-4f91-8d34-b3dc63ae1158",
       "name": "📤 Pass PreChat Single",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [400, 0]
+      "position": [
+        208,
+        0
+      ]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 🔍 Get existing contacts for Single\n-- ═══════════════════════════════════════════════════════════════\n\nSELECT session_id, platform, platform_user_id, platform_username, platform_first_name, full_name, telegram, confidence_score\nFROM {{ $('⚙️ CONFIG').first().json.table_user_contact_data }}\nWHERE session_id IN ( {{ $json.dialogs.map(d => \"'\" + d.sessionId + \"'\").join(',') }} );",
+        "query": "-- Получаем существующие контакты для Single\nSELECT \n    session_id,\n    platform,\n    platform_user_id,\n    platform_username,\n    platform_first_name,\n    full_name,\n    telegram,\n    confidence_score\nFROM user_contact_data\nWHERE session_id IN (\n    {{ $json.dialogs.map(d => \"'\" + d.sessionId + \"'\").join(',') }}\n);",
         "options": {}
       },
       "id": "5ce84515-f0a7-4d3b-b94c-98d259322833",
       "name": "🐘 Check Single Existing",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [608, 112],
+      "position": [
+        416,
+        112
+      ],
       "alwaysOutputData": true,
-      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account"
+        }
+      }
     },
     {
       "parameters": {
-        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 🔀 Merge data for Single extraction with prechat\n// ═══════════════════════════════════════════════════════════════\n\nconst preChatData = $('📤 Pass PreChat Single').first().json;\nconst dialogsData = preChatData;\nconst preChatMap = preChatData.preChatMap || {};\nconst existingContacts = $input.all();\n\nconst contactsMap = {};\nexistingContacts.forEach(item => {\n    const contact = item.json;\n    if (contact && contact.session_id) {\n        contactsMap[contact.session_id] = {\n            platform: contact.platform,\n            platform_username: contact.platform_username,\n            platform_first_name: contact.platform_first_name,\n            existing_name: contact.full_name,\n            existing_telegram: contact.telegram,\n            confidence_score: contact.confidence_score\n        };\n    }\n});\n\nconst enrichedDialogs = dialogsData.dialogs.map(dialog => {\n    const existingContact = contactsMap[dialog.sessionId];\n    const preChat = preChatMap[dialog.sessionId] || null;\n    \n    let contextInfo = dialog.platformInfo || '';\n    let preChatInfo = '';\n    \n    if (preChat && dialog.platform === 'webchat') {\n        preChatInfo = `\\n\\n📋 PRECHAT FORM DATA (filled by user before chat):\\n- Name: ${preChat.name || 'not provided'}\\n- Email: ${preChat.email || 'not provided'}\\n- Phone: ${preChat.phone || 'not provided'}\\n- Company: ${preChat.company || 'not provided'}`;\n    }\n    \n    if (existingContact) {\n        if (existingContact.platform === 'telegram' && existingContact.platform_first_name) {\n            contextInfo += `\\nTelegram profile name: ${existingContact.platform_first_name}`;\n        }\n        if (existingContact.platform_username) {\n            contextInfo += `\\nTelegram username: ${existingContact.platform_username}`;\n        }\n        if (existingContact.existing_name && existingContact.confidence_score < 100) {\n            contextInfo += `\\nPreviously saved name from profile: ${existingContact.existing_name} (confidence: ${existingContact.confidence_score})`;\n        }\n    }\n    \n    return {\n        ...dialog,\n        platformInfo: contextInfo,\n        preChatInfo: preChatInfo,\n        hasExistingContact: !!existingContact,\n        existingConfidence: existingContact ? existingContact.confidence_score : 0,\n        hasPreChat: !!preChat\n    };\n});\n\nreturn [{ json: { dialogs: enrichedDialogs, totalDialogs: enrichedDialogs.length } }];"
+        "jsCode": "// Объединяем данные для Single extraction с prechat\nconst preChatData = $('Pass PreChat Single').first().json;\nconst dialogsData = preChatData;\nconst preChatMap = preChatData.preChatMap || {};\nconst existingContacts = $input.all();\n\nconst contactsMap = {};\nexistingContacts.forEach(item => {\n    const contact = item.json;\n    if (contact && contact.session_id) {\n        contactsMap[contact.session_id] = {\n            platform: contact.platform,\n            platform_username: contact.platform_username,\n            platform_first_name: contact.platform_first_name,\n            existing_name: contact.full_name,\n            existing_telegram: contact.telegram,\n            confidence_score: contact.confidence_score\n        };\n    }\n});\n\nconst enrichedDialogs = dialogsData.dialogs.map(dialog => {\n    const existingContact = contactsMap[dialog.sessionId];\n    const preChat = preChatMap[dialog.sessionId] || null;\n    \n    let contextInfo = dialog.platformInfo || '';\n    let preChatInfo = '';\n    \n    // Добавляем информацию из prechat формы (только для webchat)\n    if (preChat && dialog.platform === 'webchat') {\n        preChatInfo = `\\n\\n📋 ДАННЫЕ ИЗ ФОРМЫ PRECHAT (заполнены пользователем перед чатом):\\n- Имя: ${preChat.name || 'не указано'}\\n- Email: ${preChat.email || 'не указано'}\\n- Телефон: ${preChat.phone || 'не указано'}\\n- Компания: ${preChat.company || 'не указана'}`;\n    }\n    \n    if (existingContact) {\n        if (existingContact.platform === 'telegram' && existingContact.platform_first_name) {\n            contextInfo += `\\nВ профиле Telegram указано имя: ${existingContact.platform_first_name}`;\n        }\n        if (existingContact.platform_username) {\n            contextInfo += `\\nTelegram username: ${existingContact.platform_username}`;\n        }\n        if (existingContact.existing_name && existingContact.confidence_score < 100) {\n            contextInfo += `\\nРанее сохранено имя из профиля: ${existingContact.existing_name} (confidence: ${existingContact.confidence_score})`;\n        }\n    }\n    \n    return {\n        ...dialog,\n        platformInfo: contextInfo,\n        preChatInfo: preChatInfo,\n        hasExistingContact: !!existingContact,\n        existingConfidence: existingContact ? existingContact.confidence_score : 0,\n        hasPreChat: !!preChat\n    };\n});\n\nreturn [{\n    json: {\n        dialogs: enrichedDialogs,\n        totalDialogs: enrichedDialogs.length\n    }\n}];"
       },
       "id": "c78fb91f-fa89-4c0b-a486-439b51c4309d",
       "name": "🔀 Merge Single Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [848, 112]
+      "position": [
+        656,
+        112
+      ]
     },
     {
       "parameters": {
         "promptType": "define",
-        "text": "=Number of dialogs: {{ $json.totalDialogs }}\n\nDialogs for analysis:\n{{ $json.dialogs.map((d, i) => `\\n--- Dialog ${i+1} (Session: ${d.sessionId}, ${d.language}, ${d.platform}) ---${d.platformInfo}${d.preChatInfo}\\n\\n💬 DIALOG:\\n${d.conversation}`).join('\\n\\n') }}",
+        "text": "=Количество диалогов: {{ $json.totalDialogs }}\n\nДиалоги для анализа:\n{{ $json.dialogs.map((d, i) => `\\n--- Диалог ${i+1} (Session: ${d.sessionId}, ${d.language}, ${d.platform}) ---${d.platformInfo}${d.preChatInfo}\\n\\n💬 ДИАЛОГ:\\n${d.conversation}`).join('\\n\\n') }}",
         "options": {
-          "systemMessage": "=#Role: You are a specialist in extracting contact data from dialogs between clients and AI agents.\n\n#Task: Analyze dialogs and extract all CLIENT contact data, including names, phones, emails, messengers.\n\n#CRITICAL - DISTINGUISH MESSAGE SENDER:\n\nIn the dialog there are TWO types of messages:\n- \"Client:\" → messages from the USER (human)\n- \"Bot:\" → messages from the AI BOT/MANAGER\n\n⚠️ RULE: Extract ONLY contact data from CLIENT messages!\n\n❌ IGNORE contacts from bot messages:\n- Bot may introduce itself: \"My name is Anna\" → DO NOT extract\n- Bot may give company contacts: \"Our phone +7-999-111-22-33\" → DO NOT extract\n- Bot may give support email: \"Write to support@company.com\" → DO NOT extract\n\n✅ EXTRACT contacts from client messages:\n- Client introduces themselves: \"My name is John\" → EXTRACT name\n- Client gives phone: \"My number is +7-999-222-33-44\" → EXTRACT phone\n- Client gives email: \"Write me at john@mail.com\" → EXTRACT email\n\n#PRECHAT FORM DATA:\n\nBefore starting the chat, the user may have filled out a form with contacts (section 📋 PRECHAT FORM DATA).\nUse this data as FALLBACK:\n\n- PRIORITY 1: Data from DIALOG (client explicitly stated) → confidence 100\n- PRIORITY 2: Data from PRECHAT FORM (if not in dialog) → confidence 50-70\n- PRIORITY 3: Data from messenger profile → confidence 60\n\n#CONFIDENCE RULES:\n\n- Client EXPLICITLY introduced/stated in dialog → confidence = 100\n- Data from prechat form (client didn't state in dialog) → confidence = 60\n- Bot addresses client by name → confidence = 85\n- Name from messenger profile → confidence = 60\n- Data guessed from context → confidence = 40\n\n#Rules:\n- Extract ONLY CLIENT data, ignore bot/company data\n- DO NOT make up data\n- Normalize phones to +7XXXXXXXXXX format for Russia\n- In extractedFrom specify source: \"from dialog\", \"from prechat form\", \"from profile\"\n\n#Response format - clean JSON:\n{\n  \"contacts\": [\n    {\n      \"sessionId\": \"session id\",\n      \"name\": \"full name or null\",\n      \"firstName\": \"first name or null\",\n      \"lastName\": \"last name or null\",\n      \"phone\": \"normalized phone or null\",\n      \"phoneRaw\": \"phone as stated or null\",\n      \"email\": \"email or null\",\n      \"telegram\": \"@username or null\",\n      \"whatsapp\": \"WhatsApp number or null\",\n      \"otherContacts\": {},\n      \"company\": \"company or null\",\n      \"position\": \"position or null\",\n      \"location\": \"city/country or null\",\n      \"preferredContact\": \"preferred contact method or null\",\n      \"extractedFrom\": \"data source\",\n      \"confidence\": number from 0 to 100\n    }\n  ]\n}\n\nReturn ONLY valid JSON without markdown blocks!"
+          "systemMessage": "=#Роль: Вы — специалист по извлечению контактных данных из диалогов между клиентами и AI-агентами.\n\n#Задача: Проанализировать диалоги и извлечь все контактные данные КЛИЕНТОВ, включая имена, телефоны, email, мессенджеры.\n\n#КРИТИЧЕСКИ ВАЖНО - РАЗЛИЧАЙ ОТПРАВИТЕЛЯ СООБЩЕНИЙ:\n\nВ диалоге есть ДВА типа сообщений:\n- \"Клиент:\" → это сообщения ПОЛЬЗОВАТЕЛЯ (человека)\n- \"Бот:\" → это сообщения AI-БОТА/МЕНЕДЖЕРА\n\n⚠️ ПРАВИЛО: Извлекай ТОЛЬКО контактные данные из сообщений КЛИЕНТА!\n\n❌ ИГНОРИРУЙ контакты из сообщений бота:\n- Бот может представляться: \"Меня зовут Анна\" → НЕ извлекать\n- Бот может давать контакты компании: \"Наш телефон +7-999-111-22-33\" → НЕ извлекать\n- Бот может давать email поддержки: \"Пишите на support@company.com\" → НЕ извлекать\n\n✅ ИЗВЛЕКАЙ контакты из сообщений клиента:\n- Клиент представляется: \"Меня зовут Лобзик\" → ИЗВЛЕЧЬ имя\n- Клиент даёт телефон: \"Мой номер +7-999-222-33-44\" → ИЗВЛЕЧЬ телефон\n- Клиент даёт email: \"Напишите мне на lobzik@mail.ru\" → ИЗВЛЕЧЬ email\n\n#ДАННЫЕ ИЗ ФОРМЫ PRECHAT:\n\nПеред началом чата пользователь мог заполнить форму с контактами (секция 📋 ДАННЫЕ ИЗ ФОРМЫ PRECHAT).\nЭти данные используй как FALLBACK (запасной источник):\n\n- ПРИОРИТЕТ 1: Данные из ДИАЛОГА (клиент явно назвал) → confidence 100\n- ПРИОРИТЕТ 2: Данные из ФОРМЫ PRECHAT (если в диалоге нет) → confidence 50-70\n- ПРИОРИТЕТ 3: Данные из профиля мессенджера → confidence 60\n\nПример: В форме имя \"Лапоть\", в диалоге клиент написал \"Меня зовут Лобзик\" → Используй \"Лобзик\" (приоритет диалога)\nПример: В форме email \"test@mail.com\", в диалоге email не упоминался → Используй \"test@mail.com\" из формы\n\n#ПРИМЕРЫ ПРАВИЛЬНОЙ РАБОТЫ:\n\nПример 1 - Контакты бота (ИГНОРИРОВАТЬ):\nБот: Здравствуйте! Меня зовут Cryptonus, я AI-консультант. Телефон поддержки: +7-999-111-22-33\nКлиент: Привет, я Лобзик\n\nПравильный ответ:\n- name: \"Лобзик\" ← из сообщения клиента\n- phone: null ← телефон бота игнорируем\n\nПример 2 - Приоритет диалога над формой:\n📋 ДАННЫЕ ИЗ ФОРМЫ: Имя: Лапоть, Email: lapot@mail.com\nКлиент: Меня зовут Лобзик\n\nПравильный ответ:\n- name: \"Лобзик\" ← из диалога (приоритет!)\n- email: \"lapot@mail.com\" ← из формы (fallback)\n\n#ПРАВИЛА ДЛЯ УВЕРЕННОСТИ (confidence):\n\n- Клиент ЯВНО представился/указал в диалоге → confidence = 100\n- Данные из формы prechat (клиент не указал в диалоге) → confidence = 60\n- Бот обращается к клиенту по имени → confidence = 85\n- Имя из профиля мессенджера → confidence = 60\n- Данные угаданы из контекста → confidence = 40\n\n#Правила:\n- Извлекай ТОЛЬКО данные КЛИЕНТА, игнорируй данные бота/компании\n- НЕ придумывай данные\n- Нормализуй телефоны к формату +7XXXXXXXXXX для РФ\n- В extractedFrom указывай источник: \"из диалога\", \"из формы prechat\", \"из профиля\"\n\n#Формат ответа - чистый JSON:\n{\n  \"contacts\": [\n    {\n      \"sessionId\": \"id сессии\",\n      \"name\": \"полное имя или null\",\n      \"firstName\": \"имя или null\",\n      \"lastName\": \"фамилия или null\",\n      \"phone\": \"нормализованный телефон или null\",\n      \"phoneRaw\": \"телефон как указан или null\",\n      \"email\": \"email или null\",\n      \"telegram\": \"@username или null\",\n      \"whatsapp\": \"номер WhatsApp или null\",\n      \"otherContacts\": {},\n      \"company\": \"компания или null\",\n      \"position\": \"должность или null\",\n      \"location\": \"город/страна или null\",\n      \"preferredContact\": \"способ связи или null\",\n      \"extractedFrom\": \"источник данных\",\n      \"confidence\": число от 0 до 100\n    }\n  ]\n}\n\nВозвращай ТОЛЬКО валидный JSON без markdown блоков!"
         }
       },
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 2,
-      "position": [1056, 112],
+      "position": [
+        864,
+        112
+      ],
       "id": "5f5e9af5-25c0-40a0-a93e-26f9af1d7458",
       "name": "🤖 AI Single Extractor"
     },
@@ -427,44 +617,69 @@
       "parameters": {},
       "type": "@n8n/n8n-nodes-langchain.toolThink",
       "typeVersion": 1,
-      "position": [1296, 256],
+      "position": [
+        1104,
+        256
+      ],
       "id": "b4660cbb-9ecb-469d-8067-b4595805d328",
       "name": "💭 Think Single"
     },
     {
       "parameters": {
-        "modelName": "={{ $('⚙️ CONFIG').first().json.gemini_model_single }}",
-        "options": {"maxOutputTokens": 2048, "temperature": "={{ $('⚙️ CONFIG').first().json.gemini_temperature }}"}
+        "modelName": "models/gemini-2.0-flash",
+        "options": {
+          "maxOutputTokens": 2048,
+          "temperature": 0.3
+        }
       },
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1,
-      "position": [976, 272],
+      "position": [
+        784,
+        272
+      ],
       "id": "53d16ad3-fa26-437e-b0d1-d631a8944493",
       "name": "🧠 Gemini Single",
-      "credentials": {"googlePalmApi": {"id": "YOUR_GEMINI_CREDENTIAL_ID", "name": "Google Gemini(PaLM) Api account"}}
+      "credentials": {
+        "googlePalmApi": {
+          "id": "YOUR_GOOGLEPALMAPI_CREDENTIAL_ID",
+          "name": "Googlepalmapi account"
+        }
+      }
     },
     {
       "parameters": {
-        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// 📋 Parse AI response (Single)\n// ═══════════════════════════════════════════════════════════════\n\nconst aiResponse = items[0].json.output || items[0].json.response || items[0].json;\n\nlet contactsData;\ntry {\n    if (typeof aiResponse === 'string') {\n        let cleanJson = aiResponse;\n        cleanJson = cleanJson.replace(/```json\\s*/g, '').replace(/```\\s*/g, '');\n        const firstBrace = cleanJson.indexOf('{');\n        if (firstBrace > 0) { cleanJson = cleanJson.substring(firstBrace); }\n        const lastBrace = cleanJson.lastIndexOf('}');\n        if (lastBrace !== -1 && lastBrace < cleanJson.length - 1) { cleanJson = cleanJson.substring(0, lastBrace + 1); }\n        contactsData = JSON.parse(cleanJson);\n    } else {\n        contactsData = aiResponse;\n    }\n    if (!contactsData.contacts || !Array.isArray(contactsData.contacts)) {\n        throw new Error('Invalid response structure: missing contacts array');\n    }\n} catch (error) {\n    contactsData = { contacts: [] };\n}\n\nreturn contactsData.contacts.map(contact => ({json: contact}));"
+        "jsCode": "// Парсим ответ AI для Single extraction\nconst aiResponse = items[0].json.output || items[0].json.response || items[0].json;\n\nlet contactsData;\ntry {\n    if (typeof aiResponse === 'string') {\n        let cleanJson = aiResponse;\n        \n        // Удаляем markdown блоки\n        cleanJson = cleanJson.replace(/```json\\s*/g, '').replace(/```\\s*/g, '');\n        \n        const firstBrace = cleanJson.indexOf('{');\n        if (firstBrace > 0) {\n            cleanJson = cleanJson.substring(firstBrace);\n        }\n        const lastBrace = cleanJson.lastIndexOf('}');\n        if (lastBrace !== -1 && lastBrace < cleanJson.length - 1) {\n            cleanJson = cleanJson.substring(0, lastBrace + 1);\n        }\n        \n        contactsData = JSON.parse(cleanJson);\n    } else {\n        contactsData = aiResponse;\n    }\n    \n    // Валидация\n    if (!contactsData.contacts || !Array.isArray(contactsData.contacts)) {\n        throw new Error('Invalid response structure: missing contacts array');\n    }\n    \n    \n    contactsData.contacts.forEach((contact, index) => {\n    });\n    \n} catch (error) {\n    console.error('❌ [Single] Parse error:', error.message);\n    contactsData = {\n        contacts: []\n    };\n}\n\n// Возвращаем данные КАК ЕСТЬ\nreturn contactsData.contacts.map(contact => ({json: contact}));"
       },
       "id": "f10019c4-ed24-493d-a358-1baaf3872eb9",
       "name": "📋 Parse Single Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1504, 112]
+      "position": [
+        1312,
+        112
+      ]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- ═══════════════════════════════════════════════════════════════\n-- 💾 Save contact (Single)\n-- ═══════════════════════════════════════════════════════════════\n\nINSERT INTO {{ $('⚙️ CONFIG').first().json.table_user_contact_data }} (\n    session_id, platform, full_name, first_name, last_name, phone, phone_raw, email,\n    telegram, whatsapp, other_contacts, company, position, location, preferred_contact,\n    extracted_from, confidence_score, last_updated\n) VALUES (\n    '{{ $json.sessionId }}',\n    CASE WHEN '{{ $json.sessionId }}' LIKE 'telegram_%' THEN 'telegram' WHEN '{{ $json.sessionId }}' LIKE 'webchat_%' THEN 'webchat' WHEN '{{ $json.sessionId }}' LIKE 'whatsapp_%' THEN 'whatsapp' ELSE 'unknown' END,\n    {{ $json.name ? \"'\" + String($json.name).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.firstName ? \"'\" + String($json.firstName).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.lastName ? \"'\" + String($json.lastName).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.phone ? \"'\" + $json.phone + \"'\" : 'NULL' }},\n    {{ $json.phoneRaw ? \"'\" + $json.phoneRaw + \"'\" : 'NULL' }},\n    {{ $json.email ? \"'\" + $json.email + \"'\" : 'NULL' }},\n    {{ $json.telegram ? \"'\" + $json.telegram + \"'\" : 'NULL' }},\n    {{ $json.whatsapp ? \"'\" + $json.whatsapp + \"'\" : 'NULL' }},\n    {{ $json.otherContacts && Object.keys($json.otherContacts).length > 0 ? \"'\" + JSON.stringify($json.otherContacts).replace(/'/g, \"''\") + \"'::jsonb\" : 'NULL' }},\n    {{ $json.company ? \"'\" + String($json.company).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.position ? \"'\" + String($json.position).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.location ? \"'\" + String($json.location).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.preferredContact ? \"'\" + $json.preferredContact + \"'\" : 'NULL' }},\n    {{ $json.extractedFrom ? \"'\" + String($json.extractedFrom).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.confidence || 0 }},\n    CURRENT_TIMESTAMP\n)\nON CONFLICT (session_id)\nDO UPDATE SET\n    full_name = COALESCE({{ $('⚙️ CONFIG').first().json.table_user_contact_data }}.full_name, EXCLUDED.full_name),\n    first_name = COALESCE({{ $('⚙️ CONFIG').first().json.table_user_contact_data }}.first_name, EXCLUDED.first_name),\n    last_name = COALESCE({{ $('⚙️ CONFIG').first().json.table_user_contact_data }}.last_name, EXCLUDED.last_name),\n    phone = COALESCE({{ $('⚙️ CONFIG').first().json.table_user_contact_data }}.phone, EXCLUDED.phone),\n    email = COALESCE({{ $('⚙️ CONFIG').first().json.table_user_contact_data }}.email, EXCLUDED.email),\n    confidence_score = GREATEST(EXCLUDED.confidence_score, COALESCE({{ $('⚙️ CONFIG').first().json.table_user_contact_data }}.confidence_score, 0)),\n    last_updated = CURRENT_TIMESTAMP\nRETURNING *;",
+        "query": "INSERT INTO user_contact_data (\n    session_id,\n    platform,\n    full_name,\n    first_name,\n    last_name,\n    phone,\n    phone_raw,\n    email,\n    telegram,\n    whatsapp,\n    other_contacts,\n    company,\n    position,\n    location,\n    preferred_contact,\n    extracted_from,\n    confidence_score,\n    last_updated\n) VALUES (\n    '{{ $json.sessionId }}',\n    CASE \n        WHEN '{{ $json.sessionId }}' LIKE 'telegram_%' THEN 'telegram'\n        WHEN '{{ $json.sessionId }}' LIKE 'webchat_%' THEN 'webchat'\n        WHEN '{{ $json.sessionId }}' LIKE 'whatsapp_%' THEN 'whatsapp'\n        ELSE 'unknown'\n    END,\n    {{ $json.name ? \"'\" + String($json.name).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.firstName ? \"'\" + String($json.firstName).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.lastName ? \"'\" + String($json.lastName).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.phone ? \"'\" + $json.phone + \"'\" : 'NULL' }},\n    {{ $json.phoneRaw ? \"'\" + $json.phoneRaw + \"'\" : 'NULL' }},\n    {{ $json.email ? \"'\" + $json.email + \"'\" : 'NULL' }},\n    {{ $json.telegram ? \"'\" + $json.telegram + \"'\" : 'NULL' }},\n    {{ $json.whatsapp ? \"'\" + $json.whatsapp + \"'\" : 'NULL' }},\n    {{ $json.otherContacts && Object.keys($json.otherContacts).length > 0 ? \"'\" + JSON.stringify($json.otherContacts).replace(/'/g, \"''\") + \"'::jsonb\" : 'NULL' }},\n    {{ $json.company ? \"'\" + String($json.company).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.position ? \"'\" + String($json.position).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.location ? \"'\" + String($json.location).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.preferredContact ? \"'\" + $json.preferredContact + \"'\" : 'NULL' }},\n    {{ $json.extractedFrom ? \"'\" + String($json.extractedFrom).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.confidence || 0 }},\n    CURRENT_TIMESTAMP\n)\nON CONFLICT (session_id)\nDO UPDATE SET\n    full_name = CASE \n        -- ПРИОРИТЕТ 1: Имя из диалога ВСЕГДА побеждает имя из профиля (независимо от confidence)\n        WHEN EXCLUDED.extracted_from LIKE '%из диалога%' \n             AND (user_contact_data.extracted_from LIKE '%из профиля%' \n                  OR user_contact_data.extracted_from IS NULL)\n             AND EXCLUDED.full_name IS NOT NULL\n        THEN EXCLUDED.full_name\n        \n        -- ПРИОРИТЕТ 2: При РАВНОМ confidence, имя из диалога побеждает\n        WHEN EXCLUDED.confidence_score = user_contact_data.confidence_score\n             AND EXCLUDED.extracted_from LIKE '%из диалога%'\n             AND EXCLUDED.full_name IS NOT NULL\n        THEN EXCLUDED.full_name\n        \n        -- ПРИОРИТЕТ 3: Если новый confidence ВЫШЕ - обновляем\n        WHEN EXCLUDED.confidence_score > COALESCE(user_contact_data.confidence_score, 0)\n             AND EXCLUDED.full_name IS NOT NULL\n        THEN EXCLUDED.full_name\n        \n        -- ПРИОРИТЕТ 4: Если старого имени нет - пишем новое\n        WHEN user_contact_data.full_name IS NULL \n             AND EXCLUDED.full_name IS NOT NULL\n        THEN EXCLUDED.full_name\n        \n        -- Иначе оставляем старое\n        ELSE user_contact_data.full_name\n    END,\n    \n    first_name = CASE \n        WHEN EXCLUDED.extracted_from LIKE '%из диалога%' \n             AND (user_contact_data.extracted_from LIKE '%из профиля%' \n                  OR user_contact_data.extracted_from IS NULL)\n             AND EXCLUDED.first_name IS NOT NULL\n        THEN EXCLUDED.first_name\n        WHEN EXCLUDED.confidence_score = user_contact_data.confidence_score\n             AND EXCLUDED.extracted_from LIKE '%из диалога%'\n             AND EXCLUDED.first_name IS NOT NULL\n        THEN EXCLUDED.first_name\n        WHEN EXCLUDED.confidence_score > COALESCE(user_contact_data.confidence_score, 0)\n             AND EXCLUDED.first_name IS NOT NULL\n        THEN EXCLUDED.first_name\n        WHEN user_contact_data.first_name IS NULL \n             AND EXCLUDED.first_name IS NOT NULL\n        THEN EXCLUDED.first_name\n        ELSE user_contact_data.first_name\n    END,\n    \n    last_name = CASE \n        WHEN EXCLUDED.extracted_from LIKE '%из диалога%' \n             AND (user_contact_data.extracted_from LIKE '%из профиля%' \n                  OR user_contact_data.extracted_from IS NULL)\n             AND EXCLUDED.last_name IS NOT NULL\n        THEN EXCLUDED.last_name\n        WHEN EXCLUDED.confidence_score = user_contact_data.confidence_score\n             AND EXCLUDED.extracted_from LIKE '%из диалога%'\n             AND EXCLUDED.last_name IS NOT NULL\n        THEN EXCLUDED.last_name\n        WHEN EXCLUDED.confidence_score > COALESCE(user_contact_data.confidence_score, 0)\n             AND EXCLUDED.last_name IS NOT NULL\n        THEN EXCLUDED.last_name\n        WHEN user_contact_data.last_name IS NULL \n             AND EXCLUDED.last_name IS NOT NULL\n        THEN EXCLUDED.last_name\n        ELSE user_contact_data.last_name\n    END,\n    \n    phone = COALESCE(user_contact_data.phone, EXCLUDED.phone),\n    phone_raw = COALESCE(user_contact_data.phone_raw, EXCLUDED.phone_raw),\n    email = COALESCE(user_contact_data.email, EXCLUDED.email),\n    telegram = COALESCE(user_contact_data.telegram, EXCLUDED.telegram),\n    whatsapp = COALESCE(user_contact_data.whatsapp, EXCLUDED.whatsapp),\n    other_contacts = COALESCE(user_contact_data.other_contacts, EXCLUDED.other_contacts),\n    company = COALESCE(user_contact_data.company, EXCLUDED.company),\n    position = COALESCE(user_contact_data.position, EXCLUDED.position),\n    location = COALESCE(user_contact_data.location, EXCLUDED.location),\n    preferred_contact = COALESCE(user_contact_data.preferred_contact, EXCLUDED.preferred_contact),\n    \n    extracted_from = CASE\n        WHEN EXCLUDED.full_name != user_contact_data.full_name \n             OR user_contact_data.full_name IS NULL\n        THEN EXCLUDED.extracted_from\n        ELSE user_contact_data.extracted_from\n    END,\n    \n    confidence_score = GREATEST(EXCLUDED.confidence_score, COALESCE(user_contact_data.confidence_score, 0)),\n    \n    last_updated = CURRENT_TIMESTAMP\nRETURNING *;",
         "options": {}
       },
       "id": "a03ab07c-8b25-42cf-b795-fe04910dc4a0",
       "name": "🐘 Save Single Contact",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [1728, 112],
-      "credentials": {"postgres": {"id": "YOUR_POSTGRES_CREDENTIAL_ID", "name": "Postgres account"}}
+      "position": [
+        1536,
+        112
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account"
+        }
+      }
     },
     {
       "parameters": {
@@ -476,52 +691,501 @@
       "name": "✅ Respond Single",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1936, 112]
+      "position": [
+        1744,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1248,
+        368
+      ],
+      "id": "33edc2cc-99c0-4399-af50-aae484e3eb6e",
+      "name": "🔐 Security Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "auth-condition",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1088,
+        368
+      ],
+      "id": "970e429f-0763-45a2-b533-78ab2d9ac06e",
+      "name": "❓ Auth Check"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.error }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -880,
+        496
+      ],
+      "id": "f9a9858a-b274-40c0-a36e-d5a7e809ef96",
+      "name": "❌ Error Response"
     }
   ],
   "pinData": {},
   "connections": {
-    "🌐 Webhook: Extract Contact": {"main": [[{"node": "⚙️ CONFIG", "type": "main", "index": 0}]]},
-    "⚙️ CONFIG": {"main": [[{"node": "🔐 Security Check", "type": "main", "index": 0}]]},
-    "🔐 Security Check": {"main": [[{"node": "❓ Auth Check", "type": "main", "index": 0}]]},
-    "❓ Auth Check": {"main": [[{"node": "📥 Process Request", "type": "main", "index": 0}], [{"node": "❌ Error Response", "type": "main", "index": 0}]]},
-    "📥 Process Request": {"main": [[{"node": "❓ Check Type", "type": "main", "index": 0}]]},
-    "❓ Check Type": {"main": [[{"node": "🐘 Get Single Dialog", "type": "main", "index": 0}], [{"node": "🐘 Get Batch Dialogs", "type": "main", "index": 0}]]},
-    "🐘 Get Single Dialog": {"main": [[{"node": "📝 Format Single Dialog", "type": "main", "index": 0}]]},
-    "🐘 Get Batch Dialogs": {"main": [[{"node": "📤 Pass Batch Data", "type": "main", "index": 0}]]},
-    "📤 Pass Batch Data": {"main": [[{"node": "📊 Group By Session", "type": "main", "index": 0}]]},
-    "📊 Group By Session": {"main": [[{"node": "🔄 Loop Over Sessions", "type": "main", "index": 0}]]},
-    "🔄 Loop Over Sessions": {"main": [[{"node": "📊 Aggregate Results", "type": "main", "index": 0}], [{"node": "📝 Format Loop Dialog", "type": "main", "index": 0}]]},
-    "📝 Format Loop Dialog": {"main": [[{"node": "❓ IF Webchat Loop", "type": "main", "index": 0}]]},
-    "❓ IF Webchat Loop": {"main": [[{"node": "🐘 Get PreChat Loop", "type": "main", "index": 0}], [{"node": "📤 Pass Empty PreChat", "type": "main", "index": 0}]]},
-    "🐘 Get PreChat Loop": {"main": [[{"node": "📤 Pass PreChat Loop", "type": "main", "index": 0}]]},
-    "📤 Pass PreChat Loop": {"main": [[{"node": "🐘 Check Loop Existing", "type": "main", "index": 0}]]},
-    "📤 Pass Empty PreChat": {"main": [[{"node": "🐘 Check Loop Existing", "type": "main", "index": 0}]]},
-    "🐘 Check Loop Existing": {"main": [[{"node": "📤 Pass Loop Check", "type": "main", "index": 0}]]},
-    "📤 Pass Loop Check": {"main": [[{"node": "🔀 Merge Loop Data", "type": "main", "index": 0}]]},
-    "🔀 Merge Loop Data": {"main": [[{"node": "🤖 AI Batch Extractor", "type": "main", "index": 0}]]},
-    "🤖 AI Batch Extractor": {"main": [[{"node": "📋 Parse Batch Response", "type": "main", "index": 0}]]},
-    "💭 Think Batch": {"ai_tool": [[{"node": "🤖 AI Batch Extractor", "type": "ai_tool", "index": 0}]]},
-    "🧠 Gemini Batch": {"ai_languageModel": [[{"node": "🤖 AI Batch Extractor", "type": "ai_languageModel", "index": 0}]]},
-    "📋 Parse Batch Response": {"main": [[{"node": "🐘 Save Batch Contact", "type": "main", "index": 0}]]},
-    "🐘 Save Batch Contact": {"main": [[{"node": "📤 Pass To Loop", "type": "main", "index": 0}]]},
-    "📤 Pass To Loop": {"main": [[{"node": "🔄 Loop Over Sessions", "type": "main", "index": 0}]]},
-    "📊 Aggregate Results": {"main": [[{"node": "✅ Respond Batch", "type": "main", "index": 0}]]},
-    "📝 Format Single Dialog": {"main": [[{"node": "🐘 Get PreChat Single", "type": "main", "index": 0}]]},
-    "🐘 Get PreChat Single": {"main": [[{"node": "📤 Pass PreChat Single", "type": "main", "index": 0}]]},
-    "📤 Pass PreChat Single": {"main": [[{"node": "🐘 Check Single Existing", "type": "main", "index": 0}]]},
-    "🐘 Check Single Existing": {"main": [[{"node": "🔀 Merge Single Data", "type": "main", "index": 0}]]},
-    "🔀 Merge Single Data": {"main": [[{"node": "🤖 AI Single Extractor", "type": "main", "index": 0}]]},
-    "🤖 AI Single Extractor": {"main": [[{"node": "📋 Parse Single Response", "type": "main", "index": 0}]]},
-    "💭 Think Single": {"ai_tool": [[{"node": "🤖 AI Single Extractor", "type": "ai_tool", "index": 0}]]},
-    "🧠 Gemini Single": {"ai_languageModel": [[{"node": "🤖 AI Single Extractor", "type": "ai_languageModel", "index": 0}]]},
-    "📋 Parse Single Response": {"main": [[{"node": "🐘 Save Single Contact", "type": "main", "index": 0}]]},
-    "🐘 Save Single Contact": {"main": [[{"node": "✅ Respond Single", "type": "main", "index": 0}]]}
+    "🌐 Webhook: Extract Contact": {
+      "main": [
+        [
+          {
+            "node": "🔐 Security Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📥 Process Request": {
+      "main": [
+        [
+          {
+            "node": "❓ Check Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓ Check Type": {
+      "main": [
+        [
+          {
+            "node": "🐘 Get Single Dialog",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "🐘 Get Batch Dialogs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🐘 Get Single Dialog": {
+      "main": [
+        [
+          {
+            "node": "📝 Format Single Dialog",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🐘 Get Batch Dialogs": {
+      "main": [
+        [
+          {
+            "node": "📤 Pass Batch Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📤 Pass Batch Data": {
+      "main": [
+        [
+          {
+            "node": "📊 Group By Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Group By Session": {
+      "main": [
+        [
+          {
+            "node": "🔄 Loop Over Sessions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔄 Loop Over Sessions": {
+      "main": [
+        [
+          {
+            "node": "📊 Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "📝 Format Loop Dialog",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📝 Format Loop Dialog": {
+      "main": [
+        [
+          {
+            "node": "❓ IF Webchat Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓ IF Webchat Loop": {
+      "main": [
+        [
+          {
+            "node": "🐘 Get PreChat Loop",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "📤 Pass Empty PreChat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🐘 Get PreChat Loop": {
+      "main": [
+        [
+          {
+            "node": "📤 Pass PreChat Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📤 Pass PreChat Loop": {
+      "main": [
+        [
+          {
+            "node": "🐘 Check Loop Existing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📤 Pass Empty PreChat": {
+      "main": [
+        [
+          {
+            "node": "🐘 Check Loop Existing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🐘 Check Loop Existing": {
+      "main": [
+        [
+          {
+            "node": "📤 Pass Loop Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📤 Pass Loop Check": {
+      "main": [
+        [
+          {
+            "node": "🔀 Merge Loop Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔀 Merge Loop Data": {
+      "main": [
+        [
+          {
+            "node": "🤖 AI Batch Extractor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🤖 AI Batch Extractor": {
+      "main": [
+        [
+          {
+            "node": "📋 Parse Batch Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💭 Think Batch": {
+      "ai_tool": [
+        [
+          {
+            "node": "🤖 AI Batch Extractor",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧠 Gemini Batch": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "🤖 AI Batch Extractor",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📋 Parse Batch Response": {
+      "main": [
+        [
+          {
+            "node": "🐘 Save Batch Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🐘 Save Batch Contact": {
+      "main": [
+        [
+          {
+            "node": "📤 Pass To Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📤 Pass To Loop": {
+      "main": [
+        [
+          {
+            "node": "🔄 Loop Over Sessions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Aggregate Results": {
+      "main": [
+        [
+          {
+            "node": "✅ Respond Batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📝 Format Single Dialog": {
+      "main": [
+        [
+          {
+            "node": "🐘 Get PreChat Single",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🐘 Get PreChat Single": {
+      "main": [
+        [
+          {
+            "node": "📤 Pass PreChat Single",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📤 Pass PreChat Single": {
+      "main": [
+        [
+          {
+            "node": "🐘 Check Single Existing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🐘 Check Single Existing": {
+      "main": [
+        [
+          {
+            "node": "🔀 Merge Single Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔀 Merge Single Data": {
+      "main": [
+        [
+          {
+            "node": "🤖 AI Single Extractor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🤖 AI Single Extractor": {
+      "main": [
+        [
+          {
+            "node": "📋 Parse Single Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💭 Think Single": {
+      "ai_tool": [
+        [
+          {
+            "node": "🤖 AI Single Extractor",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧠 Gemini Single": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "🤖 AI Single Extractor",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📋 Parse Single Response": {
+      "main": [
+        [
+          {
+            "node": "🐘 Save Single Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🐘 Save Single Contact": {
+      "main": [
+        [
+          {
+            "node": "✅ Respond Single",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔐 Security Check": {
+      "main": [
+        [
+          {
+            "node": "❓ Auth Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❓ Auth Check": {
+      "main": [
+        [
+          {
+            "node": "📥 Process Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "❌ Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "active": false,
-  "settings": {"executionOrder": "v1"},
+  "settings": {
+    "executionOrder": "v1"
+  },
   "versionId": "production-en-v1",
-  "meta": {"templateCredsSetupCompleted": true, "instanceId": "production-template"},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "production-template"
+  },
   "id": "contact-data-extractor-en",
   "tags": []
 }
