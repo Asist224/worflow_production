@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## 📇 Contact Data Extractor\n\n### 📋 Description\nExtracts client contact data from dialogs using AI.\n\n**Operating modes:**\n- `single` - extraction for one session (by sessionId)\n- `batch` - batch extraction for all new dialogs\n\n---\n\n### ⚙️ CONFIG Settings\n\n| Parameter | Description |\n|-----------|-------------|\n| `api_key` | API key for authentication |\n| `rate_limit_window_ms` | Rate limiting window (ms) |\n| `rate_limit_max_requests` | Max requests per window |\n| `table_chat_histories_ru` | Chat history table (RU) |\n| `table_chat_histories_en` | Chat history table (EN) |\n| `table_user_contact_data` | Contact data table |\n| `table_prechat_submissions` | Prechat forms table |\n| `gemini_model_single` | Gemini model for single |\n| `gemini_model_batch` | Gemini model for batch |\n| `gemini_temperature` | AI temperature |\n\n---\n\n### 📥 Request Examples\n\n**Single extraction:**\n```json\nPOST /webhook/extract-contact-data?apiKey=YOUR_KEY\n{\"type\": \"single\", \"sessionId\": \"webchat_xxx\"}\n```\n\n**Batch extraction:**\n```json\nPOST /webhook/extract-contact-data?apiKey=YOUR_KEY\n{\"type\": \"batch\"}\n```\n\n---\n\n### 🔐 Security\n- API Key authentication\n- Rate limiting by IP",
+        "content": "## 📇 Contact Data Extractor\n\n### 📋 Description\nExtract client contact data from dialogs using AI.\n\n**Modes:**\n- `single` - extraction for one session (by sessionId)\n- `batch` - batch extraction for all new dialogs\n\n---\n\n### ⚙️ CONFIG Settings\n\n| Parameter | Description |\n|-----------|-------------|\n| `api_key` | API key for authentication |\n| `rate_limit_window_ms` | Rate limiting window (ms) |\n| `rate_limit_max_requests` | Max requests per window |\n\n---\n\n### 🔑 Credentials\nConfigure credentials separately:\n- **Postgres** - for all database nodes\n- **Google Gemini** - for AI models\n\n---\n\n### 📥 Request Examples\n\n**Single extraction:**\n```json\nPOST /webhook/extract-contact-data\nHeaders: x-api-key: YOUR_KEY\n{\"type\": \"single\", \"sessionId\": \"webchat_xxx\"}\n```\n\n**Batch extraction:**\n```json\nPOST /webhook/extract-contact-data\nHeaders: x-api-key: YOUR_KEY\n{\"type\": \"batch\"}\n```\n\n---\n\n### 🔐 Security\n- API Key authentication\n- Rate limiting by IP",
         "height": 720,
         "width": 420,
         "color": 5
@@ -38,48 +38,6 @@
               "name": "rate_limit_max_requests",
               "value": 60,
               "type": "number"
-            },
-            {
-              "id": "table-chat-ru",
-              "name": "table_chat_histories_ru",
-              "value": "n8n_chat_histories_ru",
-              "type": "string"
-            },
-            {
-              "id": "table-chat-en",
-              "name": "table_chat_histories_en",
-              "value": "n8n_chat_histories_en",
-              "type": "string"
-            },
-            {
-              "id": "table-contacts",
-              "name": "table_user_contact_data",
-              "value": "user_contact_data",
-              "type": "string"
-            },
-            {
-              "id": "table-prechat",
-              "name": "table_prechat_submissions",
-              "value": "prechat_submissions",
-              "type": "string"
-            },
-            {
-              "id": "gemini-single",
-              "name": "gemini_model_single",
-              "value": "models/gemini-2.0-flash",
-              "type": "string"
-            },
-            {
-              "id": "gemini-batch",
-              "name": "gemini_model_batch",
-              "value": "models/gemini-2.5-flash-lite",
-              "type": "string"
-            },
-            {
-              "id": "gemini-temp",
-              "name": "gemini_temperature",
-              "value": 0.3,
-              "type": "number"
             }
           ]
         },
@@ -90,8 +48,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -1400,
-        200
+        -1320,
+        368
       ]
     },
     {
@@ -698,12 +656,12 @@
     },
     {
       "parameters": {
-        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// НАСТРОЙКИ (измени под себя)\nconst API_KEY = '24fs-$r4d-defd-77ds-7eds';\nconst RATE_LIMIT_WINDOW_MS = 60000;\nconst RATE_LIMIT_MAX_REQUESTS = 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
+        "jsCode": "// ============================================\n// УНИВЕРСАЛЬНАЯ ЗАЩИТА: API KEY + RATE LIMITING\n// ============================================\n\n// Читаем настройки из CONFIG\nconst config = $('⚙️ CONFIG').first().json;\nconst API_KEY = config.api_key;\nconst RATE_LIMIT_WINDOW_MS = config.rate_limit_window_ms || 60000;\nconst RATE_LIMIT_MAX_REQUESTS = config.rate_limit_max_requests || 60;\n\nconst inputData = $input.first().json;\nconst body = inputData.body || {};\nconst headers = inputData.headers || {};\nconst query = inputData.query || {};\nconst clientIP = headers['x-real-ip'] || headers['x-forwarded-for'] || headers['cf-connecting-ip'] || 'unknown';\nconst now = Date.now();\n\n// RATE LIMITING\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.rateLimits) { staticData.rateLimits = {}; }\nfor (const ip in staticData.rateLimits) {\n  if (now - staticData.rateLimits[ip].firstRequest > RATE_LIMIT_WINDOW_MS) {\n    delete staticData.rateLimits[ip];\n  }\n}\nif (!staticData.rateLimits[clientIP]) {\n  staticData.rateLimits[clientIP] = { count: 1, firstRequest: now };\n} else {\n  staticData.rateLimits[clientIP].count++;\n  if (staticData.rateLimits[clientIP].count > RATE_LIMIT_MAX_REQUESTS) {\n    return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Too many requests', details: `Limit: ${RATE_LIMIT_MAX_REQUESTS} requests per minute`, status: 429, retryAfter: Math.ceil((staticData.rateLimits[clientIP].firstRequest + RATE_LIMIT_WINDOW_MS - now) / 1000) } } }];\n  }\n}\n\n// API KEY CHECK\nconst providedKey = headers['x-api-key'] || body.apiKey || query.apiKey || '';\nif (!providedKey) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'API key not provided', status: 401 } } }];\n}\nif (providedKey !== API_KEY) {\n  return [{ json: { ...inputData, authorized: false, error: { success: false, error: 'Invalid API key', status: 401 } } }];\n}\n\nreturn [{ json: { ...inputData, authorized: true } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -1248,
+        -1160,
         368
       ],
       "id": "33edc2cc-99c0-4399-af50-aae484e3eb6e",
@@ -767,7 +725,7 @@
       "main": [
         [
           {
-            "node": "🔐 Security Check",
+            "node": "⚙️ CONFIG",
             "type": "main",
             "index": 0
           }
@@ -1170,6 +1128,17 @@
         [
           {
             "node": "❌ Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ CONFIG": {
+      "main": [
+        [
+          {
+            "node": "🔐 Security Check",
             "type": "main",
             "index": 0
           }
