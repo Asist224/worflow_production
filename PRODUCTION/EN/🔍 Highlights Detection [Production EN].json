@@ -326,37 +326,11 @@
     },
     {
       "parameters": {
-        "schema": {
-          "__rl": true,
-          "value": "public",
-          "mode": "list",
-          "cachedResultName": "public"
-        },
-        "table": {
-          "__rl": true,
-          "value": "conversation_highlights",
-          "mode": "list",
-          "cachedResultName": "conversation_highlights"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "session_id": "={{ $json.session_id }}",
-            "message_id": "={{ $json.message_id }}",
-            "message_text": "={{ $json.message_text }}",
-            "message_type": "={{ $json.message_type }}",
-            "message_timestamp": "={{ $json.message_timestamp }}",
-            "highlight_type": "={{ $json.highlight_type }}",
-            "confidence": "={{ $json.confidence }}",
-            "detection_method": "={{ $json.detection_method }}",
-            "matched_keywords": "={{ $json.matched_keywords }}",
-            "language": "={{ $json.language }}",
-            "platform": "={{ $json.platform }}"
-          },
-          "matchingColumns": [],
-          "schema": []
-        },
-        "options": {}
+        "operation": "executeQuery",
+        "query": "INSERT INTO {{ $('⚙️ CONFIG: Detect').first().json.table_conversation_highlights }} \n(session_id, message_id, message_text, message_type, message_timestamp, highlight_type, confidence, detection_method, matched_keywords, reasoning, language, platform)\nVALUES \n(\n  '{{ $json.session_id }}', \n  '{{ $json.message_id }}', \n  '{{ $json.message_text.replace(/'/g, \"''\") }}', \n  '{{ $json.message_type }}', \n  '{{ $json.message_timestamp }}', \n  '{{ $json.highlight_type }}', \n  {{ $json.confidence }}, \n  '{{ $json.detection_method }}', \n  ARRAY[{{ $json.matched_keywords.map(k => \"'\" + k.replace(/'/g, \"''\") + \"'\").join(\",\") }}], \n  '{{ ($json.reasoning || \"\").replace(/'/g, \"''\") }}', \n  '{{ $json.language }}', \n  '{{ $json.platform }}'\n);",
+        "options": {
+          "queryBatching": "individually"
+        }
       },
       "id": "a6313e63-086a-4200-96ec-9869184e189e",
       "name": "🐘 Save to DB",
