@@ -511,7 +511,7 @@ CREATE TABLE IF NOT EXISTS email_tracking (
 
 -- Таблица: gdpr_audit_log
 CREATE TABLE IF NOT EXISTS gdpr_audit_log (
-    id INTEGER DEFAULT nextval('gdpr_audit_log_id_seq'::regclass) NOT NULL,
+    id INTEGER PRIMARY KEY DEFAULT nextval('gdpr_audit_log_id_seq'::regclass),
     session_id VARCHAR(255) NOT NULL,
     action VARCHAR(100) NOT NULL,
     details JSONB NULL,
@@ -519,7 +519,11 @@ CREATE TABLE IF NOT EXISTS gdpr_audit_log (
     user_agent TEXT NULL,
     domain VARCHAR(255) NULL,
     created_at TIMESTAMP DEFAULT now() NULL,
-    PRIMARY KEY (id)
+    purpose TEXT NULL,
+    legal_basis TEXT DEFAULT 'consent' NULL,
+    controller TEXT NULL,
+    data_categories TEXT[] NULL,
+    privacy_policy_version TEXT NULL
 );
 
 -- Таблица: gdpr_consents
@@ -862,9 +866,11 @@ CREATE INDEX idx_email_tracking_status ON public.email_tracking USING btree (sta
 CREATE UNIQUE INDEX idx_email_tracking_unique ON public.email_tracking USING btree (session_id, email_type, email);
 
 -- Индексы для таблицы: gdpr_audit_log
-CREATE INDEX idx_gdpr_audit_log_action ON public.gdpr_audit_log USING btree (action);
-CREATE INDEX idx_gdpr_audit_log_created ON public.gdpr_audit_log USING btree (created_at);
-CREATE INDEX idx_gdpr_audit_log_session ON public.gdpr_audit_log USING btree (session_id);
+CREATE INDEX idx_gdpr_audit_log_session_id ON gdpr_audit_log USING btree (session_id);
+CREATE INDEX idx_gdpr_audit_log_action ON gdpr_audit_log USING btree (action);
+CREATE INDEX idx_gdpr_audit_log_created_at ON gdpr_audit_log USING btree (created_at DESC);
+CREATE INDEX idx_gdpr_audit_log_domain ON gdpr_audit_log USING btree (domain);
+CREATE INDEX idx_gdpr_audit_log_ip_address ON gdpr_audit_log USING btree (ip_address);
 
 -- Индексы для таблицы: gdpr_consents
 CREATE INDEX idx_consents_email ON public.gdpr_consents USING btree (user_email);
