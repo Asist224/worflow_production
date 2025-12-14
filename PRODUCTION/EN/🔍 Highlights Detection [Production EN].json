@@ -371,7 +371,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ {\n    success: true,\n    sessionId: $('Parse AI Response').first().json.sessionId,\n    totalDetected: $('Parse AI Response').first().json.totalDetected,\n    highlights: $('Parse AI Response').first().json.highlights.map(h => ({\n        type: h.type,\n        confidence: h.confidence,\n        messageText: h.messageText.substring(0, 100) + '...',\n        reasoning: h.reasoning\n    })),\n    summary: $('Parse AI Response').first().json.summary,\n    aiAssessment: $('Parse AI Response').first().json.aiAssessment\n} }}",
+        "responseBody": "={{ {\n    success: true,\n    sessionId: $('📝 Parse AI Response').first().json.sessionId,\n    totalDetected: $('📝 Parse AI Response').first().json.totalDetected,\n    highlights: $('📝 Parse AI Response').first().json.highlights.map(h => ({\n        type: h.type,\n        confidence: h.confidence,\n        messageText: h.messageText.substring(0, 100) + '...',\n        reasoning: h.reasoning\n    })),\n    summary: $('📝 Parse AI Response').first().json.summary,\n    aiAssessment: $('📝 Parse AI Response').first().json.aiAssessment\n} }}",
         "options": {}
       },
       "id": "68748655-5f53-4d98-ad70-b66d9fdb6e7f",
@@ -386,7 +386,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ {\n    success: true,\n    sessionId: $('Parse AI Response').first().json.sessionId,\n    totalDetected: 0,\n    message: 'No highlights detected by AI',\n    highlights: []\n} }}",
+        "responseBody": "={{ {\n    success: true,\n    sessionId: $('📝 Parse AI Response').first().json.sessionId,\n    totalDetected: 0,\n    message: 'No highlights detected by AI',\n    highlights: []\n} }}",
         "options": {}
       },
       "id": "f360ada7-785f-4cb9-a58f-013490b19c19",
